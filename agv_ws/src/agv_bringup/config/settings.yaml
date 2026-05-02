@@ -1,0 +1,4 @@
+tag_family: 'tag36h11'  # This is the most common tag type
+tag_threads: 2
+tag_decimate: 1.0
+tag_blur: 0.0

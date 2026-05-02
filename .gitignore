@@ -1,0 +1,10 @@
+**/build/
+**/devel/
+**/logs/
+.catkin_workspace
+build/
+devel/
+logs/
+*.bag
+*.swp
+swapfile

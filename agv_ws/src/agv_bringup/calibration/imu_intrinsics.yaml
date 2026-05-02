@@ -1,0 +1,90 @@
+# D455 IMU (BMI085): accel noise_density 0.0028 m/s^2/sqrt(Hz) (28 ug/sqrt(Hz)).
+# bias_instability < 0.10 m/s^2 long-term (Intel spec sheet).
+# static_test_std inflated by /camera/imu linear_interpolation artefact -- see note below.
+accelerometer:
+  bias:
+  - 0.0
+  - 0.0
+  - 0.0
+  bias_instability: 0.10          # m/s^2, Intel spec (conservative upper bound)
+  noise_density: 0.0028           # m/s^2/sqrt(Hz), Intel spec
+  scale_and_alignment:
+  - - 1.0
+    - 0.0
+    - 0.0
+    - 0.0
+    - 1.0
+    - 0.0
+    - 0.0
+    - 0.0
+    - 1.0
+  static_test_mean_m_s2:
+    x: -0.1097
+    y: -9.654
+    z: -0.1185
+  static_test_std_m_s2:
+    x: 0.17539
+    y: 0.201338
+    z: 0.245123
+calibration_date: '2026-03-15'
+calibration_method: static_test
+calibration_operator: ubuntu
+frame_id: camera_imu_optical_frame
+# D455 gyro noise_density 0.014 deg/s/sqrt(Hz) = 2.44e-4 rad/s/sqrt(Hz).
+# bias_instability < 1 deg/s long-term (Intel spec).
+# static_test drift of 0.153 deg/s is slightly above 0.1 target; likely vibration from
+# base controller during test. Retest with motors powered off for definitive result.
+gyroscope:
+  bias:
+  - 0.0
+  - 0.0
+  - 0.0
+  bias_instability: 0.01745       # rad/s, Intel spec (1 deg/s)
+  noise_density: 0.000244         # rad/s/sqrt(Hz), Intel spec (0.014 deg/s/sqrt(Hz))
+  scale_and_alignment:
+  - - 1.0
+    - 0.0
+    - 0.0
+    - 0.0
+    - 1.0
+    - 0.0
+    - 0.0
+    - 0.0
+    - 1.0
+  static_test_std_rad_s:
+    x: 0.009418
+    y: 0.002846
+    z: 0.011535
+imu_to_color_extrinsic:
+  note: 'Read from SDK: rs-enumerate-devices -c | grep -A20 ''Motion Intrinsics'''
+  rotation:
+  - 1.0
+  - 0.0
+  - 0.0
+  - 0.0
+  - 1.0
+  - 0.0
+  - 0.0
+  - 0.0
+  - 1.0
+  translation:
+  - 0.0
+  - 0.0
+  - 0.0
+publish_rate_hz: 199.0
+static_test_60s:
+  accel_noise_m_s2: 0.2451
+  accel_pass: false
+  gravity_alignment_verified: true
+  gravity_dominant_axis: y
+  gravity_magnitude_m_s2: 9.6554
+  gyro_drift_deg_per_s: 0.1525
+  gyro_pass: false
+  note: >
+    Accel noise std (0.245 m/s^2) is inflated by /camera/imu linear_interpolation
+    artefact (63 Hz accel interleaved with 200 Hz gyro). True accel noise floor is
+    ~0.01-0.02 m/s^2 per D455 spec. For Allan variance characterisation, run
+    imu_utils on /camera/accel/sample (requires bringup without unite_imu_method).
+    Gyro drift (0.153 deg/s) should be retested with base controller motors powered
+    off to isolate vibration contribution.
+  num_samples: 11994

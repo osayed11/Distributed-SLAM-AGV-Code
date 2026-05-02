@@ -1,0 +1,60 @@
+# PhaseSpace Mocap → Robot Base Transform
+# -----------------------------------------------------------------------
+# STATUS: PLACEHOLDER — requires physical calibration with mocap system
+#
+# This file defines the rigid transform between:
+#   - The PhaseSpace rigid body origin (centroid of the marker set)
+#   - The robot's base_footprint frame
+#
+# Why this matters:
+#   The PhaseSpace reports pose of the marker constellation centroid.
+#   We need to correct this to get the robot base_footprint pose.
+#   Without this, ground truth trajectories are offset from robot centre.
+#
+# Calibration procedure:
+#   1. Define the per-robot marker set in PhaseSpace Impulse software.
+#      Each robot needs a unique, asymmetric marker arrangement.
+#      Minimum 3 markers; 4+ for robustness.
+#   2. Drive the robot to a known position (floor tape marking).
+#   3. Record the PhaseSpace rigid body pose at that position.
+#   4. Measure the physical offset from rigid body centroid to base_footprint
+#      using calipers or a ruler.
+#   5. Fill in the values below.
+#
+# ROS driver: phasespace-mocap-ros
+#   Verify it publishes at ≥ 100 Hz with correct frame IDs.
+#   Recommended: rosrun tf view_frames — confirm mocap frame connects to
+#   the rest of the TF tree if using mocap-aided localisation.
+# -----------------------------------------------------------------------
+
+calibration_date: "YYYY-MM-DD"
+calibration_operator: ""
+
+# Per-robot marker set definition
+# Fill in marker LED IDs and physical positions in the rigid body frame
+marker_set:
+  robot_id: "agv01"             # UPDATE per robot
+  num_markers: 4                # minimum 4 for robust tracking
+  marker_ids: []                # LED IDs assigned in PhaseSpace Impulse software
+  marker_positions_m: []        # [x, y, z] of each marker in rigid body frame
+
+# Transform: mocap rigid body origin → base_footprint
+mocap_to_base_footprint:
+  x: 0.0        # PLACEHOLDER — measure physically
+  y: 0.0
+  z: 0.0
+  roll: 0.0
+  pitch: 0.0
+  yaw: 0.0
+
+# PhaseSpace system accuracy at your working volume
+# Report from PhaseSpace documentation and your own ruler test
+accuracy:
+  rms_error_mm: ~               # reported by PhaseSpace for your volume
+  ruler_test_error_mm: ~        # your measurement: known 1m distance via mocap
+  capture_volume_m:
+    x: ~                        # width of reliable capture area
+    y: ~                        # depth
+    z: ~                        # height
+  max_markers_per_robot: ~
+  tracking_rate_hz: ~           # rigid body pose output rate

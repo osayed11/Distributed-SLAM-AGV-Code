@@ -1,0 +1,11 @@
+<launch>
+
+    <include file="$(find myagv_navigation)/launch/gmapping.launch"/>"
+    
+    <include file="$(find myagv_odometry)/launch/myagv_active.launch"/>
+    <node pkg="rviz" type="rviz" name="rviz" args="-d $(find myagv_navigation)/rviz/gmapping.rviz"/>
+
+      
+</launch>
+
+

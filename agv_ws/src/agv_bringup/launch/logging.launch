@@ -1,0 +1,46 @@
+<launch>
+
+  <!-- Dataset recording launch file.
+       Set these env vars before running, e.g.:
+         export ROBOT_NAME=agv1
+         export SCENARIO=corridor_loop
+         export DATESTAMP=$(date +%Y%m%d_%H%M%S)
+       Defaults are provided so the launch will not crash if unset. -->
+
+  <arg name="robot_name" default="$(optenv ROBOT_NAME agv_unknown)" />
+  <arg name="scenario"   default="$(optenv SCENARIO unknown_scenario)" />
+  <arg name="datestamp"  default="$(optenv DATESTAMP 000000_000000)" />
+  <arg name="mocap_topic" default="$(optenv MOCAP_TOPIC /phasespace/rigids)" />
+  <arg name="enable_imu" default="$(optenv ENABLE_IMU false)" />
+
+  <include file="$(find agv_bringup)/launch/bringup.launch">
+    <arg name="enable_imu" value="$(arg enable_imu)" />
+  </include>
+
+  <include file="$(find agv_bringup)/launch/apriltag.launch" />
+
+  <node pkg="rosbag" type="record" name="dataset_bagger" output="screen"
+        args="--buffsize=2048 --lz4
+              -O $(env HOME)/agv_data/$(arg robot_name)_$(arg scenario)_$(arg datestamp)
+              /scan
+              /odom
+              /cmd_vel
+              /tf
+              /tf_static
+              /camera/color/image_raw
+              /camera/color/camera_info
+              /camera/depth/camera_info
+              /camera/aligned_depth_to_color/image_raw
+              /camera/aligned_depth_to_color/camera_info
+              /camera/extrinsics/depth_to_color
+              /camera/imu
+              /camera/accel/sample
+              /camera/gyro/sample
+              /camera/accel/imu_info
+              /camera/gyro/imu_info
+              /diagnostics
+              /tag_detections
+              $(arg mocap_topic)
+              /mocap" />
+
+</launch>

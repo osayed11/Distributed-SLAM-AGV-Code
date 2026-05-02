@@ -1,0 +1,15 @@
+# ROS Build Artifacts
+build/
+devel/
+install/
+logs/
+.catkin_workspace
+*.pyc
+
+# IDEs
+.vscode/
+.idea/
+
+# Large Files (Optional but recommended)
+*.bag
+*.pgm

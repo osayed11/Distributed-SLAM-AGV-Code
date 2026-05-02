@@ -1,0 +1,138 @@
+calibration_date: '2026-03-15'
+calibration_method: factory
+calibration_operator: ubuntu
+color_camera:
+  camera_matrix:
+    cols: 3
+    data:
+    - 386.8179626464844
+    - 0.0
+    - 324.7179870605469
+    - 0.0
+    - 386.36614990234375
+    - 245.6641082763672
+    - 0.0
+    - 0.0
+    - 1.0
+    rows: 3
+  distortion_coefficients:
+    cols: 5
+    data:
+    - -0.05532670393586159
+    - 0.0643351674079895
+    - 0.00048636223073117435
+    - 0.0010995458578690886
+    - -0.021179519593715668
+    rows: 1
+  distortion_model: plumb_bob
+  image_height: 480
+  image_width: 640
+  projection_matrix:
+    cols: 4
+    data:
+    - 386.8179626464844
+    - 0.0
+    - 324.7179870605469
+    - 0.0
+    - 0.0
+    - 386.36614990234375
+    - 245.6641082763672
+    - 0.0
+    - 0.0
+    - 0.0
+    - 1.0
+    - 0.0
+    rows: 3
+  rectification_matrix:
+    cols: 3
+    data:
+    - 1.0
+    - 0.0
+    - 0.0
+    - 0.0
+    - 1.0
+    - 0.0
+    - 0.0
+    - 0.0
+    - 1.0
+    rows: 3
+# depth_to_color: transform that maps a 3D point in the depth frame to the color frame.
+# Source: /camera/extrinsics/depth_to_color topic (device serial extrinsics, 2026-03-15).
+# translation is in metres; rotation is row-major 3x3.
+depth_to_color_extrinsic:
+  rotation:
+  - 0.9999980926513672
+  - -0.0004119330842513591
+  - -0.001898753922432661
+  - 0.0004061303043272346
+  - 0.999995231628418
+  - -0.00305547215975821
+  - 0.0019000035244971514
+  - 0.0030546952039003372
+  - 0.9999935030937195
+  translation:
+  - -0.058968570083379745
+  - -7.864813960622996e-05
+  - 0.00020577707618940622
+depth_accuracy:
+  error_at_0_5m_mm: null
+  error_at_1_0m_mm: null
+  error_at_2_0m_mm: null
+  note: Fill in from physical depth accuracy test (see STAGE_1_CALIBRATION_SOP.md
+    1c)
+depth_camera:
+  camera_matrix:
+    cols: 3
+    data:
+    - 391.2943115234375
+    - 0.0
+    - 322.7235412597656
+    - 0.0
+    - 391.2943115234375
+    - 242.3490447998047
+    - 0.0
+    - 0.0
+    - 1.0
+    rows: 3
+  distortion_coefficients:
+    cols: 5
+    data:
+    - 0.0
+    - 0.0
+    - 0.0
+    - 0.0
+    - 0.0
+    rows: 1
+  distortion_model: plumb_bob
+  image_height: 480
+  image_width: 640
+  projection_matrix:
+    cols: 4
+    data:
+    - 391.2943115234375
+    - 0.0
+    - 322.7235412597656
+    - 0.0
+    - 0.0
+    - 391.2943115234375
+    - 242.3490447998047
+    - 0.0
+    - 0.0
+    - 0.0
+    - 1.0
+    - 0.0
+    rows: 3
+  rectification_matrix:
+    cols: 3
+    data:
+    - 1.0
+    - 0.0
+    - 0.0
+    - 0.0
+    - 1.0
+    - 0.0
+    - 0.0
+    - 0.0
+    - 1.0
+    rows: 3
+reprojection_error_px: null

@@ -1,0 +1,13 @@
+<launch>
+   
+    <include file="$(find myagv_odometry)/launch/myagv_active.launch"/>
+    <include file="$(find myagv_navigation)/launch/amcl.launch"/>
+
+    
+ 
+    <arg name="map" default="nav.yaml" />
+
+    <node name="map_server" pkg="map_server" type="map_server" args="$(find myagv_navigation)/map/$(arg map)"/>
+
+      
+</launch>

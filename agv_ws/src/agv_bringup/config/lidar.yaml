@@ -1,0 +1,38 @@
+# YDLiDAR X2 configuration reference
+# Actual params are set inline in myagv_ros/src/ydlidar_ros_driver/launch/X2.launch
+# This file documents the intended values for reference and version control.
+
+# Serial interface (YDLiDAR X2 is USB-serial, NOT TCP/IP)
+port: "/dev/ttyAMA0"   # UART on Raspberry Pi GPIO header; may be /dev/ttyUSB0 on other boards
+baudrate: 115200
+device_type: 0         # 0 = YDLIDAR_TYPE_SERIAL
+
+# Sensor properties
+lidar_type: 1          # 1 = TYPE_TRIANGLE (triangulation-based)
+sample_rate: 3         # kHz sampling rate for X2
+frequency: 10.0        # rotation frequency in Hz (target; actual ~7 Hz on RPi)
+isSingleChannel: true
+intensity: false
+inverted: true         # X2 scan direction needs inversion
+
+# Angular coverage
+angle_min: -180.0      # degrees
+angle_max:  180.0      # degrees
+range_min: 0.1         # metres
+range_max: 12.0        # metres
+
+# ROS frame
+frame_id: "laser_frame"
+
+# Extrinsic: laser_frame relative to base_footprint
+# UPDATE after physical measurement (Stage 1b)
+# Current value in myagv_ros/src/ydlidar_ros_driver/launch/X2.launch:
+# z=0.10m, yaw=0.0 (measured 2026-03-15)
+# Run: rosrun tf view_frames to verify full TF chain
+extrinsic:
+  x: 0.0
+  y: 0.0
+  z: 0.10
+  roll: 0.0
+  pitch: 0.0
+  yaw: 0.0

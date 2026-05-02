@@ -1,0 +1,25 @@
+# AGV base controller configuration
+# The serial port is passed to myagv_odometry_node via bringup.launch
+# Override with: roslaunch agv_bringup bringup.launch serial_port:=/dev/ttyACM0
+serial_port: "/dev/ttyACM0"  # USB-serial to STM32 base MCU (shows as ttyACM on most systems)
+baud: 115200
+
+# Wheel kinematics — UPDATE THESE after physical calibration (Stage 1b)
+# Procedure: drive 1m straight, measure actual distance; drive 360° circle, measure heading error
+# See: agv_on-board/docs/calibration/odometry_calibration_procedure.md
+wheel_radius: 0.0385  # metres — current robot-side value
+wheel_base: 0.211     # metres (track width) — current robot-side value
+# NOTE: the current STM32 protocol reports chassis velocities, not raw wheel
+# ticks. These values are logged for traceability; odom correction is applied
+# through the scale factors below.
+
+# Calibration multipliers applied to MCU-reported chassis velocities before
+# integrating /odom. Use actual / odom: e.g. if /odom reports 0.85 m after a
+# measured 1.00 m drive, set linear_scale to 1.00 / 0.85 = 1.176.
+linear_scale: 1.0
+lateral_scale: 1.0
+angular_scale: 1.0
+
+# Set true only when debugging serial command/odometry packets; otherwise the
+# base node prints at high rate and makes logs hard to inspect.
+debug_output: false
