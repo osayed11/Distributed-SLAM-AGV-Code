@@ -1,6 +1,6 @@
 # AGV On-Board Stack
 
-Robot-side ROS Melodic stack for AGV data collection in the multi-robot SLAM dataset project.
+Robot-side ROS Noetic stack for AGV data collection in the multi-robot SLAM dataset project.
 
 The goal of this repo is repeatable deployment: clone or pull it on a robot, run one setup script, then collect bags with a single session command.
 
