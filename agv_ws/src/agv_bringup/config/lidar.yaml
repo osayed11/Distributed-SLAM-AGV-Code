@@ -1,5 +1,5 @@
 # YDLiDAR X2 configuration reference
-# Actual params are set inline in myagv_ros/src/ydlidar_ros_driver/launch/X2.launch
+# Actual params are set inline in agv_ws/src/ydlidar_ros_driver/launch/X2.launch
 # This file documents the intended values for reference and version control.
 
 # Serial interface (YDLiDAR X2 is USB-serial, NOT TCP/IP)
@@ -26,7 +26,7 @@ frame_id: "laser_frame"
 
 # Extrinsic: laser_frame relative to base_footprint
 # UPDATE after physical measurement (Stage 1b)
-# Current value in myagv_ros/src/ydlidar_ros_driver/launch/X2.launch:
+# Current value in agv_ws/src/ydlidar_ros_driver/launch/X2.launch:
 # z=0.10m, yaw=0.0 (measured 2026-03-15)
 # Run: rosrun tf view_frames to verify full TF chain
 extrinsic:

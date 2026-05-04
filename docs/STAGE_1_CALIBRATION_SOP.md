@@ -69,7 +69,7 @@ Update `calibration/extrinsics.yaml` → `odometry` section with measured values
 
 ### Step 2 — Update X2.launch
 
-Edit `myagv_ros/src/ydlidar_ros_driver/launch/X2.launch`, line:
+Edit `agv_ws/src/ydlidar_ros_driver/launch/X2.launch`, line:
 ```xml
 <node pkg="tf" type="static_transform_publisher" name="base_link_to_laser4"
   args="X Y Z YAW PITCH ROLL /base_footprint /laser_frame 40" />

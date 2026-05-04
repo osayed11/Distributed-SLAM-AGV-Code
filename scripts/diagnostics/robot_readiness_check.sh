@@ -6,7 +6,6 @@ ROOT="${HOME}/slam_project"
 LOG="/tmp/agv_bringup_check_$(date +%Y%m%d_%H%M%S).log"
 
 source /opt/ros/noetic/setup.bash
-source "${ROOT}/myagv_ros/devel/setup.bash"
 source "${ROOT}/agv_ws/devel/setup.bash"
 
 set -u

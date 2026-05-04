@@ -1,12 +1,6 @@
 #!/usr/bin/env bash
 # Build and prepare the AGV robot-side stack after clone/pull.
-#
-# Usage:
-#   bash scripts/setup_robot.sh
-#   bash scripts/setup_robot.sh --skip-system
-#
-# By default this installs expected OS/ROS packages, then builds both catkin
-# workspaces. Use --skip-system only on an already provisioned/offline robot.
+# Optimized for ROS Noetic on Ubuntu 20.04.
 
 set -euo pipefail
 
@@ -32,20 +26,52 @@ done
 
 section() {
     echo ""
-    echo "== $1 =="
+    echo "========================================"
+    echo "== $1"
+    echo "========================================"
 }
 
-require_file() {
-    if [ ! -f "$1" ]; then
-        echo "ERROR: missing required file: $1" >&2
-        exit 1
+ensure_swap() {
+    section "checking swap"
+    # Check current swap in Megabytes
+    current_swap=$(free -m | grep -i swap | awk '{print $2}')
+    
+    if [ "$current_swap" -lt 2000 ]; then
+        echo "Current swap ($current_swap MB) is too small. Increasing to 2GB..."
+        
+        # Disable existing swapfile if present to allow resize
+        sudo swapoff /swapfile 2>/dev/null || true
+        
+        # Create 2GB swap file - fallocate is fast, dd is a backup
+        sudo fallocate -l 2G /swapfile || sudo dd if=/dev/zero of=/swapfile bs=1M count=2048
+        sudo chmod 600 /swapfile
+        sudo mkswap /swapfile
+        sudo swapon /swapfile || echo "WARN: Could not enable swapfile"
+        
+        # Persistence
+        if ! grep -q "/swapfile" /etc/fstab; then
+            echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
+        fi
+        echo "Swap successfully configured."
+    else
+        echo "Swap is sufficient ($current_swap MB)."
     fi
 }
 
-section "repo"
+ensure_file() {
+    if [ ! -f "$1" ]; then
+        echo "Initializing missing marker: $1"
+        mkdir -p "$(dirname "$1")"
+        touch "$1"
+    fi
+}
+
+section "repository initialization"
 echo "root: ${ROOT}"
-require_file "${ROOT}/myagv_ros/.catkin_workspace"
-require_file "${ROOT}/agv_ws/.catkin_workspace"
+ensure_file "${ROOT}/agv_ws/.catkin_workspace"
+
+# Handle swap before system updates to prevent build crashes later
+ensure_swap
 
 if [ "$INSTALL_SYSTEM" = true ]; then
     section "system dependencies"
@@ -57,6 +83,9 @@ if [ "$INSTALL_SYSTEM" = true ]; then
         git \
         python3-pip \
         python3-yaml \
+        python3-rosdep \
+        python3-rosinstall \
+        ros-noetic-ddynamic-reconfigure \
         ros-noetic-apriltag-ros \
         ros-noetic-diagnostic-msgs \
         ros-noetic-geometry-msgs \
@@ -71,47 +100,28 @@ if [ "$INSTALL_SYSTEM" = true ]; then
     if apt-cache show librealsense2-dev >/dev/null 2>&1; then
         sudo apt-get install -y librealsense2-dev librealsense2-utils
     else
-        echo "WARN: librealsense2-dev not available from configured apt sources."
-        echo "      Install Intel RealSense packages separately if this robot is fresh."
+        echo "WARN: librealsense2-dev not found in apt sources."
     fi
 
     sudo systemctl enable --now chrony 2>/dev/null || sudo service chrony restart || true
 fi
 
-require_file "/opt/ros/noetic/setup.bash"
-
-if ! command -v chronyc >/dev/null 2>&1; then
-    echo "ERROR: chronyc not found; install chrony or rerun without --skip-system." >&2
+# Final Environment Checks
+if [ ! -f "/opt/ros/noetic/setup.bash" ]; then
+    echo "ERROR: ROS Noetic not found at /opt/ros/noetic/setup.bash" >&2
     exit 1
-fi
-
-if ! chronyc tracking >/dev/null 2>&1; then
-    echo "WARN: chrony is installed but not reporting tracking status yet."
 fi
 
 section "data directories"
 mkdir -p "${HOME}/agv_data"
-echo "bags: ${HOME}/agv_data"
+echo "bags directory created at: ${HOME}/agv_data"
 
-section "build myagv_ros"
-source /opt/ros/noetic/setup.bash
-cd "${ROOT}/myagv_ros"
-catkin_make
 
-section "build agv_ws"
+section "building agv_ws workspace"
 source /opt/ros/noetic/setup.bash
-source "${ROOT}/myagv_ros/devel/setup.bash"
 cd "${ROOT}/agv_ws"
-catkin_make
-
-section "workspace check"
-source /opt/ros/noetic/setup.bash
-source "${ROOT}/myagv_ros/devel/setup.bash"
-source "${ROOT}/agv_ws/devel/setup.bash"
-rospack find agv_bringup
-rospack find realsense2_camera
-rospack find ydlidar_ros_driver
-rospack find myagv_odometry
+rm -rf build devel
+catkin_make -j1
 
 section "script permissions"
 chmod +x \
@@ -123,15 +133,16 @@ chmod +x \
     "${ROOT}/scripts/logging/audit_bag_fast.py" \
     "${ROOT}/scripts/diagnostics/"*.sh 2>/dev/null || true
 
-section "next commands"
+section "automation complete"
 cat <<EOF
-source /opt/ros/noetic/setup.bash
-source ${ROOT}/myagv_ros/devel/setup.bash
-source ${ROOT}/agv_ws/devel/setup.bash
+To begin using the robot:
 
-# One-command data run:
-bash ${ROOT}/scripts/logging/start_session.sh agv1 square_manual
+1. Load environment:
+   source /opt/ros/noetic/setup.bash
+   source ${ROOT}/agv_ws/devel/setup.bash
 
-# Optional manual teleop in another terminal:
-rosrun myagv_teleop myagv_teleop.py
+2. Launch full stack:
+   bash ${ROOT}/scripts/logging/start_session.sh agv1 square_manual
+
+Everything is now optimized for ROS Noetic.
 EOF

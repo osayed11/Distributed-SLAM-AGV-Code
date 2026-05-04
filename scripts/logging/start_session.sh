@@ -41,7 +41,6 @@ mkdir -p "${BAG_DIR}"
 # Source ROS
 # ---------------------------------------------------------------------------
 source /opt/ros/noetic/setup.bash
-source "${ROOT}/myagv_ros/devel/setup.bash"
 source "${ROOT}/agv_ws/devel/setup.bash"
 
 # ---------------------------------------------------------------------------

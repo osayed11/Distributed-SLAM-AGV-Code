@@ -62,7 +62,7 @@ Drive manually in another terminal:
 ```bash
 ssh ubuntu@<robot-ip>
 source /opt/ros/noetic/setup.bash
-source ~/slam_project/myagv_ros/devel/setup.bash
+source ~/slam_project/agv_ws/devel/setup.bash
 rosrun myagv_teleop myagv_teleop.py
 ```
 
@@ -72,7 +72,7 @@ Or run a conservative automatic square:
 ssh ubuntu@<robot-ip>
 cd ~/slam_project
 source /opt/ros/noetic/setup.bash
-source ~/slam_project/myagv_ros/devel/setup.bash
+source ~/slam_project/agv_ws/devel/setup.bash
 source ~/slam_project/agv_ws/devel/setup.bash
 python scripts/logging/drive_square.py --side 0.75 --linear 0.22 --angular 0.28 --cycles 1
 ```
@@ -99,7 +99,7 @@ Terminal 2, drive the straight line:
 ssh ubuntu@<robot-ip>
 cd ~/slam_project
 source /opt/ros/noetic/setup.bash
-source ~/slam_project/myagv_ros/devel/setup.bash
+source ~/slam_project/agv_ws/devel/setup.bash
 source ~/slam_project/agv_ws/devel/setup.bash
 python scripts/logging/drive_straight.py --distance 1.50 --speed 0.18
 ```
@@ -127,7 +127,7 @@ In another terminal:
 ssh ubuntu@<robot-ip>
 cd ~/slam_project
 source /opt/ros/noetic/setup.bash
-source ~/slam_project/myagv_ros/devel/setup.bash
+source ~/slam_project/agv_ws/devel/setup.bash
 source ~/slam_project/agv_ws/devel/setup.bash
 python scripts/logging/drive_square.py --side 0.75 --linear 0.22 --angular 0.28 --cycles 1
 ```
@@ -170,7 +170,7 @@ scripts/diagnostics/
 
 ```text
 agv_on-board/
-├── myagv_ros/                  Vendor AGV base, odometry, teleop, LiDAR ROS packages
+├── agv_ws/                  Vendor AGV base, odometry, teleop, LiDAR ROS packages
 ├── agv_ws/
 │   └── src/
 │       ├── agv_bringup/        Dataset launch files, TFs, calibration, tag config
@@ -191,7 +191,7 @@ Source order matters:
 
 ```bash
 source /opt/ros/noetic/setup.bash
-source ~/slam_project/myagv_ros/devel/setup.bash
+source ~/slam_project/agv_ws/devel/setup.bash
 source ~/slam_project/agv_ws/devel/setup.bash
 ```
 
