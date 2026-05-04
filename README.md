@@ -61,7 +61,7 @@ Drive manually in another terminal:
 
 ```bash
 ssh ubuntu@<robot-ip>
-source /opt/ros/melodic/setup.bash
+source /opt/ros/noetic/setup.bash
 source ~/slam_project/myagv_ros/devel/setup.bash
 rosrun myagv_teleop myagv_teleop.py
 ```
@@ -71,7 +71,7 @@ Or run a conservative automatic square:
 ```bash
 ssh ubuntu@<robot-ip>
 cd ~/slam_project
-source /opt/ros/melodic/setup.bash
+source /opt/ros/noetic/setup.bash
 source ~/slam_project/myagv_ros/devel/setup.bash
 source ~/slam_project/agv_ws/devel/setup.bash
 python scripts/logging/drive_square.py --side 0.75 --linear 0.22 --angular 0.28 --cycles 1
@@ -98,7 +98,7 @@ Terminal 2, drive the straight line:
 ```bash
 ssh ubuntu@<robot-ip>
 cd ~/slam_project
-source /opt/ros/melodic/setup.bash
+source /opt/ros/noetic/setup.bash
 source ~/slam_project/myagv_ros/devel/setup.bash
 source ~/slam_project/agv_ws/devel/setup.bash
 python scripts/logging/drive_straight.py --distance 1.50 --speed 0.18
@@ -126,7 +126,7 @@ In another terminal:
 ```bash
 ssh ubuntu@<robot-ip>
 cd ~/slam_project
-source /opt/ros/melodic/setup.bash
+source /opt/ros/noetic/setup.bash
 source ~/slam_project/myagv_ros/devel/setup.bash
 source ~/slam_project/agv_ws/devel/setup.bash
 python scripts/logging/drive_square.py --side 0.75 --linear 0.22 --angular 0.28 --cycles 1
@@ -190,7 +190,7 @@ agv_on-board/
 Source order matters:
 
 ```bash
-source /opt/ros/melodic/setup.bash
+source /opt/ros/noetic/setup.bash
 source ~/slam_project/myagv_ros/devel/setup.bash
 source ~/slam_project/agv_ws/devel/setup.bash
 ```
@@ -338,7 +338,7 @@ Fast audit:
 
 ```bash
 cd ~/slam_project
-source /opt/ros/melodic/setup.bash
+source /opt/ros/noetic/setup.bash
 source ~/slam_project/agv_ws/devel/setup.bash
 python scripts/logging/audit_bag_fast.py ~/agv_data/<bag>.bag
 ```
