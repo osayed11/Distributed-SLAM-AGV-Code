@@ -20,7 +20,7 @@ bash scripts/setup_robot.sh
 **Option B: Download Zip**
 ```bash
 # Download the repository as a zip file
-wget [https://github.com/Gani332/agv_on-board/archive/refs/heads/main.zip](https://github.com/Gani332/agv_on-board/archive/refs/heads/main.zip)
+wget [https://github.com/osayed11/Distributed-SLAM-AGV-Code/archive/refs/heads/main.zip](https://github.com/Gani332/agv_on-board/archive/refs/heads/main.zip)
 
 # Unzip the file
 unzip main.zip
