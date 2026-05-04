@@ -13,8 +13,7 @@ On a fresh or updated robot, use one of the following methods to retrieve the st
 
 **Option A: Standard Clone (Try this first)**
 ```bash
-git clone --depth 1 [https://github.com/Gani332/agv_on-board](https://github.com/Gani332/agv_on-board) .
-Rename the file to slam_project
+git clone https://github.com/osayed11/Distributed-SLAM-AGV-Code.git ~/slam_project
 bash scripts/setup_robot.sh
 ```
 
