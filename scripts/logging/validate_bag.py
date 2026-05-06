@@ -56,13 +56,8 @@ REQUIRED_TOPICS = {
 }
 
 OPTIONAL_TOPICS = {
-    "/camera/depth/camera_info":        {"min_hz": 0.0, "type": "sensor_msgs/CameraInfo"},
-    "/camera/imu":                      {"min_hz": 150.0, "target_hz": 200.0, "type": "sensor_msgs/Imu"},
-    "/camera/accel/sample":             {"min_hz": 60.0, "target_hz": 100.0, "type": "sensor_msgs/Imu"},
-    "/camera/gyro/sample":              {"min_hz": 150.0, "target_hz": 200.0, "type": "sensor_msgs/Imu"},
-    "/camera/accel/imu_info":           {"min_hz": 0.0, "type": "realsense2_camera/IMUInfo"},
-    "/camera/gyro/imu_info":            {"min_hz": 0.0, "type": "realsense2_camera/IMUInfo"},
     "/camera/extrinsics/depth_to_color": {"min_hz": 0.0, "type": "realsense2_camera/Extrinsics"},
+    "/imu":                             {"min_hz": 40.0, "target_hz": 50.0, "type": "sensor_msgs/Imu"},
     "/diagnostics":                     {"min_hz": 0.0, "type": "diagnostic_msgs/DiagnosticArray"},
     "/tag_detections":                  {"min_hz": 0.0, "type": "apriltag_ros/AprilTagDetectionArray"},
 }
@@ -211,7 +206,7 @@ def check_imu_requirement(bag_topics, duration, require_imu):
     """Require at least one IMU stream only when requested."""
     print("\n--- IMU availability ---")
 
-    imu_topics = ["/camera/imu", "/camera/accel/sample", "/camera/gyro/sample"]
+    imu_topics = ["/imu"]
     present = [topic for topic in imu_topics if topic in bag_topics]
     if not present:
         level = FAIL if require_imu else WARN
@@ -467,7 +462,7 @@ def check_imu_monotonic(bag_path, bag_topics):
     """Check IMU timestamps are strictly increasing (catches driver reset bugs)."""
     print("\n--- IMU timestamp monotonicity ---")
 
-    if "/camera/imu" not in bag_topics:
+    if "/imu" not in bag_topics:
         return
 
     try:
@@ -476,7 +471,7 @@ def check_imu_monotonic(bag_path, bag_topics):
             "import rosbag, sys; b=rosbag.Bag(sys.argv[1]); "
             "prev=0; bad=0; n=0; "
             "[exec('global prev,bad,n; t=m.header.stamp.to_sec(); bad+=1 if t<=prev else 0; prev=t; n+=1') "
-            "for _,m,_ in b.read_messages(topics=[\"/camera/imu\"])]; "
+            "for _,m,_ in b.read_messages(topics=[\"/imu\"])]; "
             "b.close(); print(bad,n)",
             bag_path
         ]
