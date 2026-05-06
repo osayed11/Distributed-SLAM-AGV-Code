@@ -1,6 +1,5 @@
-#!/usr/bin/env bash
-# Build and prepare the AGV robot-side stack after clone/pull.
-# Optimized for ROS Noetic on Ubuntu 20.04.
+#!/bin/bash
+# Optimized for ROS Noetic on Ubuntu 20.04 (ARM64/myAGV).
 
 set -euo pipefail
 
@@ -33,22 +32,16 @@ section() {
 
 ensure_swap() {
     section "checking swap"
-    # Check current swap in Megabytes
     current_swap=$(free -m | grep -i swap | awk '{print $2}')
-    
+
     if [ "$current_swap" -lt 2000 ]; then
         echo "Current swap ($current_swap MB) is too small. Increasing to 2GB..."
-        
-        # Disable existing swapfile if present to allow resize
         sudo swapoff /swapfile 2>/dev/null || true
-        
-        # Create 2GB swap file - fallocate is fast, dd is a backup
         sudo fallocate -l 2G /swapfile || sudo dd if=/dev/zero of=/swapfile bs=1M count=2048
         sudo chmod 600 /swapfile
         sudo mkswap /swapfile
         sudo swapon /swapfile || echo "WARN: Could not enable swapfile"
-        
-        # Persistence
+
         if ! grep -q "/swapfile" /etc/fstab; then
             echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
         fi
@@ -70,7 +63,6 @@ section "repository initialization"
 echo "root: ${ROOT}"
 ensure_file "${ROOT}/agv_ws/.catkin_workspace"
 
-# Handle swap before system updates to prevent build crashes later
 ensure_swap
 
 if [ "$INSTALL_SYSTEM" = true ]; then
@@ -81,6 +73,7 @@ if [ "$INSTALL_SYSTEM" = true ]; then
         chrony \
         cmake \
         git \
+        gnupg2 \
         python3-pip \
         python3-yaml \
         python3-rosdep \
@@ -97,16 +90,28 @@ if [ "$INSTALL_SYSTEM" = true ]; then
         ros-noetic-tf \
         ros-noetic-tf2-msgs
 
-    if apt-cache show librealsense2-dev >/dev/null 2>&1; then
-        sudo apt-get install -y librealsense2-dev librealsense2-utils
+    # --- Intel RealSense SDK Automation ---
+    if ! dpkg -s librealsense2-dev >/dev/null 2>&1; then
+        echo "Configuring Intel RealSense Repo & SDK..."
+        sudo apt-key adv --keyserver keyserver.ubuntu.com --recv-key F6E65AC044F831AC80A06380C8B3A55A6F3EFCDE || \
+        sudo apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv-key F6E65AC044F831AC80A06380C8B3A55A6F3EFCDE
+        
+        sudo add-apt-repository "deb https://librealsense.intel.com/Debian/apt-repo focal main" -u
+        
+        # Install ARM64 compatible packages (Skipping DKMS)
+        sudo apt-get install -y librealsense2-utils librealsense2-dev librealsense2-dbg
+
+        # Apply udev rules for camera access
+        wget -q https://raw.githubusercontent.com/IntelRealSense/librealsense/master/config/99-realsense-libusb.rules
+        sudo mv 99-realsense-libusb.rules /etc/udev/rules.d/
+        sudo udevadm control --reload-rules && sudo udevadm trigger
     else
-        echo "WARN: librealsense2-dev not found in apt sources."
+        echo "RealSense SDK already installed."
     fi
 
     sudo systemctl enable --now chrony 2>/dev/null || sudo service chrony restart || true
 fi
 
-# Final Environment Checks
 if [ ! -f "/opt/ros/noetic/setup.bash" ]; then
     echo "ERROR: ROS Noetic not found at /opt/ros/noetic/setup.bash" >&2
     exit 1
@@ -116,9 +121,11 @@ section "data directories"
 mkdir -p "${HOME}/agv_data"
 echo "bags directory created at: ${HOME}/agv_data"
 
-
 section "building agv_ws workspace"
+# Ensure a clean environment for building
 source /opt/ros/noetic/setup.bash
+export CMAKE_PREFIX_PATH="/opt/ros/noetic"
+
 cd "${ROOT}/agv_ws"
 rm -rf build devel
 catkin_make -j1
@@ -144,5 +151,5 @@ To begin using the robot:
 2. Launch full stack:
    bash ${ROOT}/scripts/logging/start_session.sh agv1 square_manual
 
-Everything is now optimized for ROS Noetic.
+Everything is now optimized for ROS Noetic and ARM64.
 EOF
