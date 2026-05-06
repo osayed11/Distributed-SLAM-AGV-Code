@@ -4,8 +4,11 @@
 
 #include "myagv_odometry/myAGV.h"
 
-//const unsigned char ender[2] = { 0x0d, 0x0a };
 const unsigned char header[2] = { 0xfe, 0xfe };
+const double DEG_TO_RAD = 3.14159265358979323846 / 180.0;
+const double STANDARD_GRAVITY = 9.80665;
+
+//const unsigned char ender[2] = { 0x0d, 0x0a };
 //const int SPEED_INFO = 0xa55a;
 //const int GET_SPEED = 0xaaaa;
 //const double ROBOT_RADIUS = 105.00;
@@ -55,6 +58,8 @@ MyAGV::MyAGV() : private_n("~")
     angular_scale = 1.0;
     wheel_radius = 0.0;
     wheel_base = 0.0;
+    publish_imu = true;
+    imu_frame_id = "imu_link";
     debug_output = false;
 }
 
@@ -73,6 +78,8 @@ bool MyAGV::init()
     private_n.param<double>("angular_scale", angular_scale, 1.0);
     private_n.param<double>("wheel_radius", wheel_radius, 0.0);
     private_n.param<double>("wheel_base", wheel_base, 0.0);
+    private_n.param<bool>("publish_imu", publish_imu, true);
+    private_n.param<std::string>("imu_frame_id", imu_frame_id, "imu_link");
     private_n.param<bool>("debug_output", debug_output, false);
 
     if (baud_rate <= 0) {
@@ -109,6 +116,10 @@ bool MyAGV::init()
     lastTime = ros::Time::now();
 
     pub = n.advertise<nav_msgs::Odometry>("odom", 50);
+    if (publish_imu) {
+        pub_imu = n.advertise<sensor_msgs::Imu>("imu", 50);
+        ROS_INFO("Publishing base IMU on /imu with frame_id=%s", imu_frame_id.c_str());
+    }
 
     return true;
 }
@@ -145,62 +156,13 @@ bool MyAGV::readSpeed()
         header_found = true;
     }
 
-    // if (!(buf_header[0] == header[0] && buf_header[1] == header[1]))  {
-    //     // not a header
-    //     return false;
-    // }
-
     ret = boost::asio::read(sp, boost::asio::buffer(buf), boost::asio::transfer_at_least(16), er2); // ready break
     if (ret != 16) {
         ROS_ERROR("Read error");
         return false;
     }
-    // for (int i = 0; i < ret; ++i) {
-    //     std::cout << std::hex << std::setfill('0') << std::setw(2) << (int)(buf[i]) << " ";
-    // }
-    // std::cout << std::endl;
-
-
-    // if (ret < 18) {
-    //     //ROS_ERROR("Read less error");
-    //     return false;
-    // }
-    // bool header_ok = false;
-    // int header_idx = 0;
-    // for (int i = 0; i < (ret-17); ++i) {
-    //     if (buf[i] == header[0] && buf[i+1] == header[1])  {
-    //         header_ok = true;
-    //         header_idx = i;
-    //         break;
-    //     }
-    // }
-    // if (!header_ok) {
-    //     //ROS_ERROR("Cannot find header");
-    //     return false;
-    // }
-
-
-    //ROS_INFO("RED BYTES: %ul", ret);
-	// if (er2 == boost::asio::error::eof){ 
-	// 	// ROS_ERROR("asio error 1");
-	// }
-
-
-    // int index = 0;
-    // for (index = 0; index < 40 - 17; ++index)
-    // {
-    //     if(buf[index] == header[0] && buf[index] == header[1])
-    //         break;
-    // }
-
-    // if (index == 40 - 18)
-    // {
-    //     ROS_ERROR("Received message header error!");
-    //     //return false;
-    // }
 
     int index = 0;
-    //index += 2;
     int check = 0;
     for (int i = 0; i < 15; ++i)
         check += buf[index + i];
@@ -214,13 +176,13 @@ bool MyAGV::readSpeed()
     vy = (static_cast<double>(buf[index + 1]) - 128.0) * 0.01 * lateral_scale;
     vtheta = (static_cast<double>(buf[index + 2]) - 128.0) * 0.01 * angular_scale;
 
-    ax = ((buf[index + 3] + buf[index + 4] * 256 ) - 10000) * 0.001;
-    ay = ((buf[index + 5] + buf[index + 6] * 256 ) - 10000) * 0.001;
-    az = ((buf[index + 7] + buf[index + 8] * 256 ) - 10000) * 0.001;
+    ax = ((buf[index + 3] + buf[index + 4] * 256 ) - 10000) * 0.001 * STANDARD_GRAVITY;
+    ay = ((buf[index + 5] + buf[index + 6] * 256 ) - 10000) * 0.001 * STANDARD_GRAVITY;
+    az = ((buf[index + 7] + buf[index + 8] * 256 ) - 10000) * 0.001 * STANDARD_GRAVITY;
 
-    wx = ((buf[index + 9] + buf[index + 10] * 256 ) - 10000) * 0.1;
-    wy = ((buf[index + 11] + buf[index + 12] * 256 ) - 10000) * 0.1;
-    wz = ((buf[index + 13] + buf[index + 14] * 256 ) - 10000) * 0.1;
+    wx = ((buf[index + 9] + buf[index + 10] * 256 ) - 10000) * 0.1 * DEG_TO_RAD;
+    wy = ((buf[index + 11] + buf[index + 12] * 256 ) - 10000) * 0.1 * DEG_TO_RAD;
+    wz = ((buf[index + 13] + buf[index + 14] * 256 ) - 10000) * 0.1 * DEG_TO_RAD;
 
     currentTime = ros::Time::now();
 
@@ -234,11 +196,6 @@ bool MyAGV::readSpeed()
     theta += delta_th;
     lastTime = currentTime;
 
-    // std::cout << "Received message is: " << dt << "|" << vx << "," << vy << "," << vtheta << "|"
-    //                                       << ax << "," << ay << "," << az << "|"
-    //                                     << wx << "," << wy << "," << wz << std::endl;
-    // std::cout << "current pos is: " << x << "," << y << "," << theta << std::endl;
-
     return true;
 }
 
@@ -251,10 +208,6 @@ void MyAGV::writeSpeed(double movex, double movey, double rot)
     if (rot > 1.0) rot = 1.0;
     if (rot < -1.0) rot = -1.0;
 
-    //char x_send = static_cast<char>(movex * 100) + 128;
-    //char y_send = static_cast<char>(movey * 100) + 128;
-    //char rot_send = static_cast<char>(rot * 100) + 128;
-   //char check = x_send + y_send + rot_send;
     unsigned char x_send = static_cast<signed char>(movex * 100) + 128;
     unsigned char y_send = static_cast<signed char>(movey * 100) + 128;
     unsigned char rot_send = static_cast<signed char>(rot * 100) + 128;
@@ -314,8 +267,36 @@ bool MyAGV::execute(double linearX, double linearY, double angularZ)
     msgl.twist.twist.linear.x = vx;
     msgl.twist.twist.linear.y = vy;
     msgl.twist.twist.angular.z = vtheta;
-    msgl.twist.covariance = odom_twist_covariance;
+    // msgl.twist.covariance = odom_twist_covariance;
 
     pub.publish(msgl);
+    publishImuSensor();
     return true;
+}
+
+void MyAGV::publishImuSensor()
+{
+    if (!publish_imu) {
+        return;
+    }
+
+    sensor_msgs::Imu msg;
+    msg.header.stamp = currentTime;
+    msg.header.frame_id = imu_frame_id;
+
+    // The base MCU packet contains accel and gyro only. Mark orientation as
+    // unavailable so downstream filters do not treat the identity quaternion as
+    // a measured attitude.
+    msg.orientation.w = 1.0;
+    msg.orientation_covariance[0] = -1.0;
+
+    msg.angular_velocity.x = wx;
+    msg.angular_velocity.y = wy;
+    msg.angular_velocity.z = wz;
+
+    msg.linear_acceleration.x = ax;
+    msg.linear_acceleration.y = ay;
+    msg.linear_acceleration.z = az;
+
+    pub_imu.publish(msg);
 }
