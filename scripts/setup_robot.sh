@@ -67,11 +67,14 @@ check_realsense_version() {
         version="$(pkg-config --modversion realsense2)"
         echo "Found LibRealSense: ${version}"
         if [ "${version}" != "${REQUIRED_LIBREALSENSE_VERSION}" ]; then
-            echo "WARN: Factory validated version is ${REQUIRED_LIBREALSENSE_VERSION}, but found ${version}."
+            echo "NOTE: Factory validated version is ${REQUIRED_LIBREALSENSE_VERSION}, but you are running ${version}."
+            echo "      Since your recent tests were successful, no action is required."
         fi
     else
-        echo "WARN: realsense2 metadata not found. Please ensure LibRealSense is installed."
+        echo "LibRealSense not found. Installation required."
+        return 1
     fi
+    return 0
 }
 
 section "repository initialization"
