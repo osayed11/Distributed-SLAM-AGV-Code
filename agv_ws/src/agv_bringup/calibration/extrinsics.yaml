@@ -79,10 +79,12 @@ camera_link_to_imu:
   source: "factory_sdk_tf_static"
   date: "2026-03-15"
 
-# Odometry wheel calibration (feeds into odom frame accuracy)
-# Update base.yaml after physical calibration tests.
+# Base physical measurements. Documentation only: myagv_odometry_node currently
+# integrates chassis velocities returned by the STM32, not raw wheel encoder
+# ticks, so wheel_radius_m and wheel_base_m do not affect /odom.
 odometry:
-  wheel_radius_m: 0.06      # PLACEHOLDER — calibrate by driving measured distance
-  wheel_base_m: 0.32        # PLACEHOLDER — calibrate by 360-degree turn test
+  wheel_radius_m: 0.0385
+  wheel_base_m: 0.211
+  source: "robot-side base.yaml values observed before runtime config cleanup"
   linear_error_1m: ~        # measured % error driving 1m straight
   angular_error_360deg: ~   # measured degree error on full 360 turn

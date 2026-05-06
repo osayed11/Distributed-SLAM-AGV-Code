@@ -1,0 +1,42 @@
+<launch>
+  <arg name="enable_imu" default="false" />
+  <arg name="enable_realsense_sync" default="false" />
+  <arg name="initial_reset" default="true" />
+  <arg name="image_topic" default="/camera/color/image_raw" />
+  <arg name="camera_info_topic" default="/camera/color/camera_info" />
+  <arg name="dictionary" default="original" />
+  <arg name="marker_size" default="0.15" />
+  <arg name="target_id" default="503" />
+  <arg name="print_period" default="0.5" />
+  <arg name="publish_image" default="false" />
+  <arg name="publish_pose" default="true" />
+  <arg name="pose_topic" default="/aruco/target_pose" />
+
+  <!-- Colour-only RealSense launch for marker tests. This avoids the extra
+       depth/alignment/laser/base load used by full dataset bringup. -->
+  <include file="$(find realsense2_camera)/launch/rs_camera.launch">
+    <arg name="align_depth" value="false" />
+    <arg name="enable_pointcloud" value="false" />
+    <arg name="enable_sync" value="$(arg enable_realsense_sync)" />
+    <arg name="enable_depth" value="false" />
+    <arg name="enable_color" value="true" />
+    <arg name="color_width" value="640" />
+    <arg name="color_height" value="480" />
+    <arg name="color_fps" value="15" />
+    <arg name="enable_accel" value="$(arg enable_imu)" />
+    <arg name="enable_gyro" value="$(arg enable_imu)" />
+    <arg name="initial_reset" value="$(arg initial_reset)" />
+  </include>
+
+  <include file="$(find agv_bringup)/launch/aruco.launch">
+    <arg name="image_topic" value="$(arg image_topic)" />
+    <arg name="camera_info_topic" value="$(arg camera_info_topic)" />
+    <arg name="dictionary" value="$(arg dictionary)" />
+    <arg name="marker_size" value="$(arg marker_size)" />
+    <arg name="target_id" value="$(arg target_id)" />
+    <arg name="print_period" value="$(arg print_period)" />
+    <arg name="publish_image" value="$(arg publish_image)" />
+    <arg name="publish_pose" value="$(arg publish_pose)" />
+    <arg name="pose_topic" value="$(arg pose_topic)" />
+  </include>
+</launch>

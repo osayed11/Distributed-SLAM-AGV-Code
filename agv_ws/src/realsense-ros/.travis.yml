@@ -8,7 +8,7 @@ matrix:
   # - git clone -v --progress https://github.com/doronhi/realsense.git  # This is Done automatically by TravisCI
 before_install:
   - if [[ $(lsb_release -sc) == "xenial" ]]; then _python=python; _ros_dist=kinetic;
-    elif [[ $(lsb_release -sc) == "bionic" ]]; then _python=python; _ros_dist=noetic;
+    elif [[ $(lsb_release -sc) == "bionic" ]]; then _python=python; _ros_dist=melodic;
     elif [[ $(lsb_release -sc) == "focal" ]]; then _python=python3; _ros_dist=noetic; fi
   - echo _python:$_python
   - echo _ros_dist:$_ros_dist

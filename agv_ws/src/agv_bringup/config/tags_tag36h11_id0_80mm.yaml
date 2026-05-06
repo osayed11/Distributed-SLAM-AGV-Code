@@ -1,0 +1,5 @@
+# Laptop-screen AprilTag smoke test: tag36h11, id 0, 80 mm code size.
+standalone_tags:
+  - id: 0
+    size: 0.08
+    name: "tag_0"

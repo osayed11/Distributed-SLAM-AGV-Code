@@ -1,3 +1,5 @@
+# Size is the AprilTag code side length in metres, as expected by apriltag_ros.
+# Pose scale is only accurate if this matches the printed tag you are testing.
 standalone_tags:
   - id: 0
     size: 0.1

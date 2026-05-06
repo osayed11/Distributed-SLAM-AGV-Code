@@ -28,7 +28,7 @@ jobs:
           ros_distro: 'noetic'
           _python: 'python3'
         - os: ubuntu-18.04
-          ros_distro: 'noetic'
+          ros_distro: 'melodic'
           _python: 'python'
 
     steps:   

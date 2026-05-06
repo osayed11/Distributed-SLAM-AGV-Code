@@ -11,11 +11,13 @@
 #include <boost/asio.hpp>
 #include <string>
 
+
 class MyAGV
 {
 public:
 	MyAGV();
 	~MyAGV();
+
 	bool init();
 	bool execute(double linearX, double linearY, double angularZ);
 
@@ -52,11 +54,10 @@ private:
 	double linear_scale;
 	double lateral_scale;
 	double angular_scale;
-	double wheel_radius;
-	double wheel_base;
-	bool debug_output;
 	bool publish_imu;
 	std::string imu_frame_id;
+	bool debug_output;
 };
 
-#endif
+
+#endif // !MYAGV_H

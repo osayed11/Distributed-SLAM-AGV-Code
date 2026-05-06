@@ -38,14 +38,29 @@ if(SET_USER_BREAK_AT_STARTUP)
 	set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DBPDEBUG")
 endif()
 
-if (WIN32)
-find_package(realsense2 CONFIG REQUIRED)
-else()
-find_package(realsense2 2.50.0)
+if(NOT realsense2_DIR AND EXISTS "/usr/local/lib/cmake/realsense2/realsense2Config.cmake")
+    set(realsense2_DIR "/usr/local/lib/cmake/realsense2")
+endif()
+
+find_package(realsense2 2.50.0 CONFIG QUIET)
+if(NOT realsense2_FOUND AND NOT WIN32)
+    find_package(realsense2 2.50.0)
 endif()
 
 if(NOT realsense2_FOUND)
     message(FATAL_ERROR "\n\n Intel RealSense SDK 2.0 is missing, please install it from https://github.com/IntelRealSense/librealsense/releases\n\n")
+endif()
+
+if(TARGET realsense2::realsense2)
+    get_target_property(_realsense2_INCLUDE_DIRS realsense2::realsense2 INTERFACE_INCLUDE_DIRECTORIES)
+    if(_realsense2_INCLUDE_DIRS)
+        set(realsense2_INCLUDE_DIR ${_realsense2_INCLUDE_DIRS})
+    endif()
+    set(realsense2_LIBRARY realsense2::realsense2)
+endif()
+
+if(EXISTS "/usr/local/include/librealsense2/rs.hpp")
+    list(INSERT realsense2_INCLUDE_DIR 0 "/usr/local/include")
 endif()
 
 if(NOT CMAKE_BUILD_TYPE)
@@ -84,9 +99,11 @@ generate_messages(
     )
 
 set(CMAKE_NO_SYSTEM_FROM_IMPORTED true)
+include_directories(BEFORE
+    ${realsense2_INCLUDE_DIR}
+    )
 include_directories(
     include
-    ${realsense2_INCLUDE_DIR}
     ${catkin_INCLUDE_DIRS}
     )
 
@@ -115,6 +132,7 @@ add_dependencies(${PROJECT_NAME} ${PROJECT_NAME}_generate_messages_cpp)
 add_dependencies(${PROJECT_NAME} ${catkin_EXPORTED_TARGETS})
 
 target_include_directories(${PROJECT_NAME}
+  BEFORE
   PRIVATE ${realsense2_INCLUDE_DIR})
 
 target_link_libraries(${PROJECT_NAME}
@@ -158,4 +176,3 @@ install(DIRECTORY rviz/
 install(FILES nodelet_plugins.xml
     DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION}
     )
-

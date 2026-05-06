@@ -1,0 +1,25 @@
+<launch>
+  <arg name="image_topic" default="/camera/color/image_raw" />
+  <arg name="camera_info_topic" default="/camera/color/camera_info" />
+  <arg name="dictionary" default="original" />
+  <arg name="marker_size" default="0.15" />
+  <arg name="target_id" default="503" />
+  <arg name="print_period" default="0.5" />
+  <arg name="publish_image" default="false" />
+  <arg name="publish_pose" default="true" />
+  <arg name="pose_topic" default="/aruco/target_pose" />
+
+  <node pkg="agv_bringup"
+        type="aruco_monitor.py"
+        name="aruco_monitor"
+        output="screen"
+        args="--image-topic $(arg image_topic)
+              --camera-info-topic $(arg camera_info_topic)
+              --dictionary $(arg dictionary)
+              --marker-size $(arg marker_size)
+              --target-id $(arg target_id)
+              --print-period $(arg print_period)
+              --publish-image $(arg publish_image)
+              --publish-pose $(arg publish_pose)
+              --pose-topic $(arg pose_topic)" />
+</launch>

@@ -1,14 +1,14 @@
 #include <vector>
 #include <iostream>
 #include <iomanip>
+#include <cmath>
 
 #include "myagv_odometry/myAGV.h"
 
+//const unsigned char ender[2] = { 0x0d, 0x0a };
 const unsigned char header[2] = { 0xfe, 0xfe };
 const double DEG_TO_RAD = 3.14159265358979323846 / 180.0;
 const double STANDARD_GRAVITY = 9.80665;
-
-//const unsigned char ender[2] = { 0x0d, 0x0a };
 //const int SPEED_INFO = 0xa55a;
 //const int GET_SPEED = 0xaaaa;
 //const double ROBOT_RADIUS = 105.00;
@@ -56,8 +56,6 @@ MyAGV::MyAGV() : private_n("~")
     linear_scale = 1.0;
     lateral_scale = 1.0;
     angular_scale = 1.0;
-    wheel_radius = 0.0;
-    wheel_base = 0.0;
     publish_imu = true;
     imu_frame_id = "imu_link";
     debug_output = false;
@@ -76,8 +74,6 @@ bool MyAGV::init()
     private_n.param<double>("linear_scale", linear_scale, 1.0);
     private_n.param<double>("lateral_scale", lateral_scale, linear_scale);
     private_n.param<double>("angular_scale", angular_scale, 1.0);
-    private_n.param<double>("wheel_radius", wheel_radius, 0.0);
-    private_n.param<double>("wheel_base", wheel_base, 0.0);
     private_n.param<bool>("publish_imu", publish_imu, true);
     private_n.param<std::string>("imu_frame_id", imu_frame_id, "imu_link");
     private_n.param<bool>("debug_output", debug_output, false);
@@ -101,9 +97,9 @@ bool MyAGV::init()
 
     sp.open(serial_port);
     ROS_INFO("Opened serial port: %s", serial_port.c_str());
-    ROS_INFO("myAGV odom config: baud=%d linear_scale=%.6f lateral_scale=%.6f angular_scale=%.6f wheel_radius=%.6f wheel_base=%.6f",
+    ROS_INFO("myAGV odom config: baud=%d linear_scale=%.6f lateral_scale=%.6f angular_scale=%.6f debug_output=%s",
              baud_rate, linear_scale, lateral_scale, angular_scale,
-             wheel_radius, wheel_base);
+             debug_output ? "true" : "false");
 
     sp.set_option(boost::asio::serial_port::baud_rate(baud_rate));
     sp.set_option(boost::asio::serial_port::flow_control(boost::asio::serial_port::flow_control::none));
@@ -156,13 +152,62 @@ bool MyAGV::readSpeed()
         header_found = true;
     }
 
+    // if (!(buf_header[0] == header[0] && buf_header[1] == header[1]))  {
+    //     // not a header
+    //     return false;
+    // }
+
     ret = boost::asio::read(sp, boost::asio::buffer(buf), boost::asio::transfer_at_least(16), er2); // ready break
     if (ret != 16) {
         ROS_ERROR("Read error");
         return false;
     }
+    // for (int i = 0; i < ret; ++i) {
+    //     std::cout << std::hex << std::setfill('0') << std::setw(2) << (int)(buf[i]) << " ";
+    // }
+    // std::cout << std::endl;
+
+
+    // if (ret < 18) {
+    //     //ROS_ERROR("Read less error");
+    //     return false;
+    // }
+    // bool header_ok = false;
+    // int header_idx = 0;
+    // for (int i = 0; i < (ret-17); ++i) {
+    //     if (buf[i] == header[0] && buf[i+1] == header[1])  {
+    //         header_ok = true;
+    //         header_idx = i;
+    //         break;
+    //     }
+    // }
+    // if (!header_ok) {
+    //     //ROS_ERROR("Cannot find header");
+    //     return false;
+    // }
+
+
+    //ROS_INFO("RED BYTES: %ul", ret);
+	// if (er2 == boost::asio::error::eof){ 
+	// 	// ROS_ERROR("asio error 1");
+	// }
+
+
+    // int index = 0;
+    // for (index = 0; index < 40 - 17; ++index)
+    // {
+    //     if(buf[index] == header[0] && buf[index] == header[1])
+    //         break;
+    // }
+
+    // if (index == 40 - 18)
+    // {
+    //     ROS_ERROR("Received message header error!");
+    //     //return false;
+    // }
 
     int index = 0;
+    //index += 2;
     int check = 0;
     for (int i = 0; i < 15; ++i)
         check += buf[index + i];
@@ -196,6 +241,11 @@ bool MyAGV::readSpeed()
     theta += delta_th;
     lastTime = currentTime;
 
+    // std::cout << "Received message is: " << dt << "|" << vx << "," << vy << "," << vtheta << "|"
+    //                                       << ax << "," << ay << "," << az << "|"
+    //                                     << wx << "," << wy << "," << wz << std::endl;
+    // std::cout << "current pos is: " << x << "," << y << "," << theta << std::endl;
+
     return true;
 }
 
@@ -208,6 +258,10 @@ void MyAGV::writeSpeed(double movex, double movey, double rot)
     if (rot > 1.0) rot = 1.0;
     if (rot < -1.0) rot = -1.0;
 
+    //char x_send = static_cast<char>(movex * 100) + 128;
+    //char y_send = static_cast<char>(movey * 100) + 128;
+    //char rot_send = static_cast<char>(rot * 100) + 128;
+   //char check = x_send + y_send + rot_send;
     unsigned char x_send = static_cast<signed char>(movex * 100) + 128;
     unsigned char y_send = static_cast<signed char>(movey * 100) + 128;
     unsigned char rot_send = static_cast<signed char>(rot * 100) + 128;
@@ -228,6 +282,33 @@ void MyAGV::writeSpeed(double movex, double movey, double rot)
     boost::asio::write(sp, boost::asio::buffer(buf));
 }
 
+void MyAGV::publishImuSensor()
+{
+    if (!publish_imu) {
+        return;
+    }
+
+    sensor_msgs::Imu msg;
+    msg.header.stamp = currentTime;
+    msg.header.frame_id = imu_frame_id;
+
+    // The base MCU packet contains accel and gyro only. Mark orientation as
+    // unavailable so downstream filters do not treat the identity quaternion as
+    // a measured attitude.
+    msg.orientation.w = 1.0;
+    msg.orientation_covariance[0] = -1.0;
+
+    msg.angular_velocity.x = wx;
+    msg.angular_velocity.y = wy;
+    msg.angular_velocity.z = wz;
+
+    msg.linear_acceleration.x = ax;
+    msg.linear_acceleration.y = ay;
+    msg.linear_acceleration.z = az;
+
+    pub_imu.publish(msg);
+}
+
 bool MyAGV::execute(double linearX, double linearY, double angularZ)
 {
     if (debug_output) {
@@ -235,8 +316,9 @@ bool MyAGV::execute(double linearX, double linearY, double angularZ)
     }
     writeSpeed(linearX, linearY, angularZ);
 
-	
-    readSpeed(); // easy to report error 
+    if (!readSpeed()) {
+        return false;
+    }
 
     geometry_msgs::TransformStamped odom_trans;
     odom_trans.header.stamp = currentTime;
@@ -267,36 +349,9 @@ bool MyAGV::execute(double linearX, double linearY, double angularZ)
     msgl.twist.twist.linear.x = vx;
     msgl.twist.twist.linear.y = vy;
     msgl.twist.twist.angular.z = vtheta;
-    // msgl.twist.covariance = odom_twist_covariance;
+    msgl.twist.covariance = odom_twist_covariance;
 
     pub.publish(msgl);
     publishImuSensor();
     return true;
-}
-
-void MyAGV::publishImuSensor()
-{
-    if (!publish_imu) {
-        return;
-    }
-
-    sensor_msgs::Imu msg;
-    msg.header.stamp = currentTime;
-    msg.header.frame_id = imu_frame_id;
-
-    // The base MCU packet contains accel and gyro only. Mark orientation as
-    // unavailable so downstream filters do not treat the identity quaternion as
-    // a measured attitude.
-    msg.orientation.w = 1.0;
-    msg.orientation_covariance[0] = -1.0;
-
-    msg.angular_velocity.x = wx;
-    msg.angular_velocity.y = wy;
-    msg.angular_velocity.z = wz;
-
-    msg.linear_acceleration.x = ax;
-    msg.linear_acceleration.y = ay;
-    msg.linear_acceleration.z = az;
-
-    pub_imu.publish(msg);
 }

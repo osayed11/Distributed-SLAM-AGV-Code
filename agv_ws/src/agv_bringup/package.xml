@@ -4,11 +4,12 @@
   <version>0.1.0</version>
   <description>Robot-side bringup, calibration, and dataset logging launch files for the AGV SLAM dataset.</description>
 
-  <maintainer email="slam@gmail.com">AGV Dataset Team</maintainer>
+  <maintainer email="agv-dataset@example.com">AGV Dataset Team</maintainer>
   <license>UNLICENSED</license>
 
   <buildtool_depend>catkin</buildtool_depend>
 
+  <depend>cv_bridge</depend>
   <depend>diagnostic_msgs</depend>
   <depend>geometry_msgs</depend>
   <depend>nav_msgs</depend>
@@ -20,6 +21,7 @@
   <depend>tf2_msgs</depend>
 
   <exec_depend>apriltag_ros</exec_depend>
+  <exec_depend>python-opencv</exec_depend>
   <exec_depend>realsense2_camera</exec_depend>
   <exec_depend>ydlidar_ros_driver</exec_depend>
   <exec_depend>myagv_odometry</exec_depend>
