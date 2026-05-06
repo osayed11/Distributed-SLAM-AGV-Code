@@ -11,7 +11,7 @@
   <arg name="scenario"   default="$(optenv SCENARIO unknown_scenario)" />
   <arg name="datestamp"  default="$(optenv DATESTAMP 000000_000000)" />
   <arg name="mocap_topic" default="$(optenv MOCAP_TOPIC /phasespace/rigids)" />
-  <arg name="enable_imu" default="$(optenv ENABLE_IMU false)" />
+  <arg name="enable_imu" default="$(optenv ENABLE_IMU true)" />
 
   <include file="$(find agv_bringup)/launch/bringup.launch">
     <arg name="enable_imu" value="$(arg enable_imu)" />
@@ -33,11 +33,7 @@
               /camera/aligned_depth_to_color/image_raw
               /camera/aligned_depth_to_color/camera_info
               /camera/extrinsics/depth_to_color
-              /camera/imu
-              /camera/accel/sample
-              /camera/gyro/sample
-              /camera/accel/imu_info
-              /camera/gyro/imu_info
+              /imu
               /diagnostics
               /tag_detections
               $(arg mocap_topic)
