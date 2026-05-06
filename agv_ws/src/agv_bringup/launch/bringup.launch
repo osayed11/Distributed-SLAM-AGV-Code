@@ -53,6 +53,9 @@
       <arg name="enable_accel"        value="false"/>
       <arg name="enable_gyro"         value="false"/>
       <arg name="unite_imu_method"    value="none"/>
+      <arg name="global_time_enabled" value="false"/>
+      <arg name="initial_reset"       value="true"/>
+      <arg name="allow_no_texture_points" value="true"/>
   </include>
 
 </launch>
