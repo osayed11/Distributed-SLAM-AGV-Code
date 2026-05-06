@@ -11,7 +11,6 @@
 #include <boost/asio.hpp>
 #include <string>
 
-
 class MyAGV
 {
 public:
@@ -59,5 +58,4 @@ private:
 	bool debug_output;
 };
 
-
-#endif // !MYAGV_H
+#endif
