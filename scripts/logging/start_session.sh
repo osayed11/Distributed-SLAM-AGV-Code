@@ -19,6 +19,9 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 
+# Force disable RealSense time-sync polling to prevent USB overflows/hwmon errors
+export RS2_GLOBAL_TIME_ENABLED=0
+
 # ---------------------------------------------------------------------------
 # Args
 # ---------------------------------------------------------------------------
@@ -70,7 +73,7 @@ echo "  [i] chrony snapshot: ${CHRONY_FILE}"
 # If logging.launch is allowed to start bringup itself these checks may warn
 # before sensors exist; validate_bag.py remains the authoritative post-run gate.
 REQUIRED_TOPICS="/scan /odom /tf /camera/color/image_raw /camera/aligned_depth_to_color/image_raw"
-OPTIONAL_TOPICS="/camera/imu /camera/accel/sample /camera/gyro/sample"
+OPTIONAL_TOPICS="/imu /camera/imu /camera/accel/sample /camera/gyro/sample"
 GROUND_TRUTH_TOPICS="${MOCAP_TOPIC} /mocap"
 ALL_OK=true
 
@@ -120,7 +123,7 @@ else
 
     if [ "$REQUIRE_IMU" = true ]; then
         IMU_OK=false
-        for topic in /camera/imu /camera/accel/sample /camera/gyro/sample; do
+        for topic in /imu /camera/imu /camera/accel/sample /camera/gyro/sample; do
             if timeout 4 rostopic hz "$topic" --window 10 2>/dev/null | grep -q "average rate"; then
                 IMU_OK=true
                 break

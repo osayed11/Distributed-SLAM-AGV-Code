@@ -40,16 +40,6 @@
        motion module publishes IMU only when video streams are disabled. Keep
        enable_imu=false for reliable RGB-D dataset recording until that driver/
        device issue is fixed. align_depth is required for RGB-D SLAM. -->
-  <!-- Force disable all time sync variants globally in the camera namespace -->
-  <group ns="camera">
-    <env name="RS2_GLOBAL_TIME_ENABLED" value="0"/>
-    <param name="enable_global_time" value="false"/>
-    <param name="global_time_enabled" value="false"/>
-    
-    <!-- UK 50Hz Anti-flicker -->
-    <param name="rgb_camera/power_line_frequency" value="1"/>
-  </group>
-
   <include file="$(find realsense2_camera)/launch/rs_camera.launch">
       <arg name="align_depth"         value="true"/>
       <arg name="enable_pointcloud"   value="false"/>
