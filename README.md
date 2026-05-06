@@ -14,6 +14,7 @@ On a fresh or updated robot, use one of the following methods to retrieve the st
 **Option A: Standard Clone (Try this first)**
 ```bash
 git clone https://github.com/osayed11/Distributed-SLAM-AGV-Code.git ~/slam_project
+cd slam_project
 bash scripts/setup_robot.sh
 ```
 
@@ -399,3 +400,4 @@ For each robot:
 4. Record with `bash scripts/logging/start_session.sh <robot_name> <scenario>`.
 5. Keep robot bags and any separate PhaseSpace logs named with the same robot/scenario/timestamp convention.
 6. Before each run, confirm chrony on robot and mocap machines if ground truth is recorded separately.
+
