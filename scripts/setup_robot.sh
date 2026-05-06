@@ -110,6 +110,21 @@ if [ "$INSTALL_SYSTEM" = true ]; then
     fi
 
     sudo systemctl enable --now chrony 2>/dev/null || sudo service chrony restart || true
+
+    # --- RealSense ROS Wrapper Management ---
+    section "checking realsense-ros"
+    RS_SRC="${ROOT}/agv_ws/src/realsense-ros"
+    if [ ! -d "${RS_SRC}" ]; then
+        echo "Cloning realsense-ros..."
+        mkdir -p "${ROOT}/agv_ws/src"
+        git clone https://github.com/IntelRealSense/realsense-ros.git "${RS_SRC}"
+    fi
+    
+    cd "${RS_SRC}"
+    echo "Updating realsense-ros to stable ros1-legacy branch..."
+    git remote add upstream https://github.com/IntelRealSense/realsense-ros.git || true
+    git fetch upstream
+    git checkout upstream/ros1-legacy
 fi
 
 if [ ! -f "/opt/ros/noetic/setup.bash" ]; then
