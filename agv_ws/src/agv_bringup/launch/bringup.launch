@@ -43,7 +43,7 @@
   <include file="$(find realsense2_camera)/launch/rs_camera.launch">
       <arg name="align_depth"         value="true"/>
       <arg name="enable_pointcloud"   value="false"/>
-      <arg name="enable_sync"         value="$(arg enable_realsense_sync)"/>
+      <arg name="enable_sync"         value="false"/>
       <arg name="color_width"         value="640"/>
       <arg name="color_height"        value="480"/>
       <arg name="color_fps"           value="15"/>
