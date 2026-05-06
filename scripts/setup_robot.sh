@@ -6,6 +6,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 INSTALL_SYSTEM=true
+REQUIRED_LIBREALSENSE_VERSION="2.57.6"
 
 for arg in "$@"; do
     case "$arg" in
@@ -59,8 +60,23 @@ ensure_file() {
     fi
 }
 
+check_realsense_version() {
+    section "realsense sdk version check"
+    if command -v pkg-config >/dev/null 2>&1 && pkg-config --exists realsense2; then
+        local version
+        version="$(pkg-config --modversion realsense2)"
+        echo "Found LibRealSense: ${version}"
+        if [ "${version}" != "${REQUIRED_LIBREALSENSE_VERSION}" ]; then
+            echo "WARN: Factory validated version is ${REQUIRED_LIBREALSENSE_VERSION}, but found ${version}."
+        fi
+    else
+        echo "WARN: realsense2 metadata not found. Please ensure LibRealSense is installed."
+    fi
+}
+
 section "repository initialization"
 echo "root: ${ROOT}"
+check_realsense_version
 ensure_file "${ROOT}/agv_ws/.catkin_workspace"
 
 ensure_swap
@@ -100,19 +116,30 @@ if [ "$INSTALL_SYSTEM" = true ]; then
         
         # Install ARM64 compatible packages (Skipping DKMS)
         sudo apt-get install -y librealsense2-utils librealsense2-dev librealsense2-dbg
-
-        # Apply udev rules for camera access
-        wget -q https://raw.githubusercontent.com/IntelRealSense/librealsense/master/config/99-realsense-libusb.rules
-        sudo mv 99-realsense-libusb.rules /etc/udev/rules.d/
-        sudo udevadm control --reload-rules && sudo udevadm trigger
     else
         echo "RealSense SDK already installed."
     fi
 
     sudo systemctl enable --now chrony 2>/dev/null || sudo service chrony restart || true
-
-    sudo systemctl enable --now chrony 2>/dev/null || sudo service chrony restart || true
 fi
+
+section "hardware rules"
+# 1. RealSense Camera Rules
+if [ ! -f "/etc/udev/rules.d/99-realsense-libusb.rules" ]; then
+    echo "Installing RealSense udev rules..."
+    wget -q https://raw.githubusercontent.com/IntelRealSense/librealsense/master/config/99-realsense-libusb.rules
+    sudo mv 99-realsense-libusb.rules /etc/udev/rules.d/
+fi
+
+# 2. AGV Base Controller Rule (/dev/myAGV)
+echo "Installing AGV base controller rules..."
+echo 'KERNEL=="ttyACM*", ATTRS{idVendor}=="0483", ATTRS{idProduct}=="5740", MODE:="0666", SYMLINK+="myAGV"' | sudo tee /etc/udev/rules.d/99-myagv-base.rules > /dev/null
+
+# 3. YDLidar X2 Rule (/dev/ydlidar)
+echo "Installing YDLidar rules..."
+echo 'KERNEL=="ttyUSB*", ATTRS{idVendor}=="10c4", ATTRS{idProduct}=="ea60", MODE:="0666", SYMLINK+="ydlidar"' | sudo tee /etc/udev/rules.d/99-ydlidar.rules > /dev/null
+
+sudo udevadm control --reload-rules && sudo udevadm trigger
 
 if [ ! -f "/opt/ros/noetic/setup.bash" ]; then
     echo "ERROR: ROS Noetic not found at /opt/ros/noetic/setup.bash" >&2

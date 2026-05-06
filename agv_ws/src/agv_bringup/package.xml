@@ -21,7 +21,7 @@
   <depend>tf2_msgs</depend>
 
   <exec_depend>apriltag_ros</exec_depend>
-  <exec_depend>python-opencv</exec_depend>
+  <exec_depend>python3-opencv</exec_depend>
   <exec_depend>realsense2_camera</exec_depend>
   <exec_depend>ydlidar_ros_driver</exec_depend>
   <exec_depend>myagv_odometry</exec_depend>
