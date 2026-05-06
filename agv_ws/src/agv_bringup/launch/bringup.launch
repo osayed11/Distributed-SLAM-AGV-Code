@@ -55,8 +55,7 @@
       <arg name="unite_imu_method"    value="none"/>
       <arg name="initial_reset"       value="true"/>
       <arg name="allow_no_texture_points" value="true"/>
-      
-      <!-- Parameters to silence logs and improve stability -->
+      <param name="enable_global_time" value="false"/>
       <param name="global_time_enabled" value="false"/>
   </include>
 
