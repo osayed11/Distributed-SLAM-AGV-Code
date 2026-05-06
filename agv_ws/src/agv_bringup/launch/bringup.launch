@@ -41,7 +41,7 @@
        enable_imu=false for reliable RGB-D dataset recording until that driver/
        device issue is fixed. align_depth is required for RGB-D SLAM. -->
   <include file="$(find realsense2_camera)/launch/rs_camera.launch">
-      <arg name="align_depth"         value="true"/>
+      <arg name="align_depth"         value="false"/>
       <arg name="enable_pointcloud"   value="false"/>
       <arg name="enable_sync"         value="true"/>
       <arg name="color_width"         value="640"/>
