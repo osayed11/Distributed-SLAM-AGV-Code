@@ -19,8 +19,8 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 
-# Force disable RealSense time-sync polling to prevent USB overflows/hwmon errors
-export RS2_GLOBAL_TIME_ENABLED=0
+# Security/Stability: RealSense global time sync (Disabled during troubleshooting, uncomment if needed)
+# export RS2_GLOBAL_TIME_ENABLED=0
 
 # ---------------------------------------------------------------------------
 # Args
