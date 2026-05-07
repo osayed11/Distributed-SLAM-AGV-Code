@@ -83,51 +83,26 @@ Stop recording with `Ctrl+C`. Bags and manifests are written to `~/agv_data`.
 
 Use separate terminals on the robot. Keep the robot on the floor with clear space before running motion scripts.
 
-Terminal 1, record a straight-line bag:
+
+Then record a circle bag:
 
 ```bash
-ssh ubuntu@<robot-ip>
+ssh ubuntu@xx.xxx.xx
 cd ~/slam_project
 export REQUIRE_GT=false
-export REQUIRE_IMU=false
-bash scripts/logging/start_session.sh agv1 straight_slow
-```
-
-Terminal 2, drive the straight line:
-
-```bash
-ssh ubuntu@<robot-ip>
-cd ~/slam_project
-source /opt/ros/noetic/setup.bash
-source ~/slam_project/agv_ws/devel/setup.bash
-python scripts/logging/drive_straight.py --distance 1.50 --speed 0.18
-```
-
-Stop Terminal 1 with `Ctrl+C`, then validate:
-
-```bash
-python3 scripts/logging/validate_bag.py $(ls -t ~/agv_data/*.bag | head -1)
-python scripts/logging/audit_bag_fast.py $(ls -t ~/agv_data/*.bag | head -1)
-```
-
-Then record a square bag:
-
-```bash
-ssh ubuntu@<robot-ip>
-cd ~/slam_project
-export REQUIRE_GT=false
-export REQUIRE_IMU=false
-bash scripts/logging/start_session.sh agv1 square_slow
+export REQUIRE_IMU=true
+bash scripts/logging/start_session.sh robot1 scenario1_circle_test
 ```
 
 In another terminal:
 
 ```bash
-ssh ubuntu@<robot-ip>
+ssh ubuntu@xx.xxx.xx
 cd ~/slam_project
-source /opt/ros/noetic/setup.bash
+source /opt/ros/melodic/setup.bash
+source ~/slam_project/myagv_ros/devel/setup.bash
 source ~/slam_project/agv_ws/devel/setup.bash
-python scripts/logging/drive_square.py --side 0.75 --linear 0.22 --angular 0.28 --cycles 1
+python scripts/logging/drive_circle.py --radius 1.00 --linear 0.16 --duration 60 --no-prompt --verbose
 ```
 
 Stop recording and validate again:
