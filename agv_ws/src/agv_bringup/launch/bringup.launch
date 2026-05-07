@@ -9,7 +9,7 @@
   <arg name="depth_height" default="480" />
   <arg name="depth_fps" default="15" />
 
-  <!-- 1. Start RealSense INSTANTLY -->
+  <!-- 1. Start RealSense FIRST (No delay) -->
   <include file="$(find realsense2_camera)/launch/rs_camera.launch">
       <arg name="align_depth"         value="true"/>
       <arg name="enable_pointcloud"   value="false"/>
@@ -26,37 +26,17 @@
       <arg name="enable_infra2"       value="false"/>
   </include>
 
-  <!-- 2. Start the AGV base driver (Delayed 5s) -->
+  <!-- 2. Start the AGV base driver -->
   <arg name="serial_port" default="/dev/ttyACM0" />
-  <node pkg="myagv_odometry" type="myagv_odometry_node" name="myagv_odometry_node" output="screen"
-        launch-prefix="bash -c 'sleep 5; $0 $@' ">
+  <node pkg="myagv_odometry" type="myagv_odometry_node" name="myagv_odometry_node" output="screen">
     <rosparam command="load" file="$(find agv_bringup)/config/base.yaml" />
     <param name="serial_port" value="$(arg serial_port)" />
   </node>
 
-  <!-- 3. Start the YDLIDAR X2 driver (Delayed 6s) -->
-  <node name="ydlidar_lidar_publisher"  pkg="ydlidar_ros_driver"  type="ydlidar_ros_driver_node" output="screen"
-        launch-prefix="bash -c 'sleep 6; $0 $@' " >
-    <param name="port"         type="string" value="/dev/ttyAMA0"/>  
-    <param name="frame_id"     type="string" value="laser_frame"/>
-    <param name="baudrate"         type="int" value="115200"/>  
-    <param name="lidar_type"       type="int" value="1"/>  
-    <param name="device_type"         type="int" value="0"/>  
-    <param name="sample_rate"         type="int" value="3"/>  
-    <param name="resolution_fixed"    type="bool"   value="true"/>
-    <param name="auto_reconnect"    type="bool"   value="true"/>
-    <param name="reversion"    type="bool"   value="false"/>
-    <param name="inverted"    type="bool"   value="true"/>
-    <param name="isSingleChannel"    type="bool"   value="true"/>
-    <param name="support_motor_dtr"    type="bool"   value="true"/>
-    <param name="angle_min"    type="double" value="-180" />
-    <param name="angle_max"    type="double" value="180" />
-    <param name="range_min"    type="double" value="0.1" />
-    <param name="range_max"    type="double" value="12.0" />
-    <param name="frequency"    type="double" value="10.0"/>
-  </node>
+  <!-- 3. Start the YDLIDAR X2 driver -->
+  <include file="$(find ydlidar_ros_driver)/launch/X2.launch" />
 
-  <!-- 4. Static TFs (Instant) -->
+  <!-- 4. Static TFs -->
   <node pkg="tf" type="static_transform_publisher" name="base_to_camera_link"
         args="-0.132025 0.000153 0.187925 -1.570796 -0.007906 1.570796 /base_footprint /camera_link 40" />
 
@@ -65,8 +45,5 @@
 
   <node pkg="tf" type="static_transform_publisher" name="base_to_imu_link"
         args="0.0 0.0 0.0 0.0 3.14159 3.14159 /base_footprint /imu_link 40" />
-        
-  <node pkg="tf" type="static_transform_publisher" name="base_link_to_laser4"
-        args="0.0 0.0 0.10 0.0 0.0 0.0 /base_footprint /laser_frame 40" />
 
 </launch>
