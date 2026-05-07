@@ -79,7 +79,6 @@ check_realsense_version() {
 
 section "repository initialization"
 echo "root: ${ROOT}"
-check_realsense_version
 ensure_file "${ROOT}/agv_ws/.catkin_workspace"
 
 ensure_swap
