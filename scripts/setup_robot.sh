@@ -110,12 +110,19 @@ if [ "$INSTALL_SYSTEM" = true ]; then
         ros-noetic-tf2-msgs
 
     # --- Intel RealSense SDK Automation ---
-    if ! dpkg -s librealsense2-dev >/dev/null 2>&1; then
-        echo "Configuring Intel RealSense Repo & SDK..."
-        sudo apt-key adv --keyserver keyserver.ubuntu.com --recv-key F6E65AC044F831AC80A06380C8B3A55A6F3EFCDE || \
-        sudo apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv-key F6E65AC044F831AC80A06380C8B3A55A6F3EFCDE
+    if ! check_realsense_version; then
+        echo "Configuring Intel RealSense Repo & SDK (Updated GPG Keys)..."
         
-        sudo add-apt-repository "deb https://librealsense.intel.com/Debian/apt-repo focal main" -u
+        # Cleanup old, broken entries
+        sudo add-apt-repository --remove "deb https://librealsense.intel.com/Debian/apt-repo focal main" -y || true
+        
+        # Modern key installation (fixes NO_PUBKEY FB0B24895113F120)
+        sudo mkdir -p /etc/apt/keyrings
+        curl -sSf https://librealsense.intel.com/Debian/librealsense.gpg | sudo tee /etc/apt/keyrings/librealsense.gpg > /dev/null
+        
+        # Register the repository using the modern keyring
+        echo "deb [signed-by=/etc/apt/keyrings/librealsense.gpg] https://librealsense.intel.com/Debian/apt-repo focal main" | sudo tee /etc/apt/sources.list.d/librealsense.list > /dev/null
+        sudo apt-get update
         
         # Install ARM64 compatible packages (Skipping DKMS)
         sudo apt-get install -y librealsense2-utils librealsense2-dev librealsense2-dbg
