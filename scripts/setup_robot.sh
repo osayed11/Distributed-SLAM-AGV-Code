@@ -83,9 +83,14 @@ ensure_file "${ROOT}/agv_ws/.catkin_workspace"
 
 ensure_swap
 
-if [ "$INSTALL_SYSTEM" = true ]; then
-    section "system dependencies"
-    sudo apt-get update
+    if [ "$INSTALL_SYSTEM" = true ]; then
+        section "system dependencies"
+        
+        # Refresh ROS 1 GPG key (fixes EXPKEYSIG F42ED6FBAB17C654)
+        echo "Refreshing ROS 1 GPG Key..."
+        sudo apt-key adv --keyserver 'hkp://keyserver.ubuntu.com:80' --recv-key C1CF6E31E6BADE8868B172B4F42ED6FBAB17C654 || true
+        
+        sudo apt-get update
     sudo apt-get install -y \
         build-essential \
         chrony \
