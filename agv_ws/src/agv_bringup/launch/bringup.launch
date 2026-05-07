@@ -9,30 +9,8 @@
   <arg name="depth_height" default="480" />
   <arg name="depth_fps" default="15" />
 
-  <!-- 1. Start the AGV base driver -->
-  <arg name="serial_port" default="/dev/ttyACM0" />
-  <node pkg="myagv_odometry" type="myagv_odometry_node" name="myagv_odometry_node" output="screen">
-    <rosparam command="load" file="$(find agv_bringup)/config/base.yaml" />
-    <param name="serial_port" value="$(arg serial_port)" />
-  </node>
-
-  <!-- 2. Start the YDLIDAR X2 driver -->
-  <include file="$(find ydlidar_ros_driver)/launch/X2.launch" />
-
-  <!-- 3. Static TFs -->
-  <node pkg="tf" type="static_transform_publisher" name="base_to_camera_link"
-        args="-0.132025 0.000153 0.187925 -1.570796 -0.007906 1.570796 /base_footprint /camera_link 40" />
-
-  <node pkg="tf" type="static_transform_publisher" name="base_footprint_to_base_link"
-        args="0.0 0.0 0.0 0.0 0.0 0.0 /base_footprint /base_link 40" />
-
-  <node pkg="tf" type="static_transform_publisher" name="base_to_imu_link"
-        args="0.0 0.0 0.0 0.0 3.14159 3.14159 /base_footprint /imu_link 40" />
-
-  <!-- 4. RealSense D455 with a 5-second STAGGERED START -->
-  <!-- The launch-prefix ensures the USB bus is quiet before the camera starts -->
-  <include file="$(find realsense2_camera)/launch/rs_camera.launch" 
-           pass_all_args="true">
+  <!-- 1. Start RealSense FIRST (Needs maximum bandwidth/power to initialize) -->
+  <include file="$(find realsense2_camera)/launch/rs_camera.launch">
       <arg name="align_depth"         value="true"/>
       <arg name="enable_pointcloud"   value="false"/>
       <arg name="enable_sync"         value="$(arg enable_realsense_sync)"/>
@@ -44,9 +22,28 @@
       <arg name="depth_fps"           value="$(arg depth_fps)"/>
       <arg name="enable_accel"        value="false"/>
       <arg name="enable_gyro"         value="false"/>
-      
-      <!-- This delay is the key to clean logs -->
-      <!-- <arg name="launch-prefix"       value="bash -c 'sleep 5; $0 $@' " /> -->
+      <arg name="enable_infra1"       value="false"/>
+      <arg name="enable_infra2"       value="false"/>
   </include>
+
+  <!-- 2. Start the AGV base driver (Once camera is locked) -->
+  <arg name="serial_port" default="/dev/ttyACM0" />
+  <node pkg="myagv_odometry" type="myagv_odometry_node" name="myagv_odometry_node" output="screen">
+    <rosparam command="load" file="$(find agv_bringup)/config/base.yaml" />
+    <param name="serial_port" value="$(arg serial_port)" />
+  </node>
+
+  <!-- 3. Start the YDLIDAR X2 driver -->
+  <include file="$(find ydlidar_ros_driver)/launch/X2.launch" />
+
+  <!-- 4. Static TFs -->
+  <node pkg="tf" type="static_transform_publisher" name="base_to_camera_link"
+        args="-0.132025 0.000153 0.187925 -1.570796 -0.007906 1.570796 /base_footprint /camera_link 40" />
+
+  <node pkg="tf" type="static_transform_publisher" name="base_footprint_to_base_link"
+        args="0.0 0.0 0.0 0.0 0.0 0.0 /base_footprint /base_link 40" />
+
+  <node pkg="tf" type="static_transform_publisher" name="base_to_imu_link"
+        args="0.0 0.0 0.0 0.0 3.14159 3.14159 /base_footprint /imu_link 40" />
 
 </launch>
