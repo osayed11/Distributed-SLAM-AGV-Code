@@ -113,15 +113,18 @@ if [ "$INSTALL_SYSTEM" = true ]; then
     if ! check_realsense_version; then
         echo "Configuring Intel RealSense Repo & SDK (Updated GPG Keys)..."
         
-        # Cleanup old, broken entries
-        sudo add-apt-repository --remove "deb https://librealsense.intel.com/Debian/apt-repo focal main" -y || true
+        # Nuclear cleanup of old/broken realsense sources
+        sudo rm -f /etc/apt/sources.list.d/realsense* || true
+        sudo rm -f /etc/apt/sources.list.d/librealsense* || true
+        sudo sed -i '/librealsense.intel.com/d' /etc/apt/sources.list || true
         
-        # Modern key installation (fixes NO_PUBKEY FB0B24895113F120)
+        # Force-add the new key via the modern keyring method
         sudo mkdir -p /etc/apt/keyrings
         curl -sSf https://librealsense.intel.com/Debian/librealsense.gpg | sudo tee /etc/apt/keyrings/librealsense.gpg > /dev/null
         
-        # Register the repository using the modern keyring
+        # Add the clean, signed source
         echo "deb [signed-by=/etc/apt/keyrings/librealsense.gpg] https://librealsense.intel.com/Debian/apt-repo focal main" | sudo tee /etc/apt/sources.list.d/librealsense.list > /dev/null
+        
         sudo apt-get update
         
         # Install ARM64 compatible packages (Skipping DKMS)
@@ -136,9 +139,13 @@ fi
 section "hardware rules"
 # 1. RealSense Camera Rules
 if [ ! -f "/etc/udev/rules.d/99-realsense-libusb.rules" ]; then
-    echo "Installing RealSense udev rules..."
-    wget -q https://raw.githubusercontent.com/IntelRealSense/librealsense/master/config/99-realsense-libusb.rules
-    sudo mv 99-realsense-libusb.rules /etc/udev/rules.d/
+    echo "Attempting to download RealSense udev rules..."
+    if wget -q --timeout=10 https://raw.githubusercontent.com/IntelRealSense/librealsense/master/config/99-realsense-libusb.rules; then
+        sudo mv 99-realsense-libusb.rules /etc/udev/rules.d/
+        echo "[✓] RealSense rules installed."
+    else
+        echo "[!] WARN: Could not reach GitHub to download camera rules. Skipping..."
+    fi
 fi
 
 # 2. AGV Base Controller Rule (/dev/myAGV)
