@@ -117,14 +117,12 @@ if [ "$INSTALL_SYSTEM" = true ]; then
         sudo rm -f /etc/apt/sources.list.d/librealsense* || true
         sudo sed -i '/librealsense.intel.com/d' /etc/apt/sources.list || true
         
-        # Force-add the new key via the modern keyring method
-        sudo mkdir -p /etc/apt/keyrings
-        curl -sSf https://librealsense.intel.com/Debian/librealsense.gpg | sudo tee /etc/apt/keyrings/librealsense.gpg > /dev/null
+        # Force-add the new key via the reliable keyserver method (fixes 403 Forbidden issues)
+        sudo apt-key adv --keyserver keyserver.ubuntu.com --recv-key FB0B24895113F120 || \
+        sudo apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv-key FB0B24895113F120
         
-        # Add the clean, signed source
-        echo "deb [signed-by=/etc/apt/keyrings/librealsense.gpg] https://librealsense.intel.com/Debian/apt-repo focal main" | sudo tee /etc/apt/sources.list.d/librealsense.list > /dev/null
-        
-        sudo apt-get update
+        # Add the source (standard method)
+        sudo add-apt-repository "deb https://librealsense.intel.com/Debian/apt-repo focal main" -u
         
         # Install ARM64 compatible packages (Skipping DKMS)
         sudo apt-get install -y librealsense2-utils librealsense2-dev librealsense2-dbg
