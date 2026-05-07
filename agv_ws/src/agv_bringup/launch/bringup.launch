@@ -9,7 +9,7 @@
   <arg name="depth_height" default="480" />
   <arg name="depth_fps" default="15" />
 
-  <!-- 1. Start the AGV base driver (motion + odom + TF) -->
+  <!-- 1. Start the AGV base driver -->
   <arg name="serial_port" default="/dev/ttyACM0" />
   <node pkg="myagv_odometry" type="myagv_odometry_node" name="myagv_odometry_node" output="screen">
     <rosparam command="load" file="$(find agv_bringup)/config/base.yaml" />
@@ -29,7 +29,7 @@
   <node pkg="tf" type="static_transform_publisher" name="base_to_imu_link"
         args="0.0 0.0 0.0 0.0 3.14159 3.14159 /base_footprint /imu_link 40" />
 
-  <!-- 4. RealSense D455 -->
+  <!-- 4. RealSense D455 (Optimized for silence) -->
   <include file="$(find realsense2_camera)/launch/rs_camera.launch">
       <arg name="align_depth"         value="true"/>
       <arg name="enable_pointcloud"   value="false"/>
@@ -40,9 +40,16 @@
       <arg name="depth_width"         value="$(arg depth_width)"/>
       <arg name="depth_height"        value="$(arg depth_height)"/>
       <arg name="depth_fps"           value="$(arg depth_fps)"/>
-      <arg name="enable_accel"        value="$(arg enable_imu)"/>
-      <arg name="enable_gyro"         value="$(arg enable_imu)"/>
-      <arg name="unite_imu_method"    value="linear_interpolation"/>
+      
+      <!-- SILENCE THE NOISE: Disable all extra polling -->
+      <arg name="enable_accel"        value="false"/>
+      <arg name="enable_gyro"         value="false"/>
+      <arg name="enable_infra1"       value="false"/>
+      <arg name="enable_infra2"       value="false"/>
+      <arg name="initial_reset"       value="false"/>
   </include>
+
+  <!-- Silence diagnostic polling by setting the interval to zero on the server if possible -->
+  <!-- Note: We'll also disable the 'enable_diagnostics' parameter if available in your version -->
 
 </launch>
