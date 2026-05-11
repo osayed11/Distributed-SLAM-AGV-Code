@@ -73,10 +73,9 @@ lsusb -t || true
 print_section "packages"
 rospack find agv_bringup || true
 rospack find realsense2_camera || true
-rospack find apriltag_ros || true
 
 print_section "stale ros before test"
-pgrep -fal "roslaunch|rosmaster|roscore|realsense|ydlidar|myagv|rosbag|apriltag" || true
+pgrep -fal "roslaunch|rosmaster|roscore|realsense|ydlidar|myagv|rosbag" || true
 
 print_section "start bringup"
 roslaunch agv_bringup bringup.launch > "${LOG}" 2>&1 &
@@ -86,10 +85,6 @@ echo "bringup_log=${LOG}"
 
 cleanup() {
     print_section "cleanup"
-    rosnode kill /apriltag_ros_continuous_node 2>/dev/null || true
-    if [ -n "${APRILTAG_PID:-}" ]; then
-        kill "${APRILTAG_PID}" 2>/dev/null || true
-    fi
     if [ -n "${BRINGUP_PID:-}" ]; then
         kill "${BRINGUP_PID}" 2>/dev/null || true
     fi
@@ -98,7 +93,7 @@ cleanup() {
         /ydlidar_lidar_publisher /myagv_odometry_node \
         /base_to_camera_link /base_footprint_to_base_link 2>/dev/null || true
     echo "remaining_ros:"
-    pgrep -fal "roslaunch|realsense|ydlidar|myagv|apriltag" || true
+    pgrep -fal "roslaunch|realsense|ydlidar|myagv" || true
 }
 trap cleanup EXIT
 
@@ -131,14 +126,7 @@ if rostopic list 2>/dev/null | grep -qx "/mocap"; then
     check_hz /mocap 10 20
 fi
 
-print_section "apriltag live pipeline"
-roslaunch agv_bringup apriltag.launch > /tmp/agv_apriltag_check.log 2>&1 &
-APRILTAG_PID=$!
-sleep 8
-rosnode list 2>/dev/null | grep apriltag || true
-check_topic_registered /tag_detections
-check_hz /tag_detections 10 10
-echo "apriltag_log=/tmp/agv_apriltag_check.log"
+
 
 print_section "bringup log tail"
 tail -80 "${LOG}" || true
