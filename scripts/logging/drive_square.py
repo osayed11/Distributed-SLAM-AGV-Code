@@ -10,6 +10,7 @@ from __future__ import print_function
 
 import argparse
 import math
+import signal
 import sys
 import time
 
@@ -19,6 +20,14 @@ from nav_msgs.msg import Odometry
 
 
 pose = None
+stop_requested = False
+
+
+def request_stop(signum=None, frame=None):
+    global stop_requested
+    stop_requested = True
+    if signum is not None:
+        print("\nStop requested; finishing with zero velocity.")
 
 
 def yaw_from_quat(q):
@@ -55,9 +64,15 @@ def publish_zero(pub, seconds=0.7):
     msg = Twist()
     end = time.time() + seconds
     rate = rospy.Rate(20)
-    while not rospy.is_shutdown() and time.time() < end:
-        pub.publish(msg)
-        rate.sleep()
+    while time.time() < end:
+        try:
+            pub.publish(msg)
+            rate.sleep()
+        except rospy.ROSException:
+            break
+        except rospy.ROSInterruptException:
+            # Keep trying to send zeros after Ctrl+C if the publisher is alive.
+            time.sleep(0.05)
 
 
 def wait_for_odom(timeout):
@@ -81,7 +96,7 @@ def drive_side(pub, side_m, max_linear, min_linear, linear_kp,
     cross_track = 0.0
     heading_error = 0.0
 
-    while not rospy.is_shutdown():
+    while not rospy.is_shutdown() and not stop_requested:
         x, y, yaw = pose
         dx = x - start_x
         dy = y - start_y
@@ -132,7 +147,7 @@ def turn(pub, turn_rad, max_angular, min_angular, turn_kp,
     start = time.time()
     error = turn_rad
 
-    while not rospy.is_shutdown():
+    while not rospy.is_shutdown() and not stop_requested:
         _, _, yaw = pose
         error = angle_delta(target_yaw, yaw)
         if abs(error) <= tolerance_rad:
@@ -209,6 +224,9 @@ def main(argv):
     if args.clockwise:
         turn_rad = -turn_rad
 
+    signal.signal(signal.SIGINT, request_stop)
+    signal.signal(signal.SIGTERM, request_stop)
+
     rospy.init_node("agv_drive_square")
     rospy.Subscriber("/odom", Odometry, odom_cb, queue_size=20)
     pub = rospy.Publisher("/cmd_vel", Twist, queue_size=10)
@@ -230,21 +248,31 @@ def main(argv):
 
     try:
         for cycle in range(args.cycles):
+            if rospy.is_shutdown() or stop_requested:
+                break
             print("Starting square %d/%d" % (cycle + 1, args.cycles))
             cycle_start_pose = pose
             for side_idx in range(4):
+                if rospy.is_shutdown() or stop_requested:
+                    break
                 print("  side %d: forward" % (side_idx + 1))
                 drive_side(pub, args.side, args.linear, args.min_linear,
                            args.linear_kp, args.heading_kp,
                            args.max_heading_correction,
                            args.distance_tolerance, args.side_timeout,
                            args.verbose)
+                if rospy.is_shutdown() or stop_requested:
+                    break
                 rospy.sleep(args.pause)
                 print("  corner %d: turn" % (side_idx + 1))
                 turn(pub, turn_rad, args.angular, args.min_angular,
                      args.turn_kp, yaw_tolerance, args.turn_timeout,
                      args.verbose)
+                if rospy.is_shutdown() or stop_requested:
+                    break
                 rospy.sleep(args.pause)
+            if rospy.is_shutdown() or stop_requested:
+                break
             along, lateral, yaw_error = pose_delta_from(cycle_start_pose)
             print("Square %d odom closure: along=%.3fm lateral=%.3fm yaw_error=%.1fdeg" %
                   (cycle + 1, along, lateral, math.degrees(yaw_error)))

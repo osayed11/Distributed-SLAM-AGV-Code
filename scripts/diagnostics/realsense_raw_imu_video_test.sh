@@ -2,7 +2,7 @@
 # Run on robot: test RGB-D video with raw accel/gyro topics instead of fused /camera/imu.
 
 ROOT="${HOME}/slam_project"
-source /opt/ros/noetic/setup.bash
+source /opt/ros/melodic/setup.bash
 source "${ROOT}/agv_ws/devel/setup.bash"
 
 stop_rs() {

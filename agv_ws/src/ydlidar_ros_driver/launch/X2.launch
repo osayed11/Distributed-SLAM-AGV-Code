@@ -1,7 +1,7 @@
 <launch>
   <node name="ydlidar_lidar_publisher"  pkg="ydlidar_ros_driver"  type="ydlidar_ros_driver_node" output="screen" respawn="false" >
     <!-- string property -->
-    <param name="port"         type="string" value="/dev/ttyAMA0"/>  
+    <param name="port"         type="string" value="/dev/ydlidar"/>  
     <param name="frame_id"     type="string" value="laser_frame"/>
     <!--<param name="frame_id"     type="string" value="base_link"/>-->
     <param name="ignore_array"     type="string" value=""/>
@@ -32,7 +32,7 @@
     <param name="range_min"    type="double" value="0.1" />
     <param name="range_max"    type="double" value="12.0" />
     <!-- frequency is invalid, External PWM control speed -->
-    <param name="frequency"    type="double" value="10.0"/>
+    <param name="frequency"    type="double" value="7.0"/>
   </node>
   <!-- LiDAR TF: base_footprint → laser_frame
        z=0.10m measured 2026-03-15. yaw=0 (X2 mounted parallel to ground, forward-facing).

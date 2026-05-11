@@ -18,19 +18,19 @@ boost::asio::io_service iosev;
 boost::asio::serial_port sp(iosev);
 
 boost::array<double, 36> odom_pose_covariance = {
-    {1e-9, 0, 0, 0, 0, 0,
-    0, 1e-3, 1e-9, 0, 0, 0,
+    {1e-3, 0, 0, 0, 0, 0,
+    0, 1e-3, 0, 0, 0, 0,
     0, 0, 1e6, 0, 0, 0,
     0, 0, 0, 1e6, 0, 0,
     0, 0, 0, 0, 1e6, 0,
-    0, 0, 0, 0, 0, 1e-9} };
+    0, 0, 0, 0, 0, 1e-3} };
 boost::array<double, 36> odom_twist_covariance = {
-    {1e-9, 0, 0, 0, 0, 0,
-    0, 1e-3, 1e-9, 0, 0, 0,
+    {1e-3, 0, 0, 0, 0, 0,
+    0, 1e-3, 0, 0, 0, 0,
     0, 0, 1e6, 0, 0, 0,
     0, 0, 0, 1e6, 0, 0,
     0, 0, 0, 0, 1e6, 0,
-    0, 0, 0, 0, 0, 1e-9} };
+    0, 0, 0, 0, 0, 1e-3} };
 
 void send()
 {

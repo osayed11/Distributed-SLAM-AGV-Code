@@ -19,7 +19,3 @@ imu_frame_id: "imu_link"
 # Set true only when debugging serial command/odometry packets; otherwise the
 # base node prints at high rate and makes logs hard to inspect.
 debug_output: false
-
-# IMU configuration
-publish_imu: true
-imu_frame_id: "imu_link"

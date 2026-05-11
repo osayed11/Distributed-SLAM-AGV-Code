@@ -8,8 +8,9 @@
 # What it does:
 #   1. Validates that ROS is running and all required topics are publishing
 #   2. Generates a session_manifest.yaml before recording starts
-#   3. Launches roslaunch agv_bringup logging.launch
-#   4. On Ctrl+C, finalises the manifest with duration and bag size
+#   3. Launches roslaunch agv_bringup bringup.launch
+#   4. Waits for all sensor streams to stabilise before starting rosbag
+#   5. On Ctrl+C, finalises the manifest with duration and bag size
 #
 # Run this on the robot. It is location-independent as long as this repo is
 # intact, e.g. ~/slam_project/scripts/logging/start_session.sh.
@@ -18,9 +19,6 @@ set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
-
-# Security/Stability: RealSense global time sync (Disabled during troubleshooting, uncomment if needed)
-# export RS2_GLOBAL_TIME_ENABLED=0
 
 # ---------------------------------------------------------------------------
 # Args
@@ -31,7 +29,14 @@ DATESTAMP=$(date +%Y%m%d_%H%M%S)
 MOCAP_TOPIC="${MOCAP_TOPIC:-/phasespace/rigids}"
 REQUIRE_GT="${REQUIRE_GT:-false}"
 REQUIRE_IMU="${REQUIRE_IMU:-false}"
-ENABLE_IMU="${ENABLE_IMU:-${REQUIRE_IMU}}"
+ENABLE_REALSENSE_SYNC="${ENABLE_REALSENSE_SYNC:-true}"
+
+CAMERA_COLOR_WIDTH="${CAMERA_COLOR_WIDTH:-640}"
+CAMERA_COLOR_HEIGHT="${CAMERA_COLOR_HEIGHT:-480}"
+CAMERA_COLOR_FPS="${CAMERA_COLOR_FPS:-15}"
+CAMERA_DEPTH_WIDTH="${CAMERA_DEPTH_WIDTH:-640}"
+CAMERA_DEPTH_HEIGHT="${CAMERA_DEPTH_HEIGHT:-480}"
+CAMERA_DEPTH_FPS="${CAMERA_DEPTH_FPS:-15}"
 SESSION_ID="${ROBOT_NAME}_${SCENARIO}_${DATESTAMP}"
 BAG_DIR="${HOME}/agv_data"
 BAG_FILE="${BAG_DIR}/${SESSION_ID}.bag"
@@ -43,7 +48,11 @@ mkdir -p "${BAG_DIR}"
 # ---------------------------------------------------------------------------
 # Source ROS
 # ---------------------------------------------------------------------------
-source /opt/ros/noetic/setup.bash
+if [ -f /opt/ros/noetic/setup.bash ]; then
+    source /opt/ros/noetic/setup.bash
+elif [ -f /opt/ros/melodic/setup.bash ]; then
+    source /opt/ros/melodic/setup.bash
+fi
 source "${ROOT}/agv_ws/devel/setup.bash"
 
 # ---------------------------------------------------------------------------
@@ -73,7 +82,7 @@ echo "  [i] chrony snapshot: ${CHRONY_FILE}"
 # If logging.launch is allowed to start bringup itself these checks may warn
 # before sensors exist; validate_bag.py remains the authoritative post-run gate.
 REQUIRED_TOPICS="/scan /odom /tf /camera/color/image_raw /camera/aligned_depth_to_color/image_raw"
-OPTIONAL_TOPICS="/imu /camera/imu /camera/accel/sample /camera/gyro/sample"
+OPTIONAL_TOPICS="/imu"
 GROUND_TRUTH_TOPICS="${MOCAP_TOPIC} /mocap"
 ALL_OK=true
 
@@ -122,15 +131,8 @@ else
     fi
 
     if [ "$REQUIRE_IMU" = true ]; then
-        IMU_OK=false
-        for topic in /imu /camera/imu /camera/accel/sample /camera/gyro/sample; do
-            if timeout 4 rostopic hz "$topic" --window 10 2>/dev/null | grep -q "average rate"; then
-                IMU_OK=true
-                break
-            fi
-        done
-        if [ "$IMU_OK" = false ]; then
-            echo "ERROR: REQUIRE_IMU=true but no live IMU topic is publishing."
+        if ! timeout 4 rostopic hz /imu --window 10 2>/dev/null | grep -q "average rate"; then
+            echo "ERROR: REQUIRE_IMU=true but base /imu is not publishing."
             exit 1
         fi
     fi
@@ -172,7 +174,16 @@ calibration_hash: "sha256:${CALIB_HASH}"
 mocap_topic: "${MOCAP_TOPIC}"
 ground_truth_required: ${REQUIRE_GT}
 imu_required: ${REQUIRE_IMU}
-enable_imu: ${ENABLE_IMU}
+camera_imu: disabled
+enable_realsense_sync: ${ENABLE_REALSENSE_SYNC}
+
+camera_profile:
+  color_width: ${CAMERA_COLOR_WIDTH}
+  color_height: ${CAMERA_COLOR_HEIGHT}
+  color_fps: ${CAMERA_COLOR_FPS}
+  depth_width: ${CAMERA_DEPTH_WIDTH}
+  depth_height: ${CAMERA_DEPTH_HEIGHT}
+  depth_fps: ${CAMERA_DEPTH_FPS}
 notes: ""
 usb_mode_note: "D455 observed on USB 3.2; RGB-D stable. D455 IMU disabled by default because video+motion publishes no IMU messages on current wrapper/device stack."
 EOF
@@ -186,13 +197,14 @@ echo "Press Ctrl+C to stop recording."
 echo ""
 
 # ---------------------------------------------------------------------------
-# Record start time for duration calculation
+# Launch bringup, wait for sensors, then record.
 # ---------------------------------------------------------------------------
 START_EPOCH=$(date +%s)
+BRINGUP_PID=""
 
-# ---------------------------------------------------------------------------
-# Launch logging (trap Ctrl+C to finalise manifest)
-# ---------------------------------------------------------------------------
+ROSBAG_PID=""
+CLEANED_UP=false
+
 finalise_manifest() {
     echo ""
     echo "=== Finalising manifest ==="
@@ -220,15 +232,113 @@ finalise_manifest() {
     echo "  python3 scripts/logging/validate_bag.py ${BAG_DIR}/${SESSION_ID}.bag"
 }
 
-trap finalise_manifest EXIT
+cleanup() {
+    if [ "$CLEANED_UP" = true ]; then
+        return
+    fi
+    CLEANED_UP=true
+    trap - EXIT INT TERM
 
-# Export env vars for logging.launch
+    if [ -n "${ROSBAG_PID}" ] && kill -0 "${ROSBAG_PID}" 2>/dev/null; then
+        echo ""
+        echo "Stopping rosbag..."
+        kill -INT "${ROSBAG_PID}" 2>/dev/null || true
+        wait "${ROSBAG_PID}" 2>/dev/null || true
+    fi
+
+    if [ -n "${BRINGUP_PID}" ] && kill -0 "${BRINGUP_PID}" 2>/dev/null; then
+        echo "Stopping bringup..."
+        kill -INT "${BRINGUP_PID}" 2>/dev/null || true
+        wait "${BRINGUP_PID}" 2>/dev/null || true
+    fi
+
+    finalise_manifest
+}
+
+handle_signal() {
+    cleanup
+    exit 130
+}
+
+trap cleanup EXIT
+trap handle_signal INT TERM
+
+# Export env vars for any launched child tools.
 export ROBOT_NAME="$ROBOT_NAME"
 export SCENARIO="$SCENARIO"
 export DATESTAMP="$DATESTAMP"
 export MOCAP_TOPIC="$MOCAP_TOPIC"
 export REQUIRE_GT="$REQUIRE_GT"
 export REQUIRE_IMU="$REQUIRE_IMU"
-export ENABLE_IMU="$ENABLE_IMU"
 
-roslaunch agv_bringup logging.launch enable_imu:="${ENABLE_IMU}"
+export ENABLE_REALSENSE_SYNC="$ENABLE_REALSENSE_SYNC"
+
+export CAMERA_COLOR_WIDTH="$CAMERA_COLOR_WIDTH"
+export CAMERA_COLOR_HEIGHT="$CAMERA_COLOR_HEIGHT"
+export CAMERA_COLOR_FPS="$CAMERA_COLOR_FPS"
+export CAMERA_DEPTH_WIDTH="$CAMERA_DEPTH_WIDTH"
+export CAMERA_DEPTH_HEIGHT="$CAMERA_DEPTH_HEIGHT"
+export CAMERA_DEPTH_FPS="$CAMERA_DEPTH_FPS"
+
+wait_for_topic_rate() {
+    topic="$1"
+    timeout_s="$2"
+    end=$((SECONDS + timeout_s))
+    while [ "$SECONDS" -lt "$end" ]; do
+        if timeout 6 rostopic hz "$topic" --window 10 2>/dev/null | grep -q "average rate"; then
+            echo "  [OK] $topic publishing"
+            return 0
+        fi
+        sleep 1
+    done
+    echo "ERROR: timed out waiting for $topic" >&2
+    return 1
+}
+
+BRINGUP_LOG="${BAG_DIR}/${SESSION_ID}_bringup.log"
+echo "Starting bringup first; log: ${BRINGUP_LOG}"
+roslaunch agv_bringup bringup.launch \
+    enable_realsense_sync:="${ENABLE_REALSENSE_SYNC}" \
+    color_width:="${CAMERA_COLOR_WIDTH}" \
+    color_height:="${CAMERA_COLOR_HEIGHT}" \
+    color_fps:="${CAMERA_COLOR_FPS}" \
+    depth_width:="${CAMERA_DEPTH_WIDTH}" \
+    depth_height:="${CAMERA_DEPTH_HEIGHT}" \
+    depth_fps:="${CAMERA_DEPTH_FPS}" \
+    > "${BRINGUP_LOG}" 2>&1 &
+BRINGUP_PID=$!
+
+echo "Waiting for required sensor streams before recording..."
+wait_for_topic_rate /scan 45
+wait_for_topic_rate /odom 45
+wait_for_topic_rate /camera/color/image_raw 60
+wait_for_topic_rate /camera/aligned_depth_to_color/image_raw 60
+if [ "$REQUIRE_IMU" = true ]; then
+    wait_for_topic_rate /imu 45
+fi
+
+
+
+echo "Sensors are live; starting rosbag."
+START_EPOCH=$(date +%s)
+rosbag record --buffsize=2048 --lz4 -O "${BAG_FILE}" \
+    /scan \
+    /odom \
+    /cmd_vel \
+    /tf \
+    /tf_static \
+    /camera/color/image_raw \
+    /camera/color/camera_info \
+    /camera/depth/camera_info \
+    /camera/aligned_depth_to_color/image_raw \
+    /camera/aligned_depth_to_color/camera_info \
+    /camera/extrinsics/depth_to_color \
+    /imu \
+    /diagnostics \
+
+    /tag_detections \
+    "${MOCAP_TOPIC}" \
+    /mocap &
+ROSBAG_PID=$!
+wait "${ROSBAG_PID}"
+ROSBAG_PID=""

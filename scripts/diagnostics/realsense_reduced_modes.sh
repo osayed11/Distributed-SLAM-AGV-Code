@@ -3,7 +3,7 @@
 # allow /camera/imu to publish together with images.
 
 ROOT="${HOME}/slam_project"
-source /opt/ros/noetic/setup.bash
+source /opt/ros/melodic/setup.bash
 source "${ROOT}/agv_ws/devel/setup.bash"
 
 set -u

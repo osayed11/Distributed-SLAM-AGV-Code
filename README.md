@@ -20,23 +20,16 @@ bash scripts/setup_robot.sh
 
 **Option B: Download Zip**
 ```bash
-# Download the repository as a zip file
-wget [https://github.com/osayed11/Distributed-SLAM-AGV-Code/archive/refs/heads/main.zip](https://github.com/Gani332/agv_on-board/archive/refs/heads/main.zip)
-
-# Unzip the file
+wget https://github.com/osayed11/Distributed-SLAM-AGV-Code/archive/refs/heads/main.zip
 unzip main.zip
-
-# Rename the resulting folder to slam_project
-mv agv_on-board-main slam_project
-
-# Remove the zip file to save space
+mv Distributed-SLAM-AGV-Code-main slam_project
 rm main.zip
-
+cd slam_project
 bash scripts/setup_robot.sh
 ```
 
 
-On a updated robot:
+On an updated robot:
 
 ```bash
 cd ~/slam_project
@@ -45,18 +38,25 @@ bash scripts/setup_robot.sh
 ```
 
 `setup_robot.sh` installs expected system dependencies by default, including
-`chrony`, `apriltag_ros`, ROS message packages, rosbag, TF, and build tools. Use
+`chrony`, `apriltag_ros`, ROS message packages, rosbag, TF, and build tools.
+After building it validates all critical packages with `rospack find`. Use
 `bash scripts/setup_robot.sh --skip-system` only when the robot is already
 provisioned or has no internet access.
+
+### 2. Record a session
 
 Start a data collection session:
 
 ```bash
 cd ~/slam_project
-export REQUIRE_GT=false
-export REQUIRE_IMU=false
 bash scripts/logging/start_session.sh agv1 square_manual
 ```
+
+`start_session.sh` manages the full lifecycle:
+1. Launches `bringup.launch` (base driver, LiDAR, camera)
+2. Waits for `/scan`, `/odom`, and camera streams to stabilise
+3. Starts `rosbag record` only after sensors are confirmed live
+4. On `Ctrl+C`, stops rosbag cleanly → stops bringup → finalises manifest
 
 Drive manually in another terminal:
 
@@ -67,49 +67,41 @@ source ~/slam_project/agv_ws/devel/setup.bash
 rosrun myagv_teleop myagv_teleop.py
 ```
 
-Or run a conservative automatic square:
+Or run an automatic motion pattern:
 
 ```bash
-ssh ubuntu@<robot-ip>
-cd ~/slam_project
-source /opt/ros/noetic/setup.bash
-source ~/slam_project/agv_ws/devel/setup.bash
+# Square
 python scripts/logging/drive_square.py --side 0.75 --linear 0.22 --angular 0.28 --cycles 1
+
+# Circle (for concentric-circle scenarios)
+python scripts/logging/drive_circle.py --radius 0.50 --linear 0.16 --duration 60 --no-prompt --verbose
 ```
 
 Stop recording with `Ctrl+C`. Bags and manifests are written to `~/agv_data`.
 
-## Next Lab Visit Commands
+## Scenario 1: Concentric Circles
 
-Use separate terminals on the robot. Keep the robot on the floor with clear space before running motion scripts.
-
-
-Then record a circle bag:
+For multi-robot concentric-circle runs, use the fleet launcher from the parent directory:
 
 ```bash
-ssh ubuntu@xx.xxx.xx
-cd ~/slam_project
-export REQUIRE_GT=false
-export REQUIRE_IMU=true
-bash scripts/logging/start_session.sh robot1 scenario1_circle_test
+./launch_fleet.sh
 ```
 
-In another terminal:
+Or run a single robot with epoch-based stagger timing:
 
 ```bash
-ssh ubuntu@xx.xxx.xx
-cd ~/slam_project
-source /opt/ros/melodic/setup.bash
-source ~/slam_project/myagv_ros/devel/setup.bash
-source ~/slam_project/agv_ws/devel/setup.bash
-python scripts/logging/drive_circle.py --radius 1.00 --linear 0.16 --duration 60 --no-prompt --verbose
+T0=$(($(date +%s)+300))
+python scripts/logging/drive_circle.py --radius 0.50 --linear 0.16 --duration 600 --start-at-epoch $T0 --start-delay 0 --no-prompt --verbose
 ```
 
-Stop recording and validate again:
+Robot assignments for S1:
 
-```bash
-python3 scripts/logging/validate_bag.py $(ls -t ~/agv_data/*.bag | head -1)
-python scripts/logging/audit_bag_fast.py $(ls -t ~/agv_data/*.bag | head -1)
+```text
+agv1 -> radius 0.50 m -> starts at T0 +   0 s
+agv2 -> radius 0.75 m -> starts at T0 +  30 s
+agv3 -> radius 1.00 m -> starts at T0 +  60 s
+agv4 -> radius 1.25 m -> starts at T0 +  90 s
+agv5 -> radius 1.50 m -> starts at T0 + 120 s
 ```
 
 ## What Is Production
@@ -118,17 +110,16 @@ Use these paths for normal robot operation:
 
 ```text
 scripts/setup_robot.sh                     Build/check workspaces after clone or pull
-scripts/logging/start_session.sh           One-command bringup + rosbag + manifest
+scripts/logging/start_session.sh           Managed bringup + sensor gate + rosbag + manifest
 scripts/logging/validate_bag.py            Full post-run publishability check
 scripts/logging/audit_bag_fast.py          Fast topic/rate/gap/sync audit
+scripts/logging/drive_circle.py            Concentric-circle motion for S1 scenarios
 scripts/logging/drive_straight.py          Odom-bounded straight-line dataset helper
 scripts/logging/drive_square.py            Odom-bounded square motion helper
 scripts/logging/drive_forward_back.py      Odom-bounded smoke-test motion helper
+scripts/scenarios/run_s1_concentric_robot.sh  Single-robot S1 runner with epoch stagger
 agv_ws/src/agv_bringup/launch/bringup.launch
 agv_ws/src/agv_bringup/launch/logging.launch
-agv_ws/src/agv_bringup/launch/aruco.launch
-agv_ws/src/agv_bringup/launch/aruco_bringup.launch
-agv_ws/src/agv_bringup/launch/aruco_test.launch
 agv_ws/src/agv_bringup/launch/apriltag.launch
 agv_ws/src/agv_bringup/calibration/
 ```
@@ -147,18 +138,32 @@ slam_project/
 │   ├── build/               <-- (Auto-generated by catkin_make)
 │   ├── devel/               <-- (Auto-generated, source this!)
 │   └── src/                 <-- ALL packages live here now
-│       ├── agv_bringup/     <-- Master launch files
-│       ├── myagv_odometry/  <-- Encoder/Motor feedback
+│       ├── agv_bringup/     <-- Master launch files + config + calibration
+│       ├── myagv_odometry/  <-- Encoder/Motor feedback + base IMU
 │       ├── ydlidar_ros_driver/ <-- LiDAR drivers
-│       ├── realsense-ros/   <-- Camera drivers
-│       └── myagv_teleop/    <-- Keyboard/PS2 control
+│       ├── realsense-ros/   <-- Camera drivers (RGB-D only, no camera IMU)
+│       ├── myagv_teleop/    <-- Keyboard/PS2 control
+│       ├── myagv_navigation/<-- Navigation stack
+│       ├── myagv_ps2/       <-- PS2 controller support
+│       ├── myagv_urdf/      <-- Robot model
+│       └── charging/        <-- Charging dock support
 ├── scripts/                 <-- Automation & Utility
-│   ├── setup_robot.sh       <-- The 1-click installer (with Swap)
+│   ├── setup_robot.sh       <-- One-click installer (with swap, chrony, udev)
 │   ├── logging/             <-- Data collection scripts
-│   │   └── start_session.sh <-- Points ONLY to agv_ws now
-│   └── diagnostics/         <-- Health check scripts
+│   │   ├── start_session.sh <-- Managed lifecycle: bringup → sensor gate → rosbag
+│   │   ├── drive_circle.py  <-- Concentric-circle motion controller
+│   │   ├── drive_square.py  <-- Square motion controller
+│   │   ├── validate_bag.py  <-- Full bag quality validator
+│   │   └── audit_bag_fast.py<-- Fast topic/rate auditor
+│   ├── diagnostics/         <-- Health check scripts
+│   ├── calibration/         <-- Sensor calibration tools
+│   └── scenarios/           <-- Scenario runner scripts
+├── drivers/                 <-- Vendored SDKs
+│   ├── YDLidar-SDK/         <-- YDLidar native SDK
+│   └── robot_pose_ekf/      <-- EKF for sensor fusion
+├── configs/                 <-- RViz configs
 ├── docs/                    <-- SOPs and Manuals
-└── README.md                <-- Updated instructions
+└── README.md
 ```
 
 ## Robot Runtime
@@ -173,27 +178,13 @@ source ~/slam_project/agv_ws/devel/setup.bash
 Manual bringup without recording:
 
 ```bash
-roslaunch agv_bringup bringup.launch enable_imu:=false
+roslaunch agv_bringup bringup.launch
 ```
 
-Current ArUco marker test, using the 15 cm `DICT_ARUCO_ORIGINAL` marker id `503`:
+AprilTag detector (optional, for offline loop-closure injection):
 
 ```bash
-roslaunch agv_bringup aruco_bringup.launch target_id:=503 marker_size:=0.15 publish_image:=false
-```
-
-This runs normal robot bringup plus the ArUco detector. It prints detections and publishes the target marker pose on `/aruco/target_pose` as `geometry_msgs/PoseStamped`. The pose frame is the RealSense optical frame, where `x` is right, `y` is down, and `z` is forward.
-
-Camera-only ArUco smoke test:
-
-```bash
-roslaunch agv_bringup aruco_test.launch target_id:=503 marker_size:=0.15 publish_image:=false
-```
-
-AprilTag detector only, for real AprilTag markers:
-
-```bash
-roslaunch agv_bringup apriltag.launch
+ENABLE_APRILTAG=true bash scripts/logging/start_session.sh agv1 corridor_loop
 ```
 
 Production recording:
@@ -208,6 +199,7 @@ bash scripts/logging/start_session.sh <robot_name> <scenario_name>
 ~/agv_data/<robot>_<scenario>_<timestamp>.bag
 ~/agv_data/<robot>_<scenario>_<timestamp>_manifest.yaml
 ~/agv_data/<robot>_<scenario>_<timestamp>_chrony.txt
+~/agv_data/<robot>_<scenario>_<timestamp>_bringup.log
 ```
 
 It records with `rosbag --buffsize=2048 --lz4`, which was validated on the live robot for RGB-D + LiDAR recording without buffer overflow.
@@ -217,41 +209,34 @@ It records with `rosbag --buffsize=2048 --lz4`, which was validated on the live 
 Default robot bag topics:
 
 ```text
-/scan
-/odom
-/cmd_vel
-/tf
-/tf_static
-/camera/color/image_raw
-/camera/color/camera_info
-/camera/depth/camera_info
-/camera/aligned_depth_to_color/image_raw
-/camera/aligned_depth_to_color/camera_info
-/camera/extrinsics/depth_to_color
-/diagnostics
-/aruco/target_pose
+/scan                                    YDLidar X2 2D laser scans
+/odom                                    Wheel odometry from base MCU
+/cmd_vel                                 Velocity commands sent to base
+/tf                                      Dynamic transform tree
+/tf_static                               Static transforms
+/camera/color/image_raw                  D455 RGB image
+/camera/color/camera_info                RGB camera intrinsics
+/camera/depth/camera_info                Depth camera intrinsics
+/camera/aligned_depth_to_color/image_raw D455 aligned depth image
+/camera/aligned_depth_to_color/camera_info Aligned depth intrinsics
+/camera/extrinsics/depth_to_color        Depth-to-color extrinsics
+/imu                                     Base MCU IMU (accel + gyro)
+/diagnostics                             ROS diagnostics
 ```
 
-Optional topics are included when available:
+Optional topics (recorded when detectors are enabled or ground truth is present):
 
 ```text
-/camera/imu
-/camera/accel/sample
-/camera/gyro/sample
-/camera/accel/imu_info
-/camera/gyro/imu_info
-${MOCAP_TOPIC:-/phasespace/rigids}
-/mocap
+/tag_detections                          AprilTag detections (ENABLE_APRILTAG=true)
+${MOCAP_TOPIC:-/phasespace/rigids}       Motion capture ground truth
+/mocap                                   Alternate ground truth topic
 ```
 
-Use:
-
-```bash
-export REQUIRE_GT=true
-export MOCAP_TOPIC=/phasespace/rigids
-```
-
-when ground truth must be present in the same ROS graph. If PhaseSpace ground truth is recorded separately, keep `REQUIRE_GT=false` and save chrony status on both machines.
+> **Note:** The D455 camera IMU (`/camera/imu`, `/camera/accel/*`, `/camera/gyro/*`)
+> is permanently disabled. The D455 motion module does not publish IMU data
+> reliably while RGB-D video streams are active on the current firmware/driver
+> stack. The dataset IMU requirement is satisfied by the base `/imu` topic from
+> `myagv_odometry_node`.
 
 ## Current Validated Baseline
 
@@ -270,14 +255,11 @@ diagnostics: 0 warnings, 0 errors
 overall audit: PASS
 ```
 
-This is good enough for robot-only Week 1 SLAM smoke validation.
-
 Known limitations:
 
 ```text
-RealSense D455 IMU is disabled by default. The current D455/wrapper/firmware stack publishes IMU in IMU-only mode, but not while RGB-D video is active.
-ArUco target pose publishes only when the configured marker is visible; the current test marker is DICT_ARUCO_ORIGINAL id 503 with 0.15 m side length.
-Ground truth is optional by default because PhaseSpace may be recorded separately on a chrony-synced machine.
+D455 camera IMU is permanently disabled (base /imu is used instead).
+Ground truth is optional by default (PhaseSpace may be recorded separately).
 ```
 
 ## Transform Tree
@@ -286,6 +268,7 @@ Ground truth is optional by default because PhaseSpace may be recorded separatel
 odom
 └── base_footprint
     ├── base_link          static alias, colocated
+    ├── imu_link           base MCU IMU frame
     ├── laser_frame        z=0.100 m measured
     └── camera_link        CAD extrinsic from original mount
         ├── camera_color_frame
@@ -298,6 +281,9 @@ Important static transforms:
 ```text
 base_footprint -> base_link:
   xyz=(0, 0, 0), rpy=(0, 0, 0)
+
+base_footprint -> imu_link:
+  xyz=(0, 0, 0), rpy=(0, pi, pi)
 
 base_footprint -> laser_frame:
   xyz=(0, 0, 0.100), rpy=(0, 0, 0)
@@ -332,21 +318,14 @@ Exit codes:
 2 = warning
 ```
 
-Expected warnings for the current robot-only setup:
-
-```text
-ground truth missing, unless REQUIRE_GT=true
-IMU missing, unless REQUIRE_IMU=true
-```
-
 ## Copy Bags To Laptop
 
 From the laptop:
 
 ```bash
-mkdir -p "/Users/omarahmed/Desktop/UCL/Year 3/Distributed-SLAM/data/week1"
-scp ubuntu@<robot-ip>:/home/ubuntu/agv_data/*.bag \
-  :/Users/omarahmed/Desktop/UCL/Year 3/Distributed-SLAM/data/week1"
+scp ubuntu@<robot-ip>:/home/ubuntu/agv_data/*.bag ~/Desktop/slam_data/
+scp ubuntu@<robot-ip>:/home/ubuntu/agv_data/*_manifest.yaml ~/Desktop/slam_data/
+scp ubuntu@<robot-ip>:/home/ubuntu/agv_data/*_chrony.txt ~/Desktop/slam_data/
 ```
 
 ## Clean Robot Run Data
@@ -354,15 +333,16 @@ scp ubuntu@<robot-ip>:/home/ubuntu/agv_data/*.bag \
 On the robot:
 
 ```bash
-rm -f ~/agv_data/*.bag ~/agv_data/*.bag.active ~/agv_data/*_manifest.yaml ~/agv_data/*_chrony.txt
+rm -f ~/agv_data/*.bag ~/agv_data/*.bag.active ~/agv_data/*_manifest.yaml ~/agv_data/*_chrony.txt ~/agv_data/*_bringup.log
 ```
 
 ## Hardware
 
 ```text
-AGV base controller: /dev/ttyACM0
-YDLiDAR X2:          /dev/ttyAMA0
-RealSense D455:      USB 3.x, RGB-D 640x480 at 15 Hz
+AGV base controller: /dev/ttyACM0 (symlink /dev/myAGV via udev)
+YDLiDAR X2:          /dev/ydlidar (symlink via udev, native /dev/ttyUSB0)
+RealSense D455:      USB 3.x, RGB-D 640x480 @ 15 Hz (camera IMU disabled)
+Base MCU IMU:        Published on /imu by myagv_odometry_node
 ```
 
 ## Scaling To More Robots
@@ -373,6 +353,5 @@ For each robot:
 2. Run `bash scripts/setup_robot.sh`.
 3. Assign a stable robot name, e.g. `agv1`, `agv2`, `agv3`.
 4. Record with `bash scripts/logging/start_session.sh <robot_name> <scenario>`.
-5. Keep robot bags and any separate PhaseSpace logs named with the same robot/scenario/timestamp convention.
+5. For fleet orchestration, use `launch_fleet.sh` from the parent directory.
 6. Before each run, confirm chrony on robot and mocap machines if ground truth is recorded separately.
-

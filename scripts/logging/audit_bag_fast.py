@@ -25,7 +25,6 @@ REQUIRED_TOPICS = [
     "/camera/aligned_depth_to_color/camera_info",
     "/camera/extrinsics/depth_to_color",
     "/diagnostics",
-    "/tag_detections",
 ]
 
 MIN_HZ = {
@@ -38,6 +37,13 @@ MIN_HZ = {
     "/camera/aligned_depth_to_color/image_raw": 12.0,
     "/camera/aligned_depth_to_color/camera_info": 12.0,
 }
+
+IMU_TOPICS = [
+    "/imu",
+    "/camera/imu",
+    "/camera/accel/sample",
+    "/camera/gyro/sample",
+]
 
 
 def stamp_to_sec(stamp):
@@ -95,8 +101,9 @@ def main():
     header_times = defaultdict(list)
     tf_edges = set()
     nonzero_cmd_vel = 0
-    tag_msgs_nonempty = 0
-    tag_detections_total = 0
+    aruco_pose_msgs = 0
+    apriltag_msgs_nonempty = 0
+    apriltag_detections_total = 0
     diag_warn = 0
     diag_error = 0
     odom_first = None
@@ -128,11 +135,14 @@ def main():
                         abs(ang.x) + abs(ang.y) + abs(ang.z)) > 1e-6:
                     nonzero_cmd_vel += 1
 
+            elif topic == "/aruco/target_pose":
+                aruco_pose_msgs += 1
+
             elif topic == "/tag_detections":
                 detections = getattr(msg, "detections", [])
                 if detections:
-                    tag_msgs_nonempty += 1
-                    tag_detections_total += len(detections)
+                    apriltag_msgs_nonempty += 1
+                    apriltag_detections_total += len(detections)
 
             elif topic == "/diagnostics":
                 for status in msg.status:
@@ -192,10 +202,23 @@ def main():
             odom_max_from_start))
 
     print("")
-    print("apriltag:")
+    print("imu:")
+    for topic in IMU_TOPICS:
+        count = counts.get(topic, 0)
+        rate = count / duration if duration > 0 else 0.0
+        if count:
+            print("  {:48s} count={:<6d} hz={:6.2f} max_recv_gap={:6.3f}s max_stamp_gap={:6.3f}s".format(
+                topic, count, rate, max_gap(recv_times[topic]),
+                max_gap(header_times[topic])))
+        else:
+            print("  {:48s} count=0".format(topic))
+
+    print("")
+    print("markers:")
+    print("  aruco_target_pose_msgs={}".format(aruco_pose_msgs))
     print("  messages={} nonempty_messages={} total_detections={}".format(
-        counts.get("/tag_detections", 0), tag_msgs_nonempty,
-        tag_detections_total))
+        counts.get("/tag_detections", 0), apriltag_msgs_nonempty,
+        apriltag_detections_total))
 
     print("")
     print("diagnostics:")

@@ -2,7 +2,7 @@
 # Run on the robot. Tests RealSense IMU publication under a few launch modes.
 
 ROOT="${HOME}/slam_project"
-source /opt/ros/noetic/setup.bash
+source /opt/ros/melodic/setup.bash
 source "${ROOT}/agv_ws/devel/setup.bash"
 
 set -u
