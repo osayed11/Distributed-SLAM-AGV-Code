@@ -1,9 +1,10 @@
 #!/bin/bash
 # Fixed: Synchronized start and stop for consistent bag durations
-ROBOTS=("10.23.118.99" "10.23.16.229" "10.23.22.246" "10.23.37.117" "10.23.33.237")
-RADII=("0.25" "0.5" "0.75" "1" "1.25")
+# "10.23.22.246" "10.23.37.117" "10.23.33.237"
+ROBOTS=("10.23.22.246" "10.23.16.229" "10.23.118.99")
+RADII=("1.5" "1.0" "0.5")
 LINEAR="0.20"
-DURATION="100.0"
+DURATION="180.0"
 STAGGER=15
 
 read -sp "Password: " PASS
@@ -79,7 +80,7 @@ for i in "${HEALTHY[@]}"; do
             [ -f /opt/ros/noetic/setup.bash ] && source /opt/ros/noetic/setup.bash
             [ -f ~/slam_project/agv_ws/devel/setup.bash ] && source ~/slam_project/agv_ws/devel/setup.bash
             
-            python3 -u ~/slam_project/scripts/logging/drive_circle.py --radius $RADIUS --linear $LINEAR --duration $DURATION --counter-clockwise --no-prompt
+            python3 -u ~/slam_project/scripts/logging/drive_circle.py --radius $RADIUS --linear $LINEAR --duration $DURATION --no-prompt
             echo '🏁 [AGV$i] Drive complete. Standing by for synchronized stop...'
         "
         echo "🔒 [$(date +%T)] [AGV$i] Drive finished."
