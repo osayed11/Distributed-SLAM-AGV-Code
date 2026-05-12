@@ -19,8 +19,12 @@ PYTHON="${PYTHON:-python3}"
 REMOTE_USER="${REMOTE_USER:-ubuntu}"
 REMOTE_PYTHON="${REMOTE_PYTHON:-python3}"
 
-LAPTOP_PKGS=(pyyaml pyzmq numpy matplotlib msgpack)
-ROBOT_PKGS=(pyyaml pyzmq numpy msgpack)
+# Pin versions known to have Python 3.6 wheels — both the myAGV image and
+# the lab laptop VM still ship Python 3.6.9. Modern pyzmq/numpy/matplotlib
+# releases dropped 3.6, so without these upper bounds pip falls back to
+# source builds and fails on missing C headers (zlib etc.).
+LAPTOP_PKGS=("pyzmq<25" "numpy<1.20" "matplotlib<3.4" pyyaml msgpack)
+ROBOT_PKGS=("pyzmq<25" "numpy<1.20" pyyaml msgpack)
 
 DO_LAPTOP=true
 DO_ROBOTS=true
@@ -38,8 +42,11 @@ done
 # Laptop
 # ----------------------------------------------------------------------------
 if $DO_LAPTOP; then
-  echo "==> laptop: installing ${LAPTOP_PKGS[*]}"
-  "$PYTHON" -m pip install --upgrade "${LAPTOP_PKGS[@]}"
+  echo "==> laptop: $($PYTHON --version 2>&1)"
+  echo "    [1/2] upgrading pip / setuptools / wheel"
+  "$PYTHON" -m pip install --user --upgrade pip setuptools wheel
+  echo "    [2/2] installing ${LAPTOP_PKGS[*]}"
+  "$PYTHON" -m pip install --user --upgrade --only-binary=:all: "${LAPTOP_PKGS[@]}"
 
   echo "    checking tkinter for matplotlib TkAgg backend…"
   if "$PYTHON" -c "import tkinter" 2>/dev/null; then
@@ -67,6 +74,11 @@ for r in cfg['robots']:
     print(r['ip'])
 ")
 
+  # Pre-quote the package specs so version pins like 'pyzmq<25' survive the
+  # local→ssh→remote shell trip (the bare '<' would otherwise be parsed as
+  # input redirection on the remote).
+  PKGS_QUOTED=$(printf '%q ' "${ROBOT_PKGS[@]}")
+
   for IP in "${ROBOT_IPS[@]}"; do
     echo ""
     echo "==> robot @ $IP"
@@ -76,7 +88,7 @@ echo "    python : \$($REMOTE_PYTHON --version 2>&1)"
 echo "    [1/2] upgrading pip / setuptools / wheel"
 $REMOTE_PYTHON -m pip install --user --upgrade pip setuptools wheel
 echo "    [2/2] installing ${ROBOT_PKGS[*]}"
-$REMOTE_PYTHON -m pip install --user --upgrade ${ROBOT_PKGS[*]}
+$REMOTE_PYTHON -m pip install --user --upgrade --only-binary=:all: $PKGS_QUOTED
 EOF
   done
 fi
