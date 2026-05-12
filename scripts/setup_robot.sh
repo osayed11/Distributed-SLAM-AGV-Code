@@ -70,11 +70,13 @@ check_realsense_version() {
         echo "pkg-config realsense2: ${version}"
         if [ "${version}" != "${REQUIRED_LIBREALSENSE_VERSION}" ]; then
             echo "WARN: validated RealSense SDK is ${REQUIRED_LIBREALSENSE_VERSION}, found ${version}."
-            echo "      Install librealsense2 ${REQUIRED_LIBREALSENSE_VERSION} runtime/dev headers and rebuild agv_ws before scenario runs."
+            return 1
         fi
+        return 0
     else
         echo "WARN: realsense2 pkg-config metadata not found."
-        echo "      Install librealsense2 ${REQUIRED_LIBREALSENSE_VERSION} runtime/dev headers before scenario runs."
+        echo "      Need librealsense2 ${REQUIRED_LIBREALSENSE_VERSION} runtime/dev headers."
+        return 1
     fi
 }
 
@@ -125,7 +127,9 @@ if [ "$INSTALL_SYSTEM" = true ]; then
         ros-noetic-tf2-msgs
 
     # --- Intel RealSense SDK ---
-    if ! check_realsense_version; then
+    RS_OK=true
+    check_realsense_version || RS_OK=false
+    if [ "$RS_OK" = false ]; then
         echo "Configuring Intel RealSense apt repo..."
 
         # Clean up any old/broken realsense sources
@@ -140,7 +144,7 @@ if [ "$INSTALL_SYSTEM" = true ]; then
         # Add Intel apt source for Ubuntu 20.04 (focal)
         sudo add-apt-repository "deb https://librealsense.intel.com/Debian/apt-repo focal main" -u
 
-        # Install SDK (skip DKMS on ARM64)
+        # Install SDK
         sudo apt-get install -y librealsense2-utils librealsense2-dev librealsense2-dbg
     else
         echo "RealSense SDK already installed."
@@ -196,7 +200,7 @@ if ! chronyc tracking >/dev/null 2>&1; then
     echo "WARN: chrony is installed but not reporting tracking status yet."
 fi
 
-check_realsense_version
+check_realsense_version || true
 
 section "data directories"
 mkdir -p "${HOME}/agv_data"
