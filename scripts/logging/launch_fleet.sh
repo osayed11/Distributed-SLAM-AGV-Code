@@ -1,8 +1,8 @@
 #!/bin/bash
 # Fixed: Synchronized start and stop for consistent bag durations
-ROBOTS=("10.23.118.99" "10.23.16.229")
-RADII=("0.4" "0.8")
-LINEAR="0.16"
+ROBOTS=("10.23.118.99" "10.23.16.229" "10.23.37.117" "10.23.22.246")
+RADII=("0.2" "0.4" "0.6" "0.8")
+LINEAR="0.20"
 DURATION="60.0"
 STAGGER=30
 

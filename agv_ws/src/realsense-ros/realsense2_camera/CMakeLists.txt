@@ -42,9 +42,9 @@ if(NOT realsense2_DIR AND EXISTS "/usr/local/lib/cmake/realsense2/realsense2Conf
     set(realsense2_DIR "/usr/local/lib/cmake/realsense2")
 endif()
 
-find_package(realsense2 2.50.0 CONFIG QUIET)
+find_package(realsense2 2.57.0 CONFIG QUIET)
 if(NOT realsense2_FOUND AND NOT WIN32)
-    find_package(realsense2 2.50.0)
+    find_package(realsense2 2.57.0)
 endif()
 
 if(NOT realsense2_FOUND)

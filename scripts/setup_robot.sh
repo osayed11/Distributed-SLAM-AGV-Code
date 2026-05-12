@@ -124,11 +124,26 @@ if [ "$INSTALL_SYSTEM" = true ]; then
         ros-noetic-tf \
         ros-noetic-tf2-msgs
 
-    if apt-cache show librealsense2-dev >/dev/null 2>&1; then
-        sudo apt-get install -y librealsense2-dev librealsense2-utils
+    # --- Intel RealSense SDK ---
+    if ! check_realsense_version; then
+        echo "Configuring Intel RealSense apt repo..."
+
+        # Clean up any old/broken realsense sources
+        sudo rm -f /etc/apt/sources.list.d/realsense* || true
+        sudo rm -f /etc/apt/sources.list.d/librealsense* || true
+        sudo sed -i '/librealsense.intel.com/d' /etc/apt/sources.list || true
+
+        # Add Intel GPG key
+        sudo apt-key adv --keyserver keyserver.ubuntu.com --recv-key FB0B24895113F120 || \
+        sudo apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv-key FB0B24895113F120
+
+        # Add Intel apt source for Ubuntu 20.04 (focal)
+        sudo add-apt-repository "deb https://librealsense.intel.com/Debian/apt-repo focal main" -u
+
+        # Install SDK (skip DKMS on ARM64)
+        sudo apt-get install -y librealsense2-utils librealsense2-dev librealsense2-dbg
     else
-        echo "WARN: librealsense2 packages not available from configured apt sources."
-        echo "      Install Intel RealSense packages separately if this robot is fresh."
+        echo "RealSense SDK already installed."
     fi
 
     sudo systemctl enable --now chrony 2>/dev/null || sudo service chrony restart || true
