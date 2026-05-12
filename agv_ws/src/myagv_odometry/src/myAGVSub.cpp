@@ -28,7 +28,7 @@ int main(int argc, char* argv[])
 	ROS_INFO("myAGV initialized successful!");
 
 	ros::Subscriber sub = n.subscribe("cmd_vel", 50, cmdCallback);
-	ros::Rate loop_rate(100);
+	ros::Rate loop_rate(20);
 
 	//ros::Duration(1).sleep();
 	

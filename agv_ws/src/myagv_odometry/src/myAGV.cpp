@@ -186,7 +186,7 @@ bool MyAGV::readSpeed()
     double dt = (currentTime - lastTime).toSec();
     double delta_x = (vx * cos(theta) - vy * sin(theta)) * dt;
     double delta_y = (vx * sin(theta) + vy * cos(theta)) * dt;
-    double delta_th = vtheta * dt;
+    double delta_th = 2.0 * vtheta * dt;
 
     x += delta_x;
     y += delta_y;
@@ -256,7 +256,7 @@ bool MyAGV::execute(double linearX, double linearY, double angularZ)
     if (debug_output) {
         std::cout << "execute: " << linearX << std::endl;
     }
-    writeSpeed(linearX, linearY, angularZ);
+    writeSpeed(0.08 * linearX, 0.08 * linearY, 0.6 * angularZ);
 
     if (!readSpeed()) {
         return false;

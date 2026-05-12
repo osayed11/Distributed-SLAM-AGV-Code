@@ -150,6 +150,25 @@ if [ "$INSTALL_SYSTEM" = true ]; then
         echo "RealSense SDK already installed."
     fi
 
+    # --- YDLidar SDK ---
+    if ! command -v ydlidar_test >/dev/null 2>&1; then
+        section "ydlidar sdk"
+        echo "Building and installing YDLidar-SDK..."
+        cd "${ROOT}/drivers/YDLidar-SDK"
+        mkdir -p build && cd build
+        cmake ..
+        make -j$(nproc)
+        sudo make install
+        cd "${ROOT}"
+    else
+        echo "YDLidar SDK already installed."
+    fi
+
+    # --- Permissions ---
+    echo "Ensuring user permissions for hardware..."
+    sudo usermod -a -G dialout $USER || true
+    sudo usermod -a -G video $USER || true
+    
     sudo systemctl enable --now chrony 2>/dev/null || sudo service chrony restart || true
 fi
 
@@ -173,9 +192,9 @@ fi
 echo "Installing AGV base controller rules..."
 echo 'KERNEL=="ttyACM*", ATTRS{idVendor}=="0483", ATTRS{idProduct}=="5740", MODE:="0666", SYMLINK+="myAGV"' | sudo tee /etc/udev/rules.d/99-myagv-base.rules > /dev/null
 
-# YDLidar X2 Rule (/dev/ydlidar)
-echo "Installing YDLidar rules..."
-echo 'KERNEL=="ttyUSB*", ATTRS{idVendor}=="10c4", ATTRS{idProduct}=="ea60", MODE:="0666", SYMLINK+="ydlidar"' | sudo tee /etc/udev/rules.d/99-ydlidar.rules > /dev/null
+# YDLidar X2 (built-in UART on Pi)
+echo "Setting permissions for YDLidar on /dev/ttyAMA0..."
+echo 'KERNEL=="ttyAMA0", MODE:="0666"' | sudo tee /etc/udev/rules.d/99-ydlidar.rules > /dev/null
 
 sudo udevadm control --reload-rules && sudo udevadm trigger
 

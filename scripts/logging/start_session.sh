@@ -309,12 +309,41 @@ roslaunch agv_bringup bringup.launch \
 BRINGUP_PID=$!
 
 echo "Waiting for required sensor streams before recording..."
-wait_for_topic_rate /scan 45
-wait_for_topic_rate /odom 45
-wait_for_topic_rate /camera/color/image_raw 60
-wait_for_topic_rate /camera/aligned_depth_to_color/image_raw 60
+FAILED_TOPICS=()
+
+# Function to check a topic without exiting early
+check_topic_silent() {
+    local topic="$1"
+    local timeout_s="$2"
+    local end=$((SECONDS + timeout_s))
+    while [ "$SECONDS" -lt "$end" ]; do
+        if timeout 5 rostopic hz "$topic" --window 5 2>/dev/null | grep -q "average rate"; then
+            echo "  [OK] $topic is live."
+            return 0
+        fi
+        sleep 1
+    done
+    echo "  [!] $topic TIMEOUT (not publishing)"
+    return 1
+}
+
+check_topic_silent /scan 30 || FAILED_TOPICS+=("/scan")
+check_topic_silent /odom 20 || FAILED_TOPICS+=("/odom")
+check_topic_silent /camera/color/image_raw 30 || FAILED_TOPICS+=("/camera/color/image_raw")
+check_topic_silent /camera/aligned_depth_to_color/image_raw 10 || FAILED_TOPICS+=("/camera/aligned_depth_to_color/image_raw")
+
 if [ "$REQUIRE_IMU" = true ]; then
-    wait_for_topic_rate /imu 45
+    check_topic_silent /imu 15 || FAILED_TOPICS+=("/imu")
+fi
+
+if [ ${#FAILED_TOPICS[@]} -ne 0 ]; then
+    echo ""
+    echo "❌ ERROR: The following required topics are NOT publishing:"
+    for ft in "${FAILED_TOPICS[@]}"; do echo "   - $ft"; done
+    echo ""
+    echo "Check the bringup log for errors: ${BRINGUP_LOG}"
+    echo "Exiting."
+    exit 1
 fi
 
 
