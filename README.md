@@ -115,6 +115,7 @@ scripts/logging/validate_bag.py            Full post-run publishability check
 scripts/logging/audit_bag_fast.py          Fast topic/rate/gap/sync audit
 scripts/logging/drive_circle.py            Concentric-circle motion for S1 scenarios
 scripts/logging/drive_straight.py          Odom-bounded straight-line dataset helper
+scripts/logging/drive_mocap_straight.py    Mocap-bounded straight-line helper (ground-truth closed loop)
 scripts/logging/drive_square.py            Odom-bounded square motion helper
 scripts/logging/drive_forward_back.py      Odom-bounded smoke-test motion helper
 scripts/scenarios/run_s1_concentric_robot.sh  Single-robot S1 runner with epoch stagger
@@ -317,6 +318,59 @@ Exit codes:
 1 = fail
 2 = warning
 ```
+
+## Mocap Ground Truth (PhaseSpace)
+
+The PhaseSpace OWL SDK ships as `libowlsock.so` for x86_64 only, so the
+mocap bridge does not run on the AGV (arm64). Run the bridge on an
+x86_64 PC that can see both the OWL server and the robot.
+
+### Mocap PC setup (x86_64, one-time)
+
+```bash
+mkdir -p ~/mocap_ws/src && cd ~/mocap_ws/src
+ln -s /path/to/Distributed-SLAM-AGV-Code/phasespace-mocap-ros/phasespace_bringup .
+ln -s /path/to/Distributed-SLAM-AGV-Code/agv_ws/src/phasespace_msgs .
+cd ~/mocap_ws && catkin_make
+source devel/setup.bash
+```
+
+Start the bridge (and let it host `roscore`):
+
+```bash
+roslaunch phasespace_bringup phasespace_mocap.launch \
+    server_ip:=<owl_server_ip> display:=false
+```
+
+Confirm the topic is alive and your rigid id appears:
+
+```bash
+rostopic echo /phasespace/rigids
+```
+
+### Robot side
+
+Point the robot at the mocap PC's master and verify the topic is visible:
+
+```bash
+export ROS_MASTER_URI=http://<mocap_pc_ip>:11311
+export ROS_IP=<this_robot_ip>
+rostopic list | grep phasespace
+```
+
+Drive 1 m forward in a straight line, closed-loop on mocap (replace `7`
+with the rigid id assigned to this robot in the Owl client):
+
+```bash
+python scripts/logging/drive_mocap_straight.py \
+    --rigid-id 7 --distance 1.0 --speed 0.10 --no-prompt
+```
+
+The script records the rigid's initial (x, y, yaw) in the mocap frame,
+projects displacement onto the start-heading vector for distance, and
+holds yaw with a P controller. It stops on distance reached, timeout,
+or stale mocap (> 0.3 s without a fresh sample). If the robot veers
+when the controller is on, rerun with `--invert-yaw`.
 
 ## Copy Bags To Laptop
 

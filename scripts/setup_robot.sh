@@ -253,6 +253,7 @@ section "script permissions"
 chmod +x \
     "${ROOT}/scripts/logging/start_session.sh" \
     "${ROOT}/scripts/logging/drive_straight.py" \
+    "${ROOT}/scripts/logging/drive_mocap_straight.py" \
     "${ROOT}/scripts/logging/drive_square.py" \
     "${ROOT}/scripts/logging/drive_forward_back.py" \
     "${ROOT}/scripts/logging/validate_bag.py" \

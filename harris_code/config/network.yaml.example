@@ -1,0 +1,27 @@
+robots:
+  - id: 0
+    ip: "192.168.1.44"   # fill in actual IPs
+    pub_port: 5551
+    mocap_rigid_id: 1     # PhaseSpace rigid body ID for this robot
+  # - id: 0
+  #   ip: "192.168.1.115" # dotmyagv2.local
+  #   pub_port: 5550
+  #   mocap_rigid_id: 2
+  # - id: 0
+  #   ip: "192.168.1.121"  # dotmyagv3.local
+  #   pub_port: 5557
+  #   mocap_rigid_id: 3
+
+
+laptop:
+  ip: "192.168.1.142"     # fill in actual IP
+  mocap_pub_port: 5560    # PUB: laptop broadcasts all rigid body poses
+  central_pub_port: 5561  # PUB: centralized controller broadcasts cmd_vel
+  goal_pub_port: 5562     # PUB: goal_setter broadcasts goal updates
+
+control:
+  frequency_hz: 20        # start conservative; increase after validation
+
+payload:
+  mocap_rigid_id: 6       # PhaseSpace rigid body ID for the payload
+
