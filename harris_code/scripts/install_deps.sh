@@ -69,8 +69,15 @@ for r in cfg['robots']:
 
   for IP in "${ROBOT_IPS[@]}"; do
     echo ""
-    echo "==> robot @ $IP: installing ${ROBOT_PKGS[*]}"
-    ssh "$REMOTE_USER@$IP" "$REMOTE_PYTHON -m pip install --user --upgrade ${ROBOT_PKGS[*]}"
+    echo "==> robot @ $IP"
+    ssh "$REMOTE_USER@$IP" bash <<EOF
+set -e
+echo "    python : \$($REMOTE_PYTHON --version 2>&1)"
+echo "    [1/2] upgrading pip / setuptools / wheel"
+$REMOTE_PYTHON -m pip install --user --upgrade pip setuptools wheel
+echo "    [2/2] installing ${ROBOT_PKGS[*]}"
+$REMOTE_PYTHON -m pip install --user --upgrade ${ROBOT_PKGS[*]}
+EOF
   done
 fi
 
