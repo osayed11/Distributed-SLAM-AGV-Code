@@ -32,8 +32,9 @@ STATUS_INTERVAL = 2.0  # seconds between status prints
 
 def _load_lib():
     here = os.path.dirname(os.path.abspath(__file__))
-    repo_root = os.path.abspath(os.path.join(here, "..", ".."))
-    owlsock = os.path.join(repo_root, "src", "swarm_mocap", "lib", "libowlsock.so")
+    repo_root = os.path.abspath(os.path.join(here, ".."))
+    owlsock = os.path.join(repo_root, "phasespace-mocap-ros",
+                           "phasespace_bringup", "bin", "libowlsock.so")
     ctypes.CDLL(owlsock, mode=ctypes.RTLD_GLOBAL)  # make OWL symbols globally visible
     lib = ctypes.CDLL(os.path.join(here, "owl_bridge.so"))
     lib.owl_open.restype = ctypes.c_int
