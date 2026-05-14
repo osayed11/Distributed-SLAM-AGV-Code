@@ -373,10 +373,10 @@ def main():
                   "Shuttle (robot 0) — heading locked, pure translation",
                   fontsize=11, fontweight="bold", ha="center", va="center")
 
-    tb_start_x = TextBox(ax_start_x, "start X (m)", initial="-0.5")
-    tb_start_y = TextBox(ax_start_y, "start Y (m)", initial="1.0")
-    tb_end_x   = TextBox(ax_end_x,   "end X (m)",   initial="1.0")
-    tb_end_y   = TextBox(ax_end_y,   "end Y (m)",   initial="1.0")
+    tb_start_x = TextBox(ax_start_x, "start X (m)", initial="0.0")
+    tb_start_y = TextBox(ax_start_y, "start Y (m)", initial="0.0")
+    tb_end_x   = TextBox(ax_end_x,   "end X (m)",   initial="0.0")
+    tb_end_y   = TextBox(ax_end_y,   "end Y (m)",   initial="1.5")
 
     btn_go_start = Button(ax_btn_start, "Go to Start Position",
                           color="lightblue", hovercolor="#4488cc")
