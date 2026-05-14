@@ -1,0 +1,688 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Multi-Robot C-SLAM Dataset Scenarios</title>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+</head>
+<body style="margin:0;background:#020817;">
+  <div id="root"></div>
+  <script>
+const { useState } = React;
+const scenarios = [
+    {
+        id: "S1",
+        title: "Concentric Circles",
+        tag: "BASELINE",
+        tagColor: "#6EE7B7",
+        robots: 5,
+        overlap: "~85%",
+        dynamic: false,
+        where: "6×6m Lab",
+        publishes: "Control condition",
+        publishColor: "#94A3B8",
+        variable: "Algorithm correctness",
+        setup: [
+            "5 concentric circles, radii: 0.5, 0.75, 1.0, 1.25, 1.5m",
+            "All robots run clockwise simultaneously",
+            "Staggered starts: robot N waits N×30s before departing",
+            "Run duration: 10 minutes continuous"
+        ],
+        justification: "Calibration baseline with dense loop closures and guaranteed inter-robot encounters. Every algorithm should succeed here — sets the ATE ceiling that all harder scenarios are measured against. Equivalent role to TUM-RGBD fr1_xyz in single-robot SLAM.",
+        novelty: "Exceeds every existing 3-robot indoor dataset on team size. Not your headline claim — your control condition.",
+        runs: 1,
+        viz: "concentric"
+    },
+    {
+        id: "S2",
+        title: "Lawnmower Overlap Variation",
+        tag: "RA-L ✓",
+        tagColor: "#34D399",
+        robots: 8,
+        overlap: "75% / 40% / 15%",
+        dynamic: false,
+        where: "6×6m Lab",
+        publishes: "Guarantees RA-L",
+        publishColor: "#34D399",
+        variable: "Overlap regime",
+        setup: [
+            "8 vertical stripes across the space (~0.75m each)",
+            "Each robot owns one stripe, drives lawnmower up-and-down",
+            "Run A — adjacent assignment: ~75% overlap with neighbours",
+            "Run B — skip-one assignment: ~40% overlap",
+            "Run C — maximally separated: ~15% overlap",
+            "Same environment and paths across all 3 runs"
+        ],
+        justification: "Overlap regime is the single most understudied variable in C-SLAM. CU-Multi (2025, RA-L) published on exactly this with 4 robots. You do it with 8, with both LiDAR and RGB-D simultaneously, and with sub-centimetre MoCap ground truth — strictly dominating their contribution on every axis that matters for algorithm evaluation.",
+        novelty: "First dataset to systematically vary overlap as a controlled experimental variable at 8 robots with MoCap-grade ground truth. CU-Multi did 4 robots without MoCap. You double the team size and eliminate ground truth noise. This alone with S1 guarantees RA-L.",
+        runs: 3,
+        viz: "lawnmower"
+    },
+    {
+        id: "S3",
+        title: "Asymmetric Team Sizes",
+        tag: "RA-L STRONG",
+        tagColor: "#10B981",
+        robots: "2 / 4 / 6 / 8",
+        overlap: "~50%",
+        dynamic: false,
+        where: "6×6m Lab",
+        publishes: "RA-L stronger",
+        publishColor: "#10B981",
+        variable: "Team size (isolated)",
+        setup: [
+            "Fixed lawnmower coverage of the full space",
+            "Same path structure each run — only robot count changes",
+            "Run at N = 2, 4, 6, 8 robots (four separate bag collections)",
+            "Robots always spread evenly so overlap stays ~50% regardless of N"
+        ],
+        justification: "No existing dataset holds overlap constant while varying team size. Every published scalability claim conflates these two variables — when you add robots you also add overlap. This disentangles them and is the cleanest possible stress test of O(N²) communication complexity.",
+        novelty: "First dataset where team size is an isolated experimental variable. Algorithms claiming to scale can now actually be tested.",
+        runs: 4,
+        viz: "teamsize"
+    },
+    {
+        id: "S4",
+        title: "Rendezvous and Separate",
+        tag: "ICRA",
+        tagColor: "#60A5FA",
+        robots: 10,
+        overlap: "~20% base / high at rendezvous",
+        dynamic: false,
+        where: "6×6m Lab",
+        publishes: "ICRA",
+        publishColor: "#60A5FA",
+        variable: "Co-observation time",
+        setup: [
+            "Space divided into two halves: 5 robots per half",
+            "Each half covered by lawnmower independently",
+            "At t=3min and t=6min: all robots converge to central 1.5m corridor",
+            "Robots arrive in staggered pairs (one from each side every 5s) to avoid collision",
+            "Three runs varying rendezvous duration: 30s, 60s, 120s",
+            "Robots return to home half after each rendezvous"
+        ],
+        justification: "Real deployments have robots working in separate regions that briefly meet. The unanswered question: how long do robots need to co-observe for global map consistency to converge? Three rendezvous durations let you measure this exactly.",
+        novelty: "First dataset quantifying minimum co-observation time required for global C-SLAM convergence — a concrete, deployable number the field has never measured.",
+        runs: 3,
+        viz: "rendezvous"
+    },
+    {
+        id: "S5",
+        title: "Dynamic Agents",
+        tag: "ICRA STRONG",
+        tagColor: "#3B82F6",
+        robots: 12,
+        overlap: "~50%",
+        dynamic: true,
+        where: "Here East (~20×15m)",
+        publishes: "ICRA strong",
+        publishColor: "#3B82F6",
+        variable: "Dynamic agent density",
+        setup: [
+            "Lawnmower coverage scaled to larger Here East space",
+            "4 humans walk scripted diagonal crossing paths at ~1.2m/s",
+            "Walkers cross the robot coverage area every 90 seconds",
+            "Three runs: 0 walkers, 2 walkers, 4 walkers",
+            "Robot ground truth via AprilTag floor grid; human walker positions logged by observer timestamps"
+        ],
+        justification: "Every warehouse has humans. Moving objects are the most common source of false loop closures in indoor LiDAR SLAM. No existing multi-robot dataset quantifies performance degradation as a function of dynamic agent density. The 0/2/4 structure gives a direct dose-response curve.",
+        novelty: "First controlled dynamic-agent benchmark for multi-robot SLAM. Also functions as a dynamic object tracking benchmark, doubling the potential user base.",
+        runs: 3,
+        viz: "dynamic"
+    },
+    {
+        id: "S6",
+        title: "Swarm Scale",
+        tag: "IJRR / TOP ICRA",
+        tagColor: "#8B5CF6",
+        robots: 20,
+        overlap: "~30%",
+        dynamic: false,
+        where: "Here East (~20×15m)",
+        publishes: "IJRR / top ICRA",
+        publishColor: "#8B5CF6",
+        variable: "Scale + bandwidth saturation",
+        setup: [
+            "4×5 grid of cells, one robot per cell, lawnmower per cell",
+            "Every 3 minutes: all robots converge to central corridor for 60s",
+            "Run A: full WiFi bandwidth (no restrictions)",
+            "Run B: bandwidth throttled to 1 Mbps/robot via tc netem",
+            "Compare ATE, comms load, and convergence speed across both runs"
+        ],
+        justification: "20 real robots exceeds every published real-hardware C-SLAM deployment. The bandwidth-throttled run is the first controlled measurement of algorithm behaviour under network saturation — something every distributed C-SLAM paper mentions but none have measured empirically.",
+        novelty: "Largest real-hardware C-SLAM dataset by team size. First controlled network-saturation benchmark. Real comms statistics seed a credible simulation extension to 50 robots.",
+        runs: 2,
+        viz: "swarm"
+    },
+    {
+        id: "S7",
+        title: "Heterogeneous Roles",
+        tag: "IJRR",
+        tagColor: "#A78BFA",
+        robots: 20,
+        overlap: "~40%",
+        dynamic: false,
+        where: "Here East (~20×15m)",
+        publishes: "IJRR",
+        publishColor: "#A78BFA",
+        variable: "Robot role diversity",
+        setup: [
+            "10 'explorer' robots: full lawnmower coverage across entire space",
+            "10 'relay' robots: stationary at fixed grid positions, sensors active",
+            "Run A: both explorers and relays active",
+            "Run B: relays removed, explorers run alone (same paths)",
+            "Compare map consistency and comms topology across both runs"
+        ],
+        justification: "Real fleets aren't homogeneous. Stationary robots as anchors are theoretically beneficial for Swarm-SLAM's algebraic-connectivity framework — but this has never been tested empirically. Two runs isolate exactly what the relay robots contribute to map consistency.",
+        novelty: "First dataset with explicitly heterogeneous robot roles. Directly tests anchor-based C-SLAM assumptions validated only in simulation until now.",
+        runs: 2,
+        viz: "heterogeneous"
+    },
+    {
+        id: "S8",
+        title: "Communication Topology Variation",
+        tag: "IJRR STRONG",
+        tagColor: "#7C3AED",
+        robots: 20,
+        overlap: "~50%",
+        dynamic: false,
+        where: "Here East (~20×15m)",
+        publishes: "IJRR strong",
+        publishColor: "#7C3AED",
+        variable: "Network topology",
+        setup: [
+            "Fixed lawnmower coverage across all 4 runs — paths identical",
+            "Run A: full mesh, all robots communicate freely",
+            "Run B: chain topology — spatial neighbours only via tc netem",
+            "Run C: two clusters of 10, inter-cluster bandwidth capped at 0.5 Mbps",
+            "Run D: 30% random packet loss injected on all links"
+        ],
+        justification: "Every C-SLAM paper assumes one communication model but tests only one network condition. DCL-SLAM assumes sub-100ms latency. Swarm-SLAM assumes opportunistic mesh. With identical trajectories across four network regimes you can directly answer: does the communication model actually matter?",
+        novelty: "First dataset where network topology is an explicit controlled variable. The most direct empirical answer to whether bandwidth-efficient descriptors actually help under real constraints.",
+        runs: 4,
+        viz: "topology"
+    },
+    {
+        id: "S9",
+        title: "Loop Closure Stress",
+        tag: "IJRR STRONG",
+        tagColor: "#6D28D9",
+        robots: 30,
+        overlap: "Aliased",
+        dynamic: false,
+        where: "Here East (~20×15m)",
+        publishes: "IJRR strong",
+        publishColor: "#6D28D9",
+        variable: "Perceptual aliasing",
+        setup: [
+            "Identical box stacks placed at regular 3m intervals across space",
+            "Repeated visual structure induces false LiDAR + visual loop closures",
+            "30 robots run lawnmower coverage across the full environment",
+            "Run A: repeated structure (aliased environment)",
+            "Run B: varied coloured markers at each position (control)"
+        ],
+        justification: "Perceptual aliasing is the most cited failure mode in C-SLAM but has never been deliberately induced in a multi-robot benchmark. PCM, GNC, and RANSAC-based outlier rejection all claim robustness — validated only in naturally varied environments. 30 robots amplify the problem because more robots generate more false candidates simultaneously.",
+        novelty: "First controlled perceptual-aliasing benchmark for multi-robot SLAM. Directly stress-tests every major outlier-rejection method at unprecedented scale.",
+        runs: 2,
+        viz: "aliasing"
+    },
+    {
+        id: "S10",
+        title: "Incremental Deployment",
+        tag: "FIELD-DEFINING",
+        tagColor: "#F59E0B",
+        robots: 50,
+        overlap: "~30%",
+        dynamic: true,
+        where: "Here East (~20×15m)",
+        publishes: "Field-defining",
+        publishColor: "#F59E0B",
+        variable: "Cold-start join event",
+        setup: [
+            "Start with 10 robots running lawnmower coverage",
+            "Every 5 minutes: add 10 more cold-start robots to the fleet",
+            "New robots bootstrap localisation against existing partial map",
+            "All 50 active by t=20min — continue running for 10 more minutes",
+            "1 human walker present throughout as mild dynamic stressor"
+        ],
+        justification: "Real deployments never deploy all robots simultaneously. The cold-start join event — where a new robot localises against a map built by others — is arguably the hardest practical C-SLAM problem and has never been benchmarked. At 50 robots you also get the first real-hardware measurement of the O(N²) communication spike at maximum fleet size.",
+        novelty: "Largest real-hardware C-SLAM dataset ever collected. First benchmark capturing incremental deployment. The 50-robot comms spike is the empirical result your entire paper's scale-gap argument has been building toward.",
+        runs: 1,
+        viz: "incremental"
+    }
+];
+// SVG Visualizations
+function ConcentricViz() {
+    const cx = 110, cy = 110;
+    const radii = [30, 45, 60, 75, 90];
+    const colors = ["#34D399", "#60A5FA", "#F472B6", "#FBBF24", "#A78BFA"];
+    const angles = [0, 72, 144, 216, 288];
+    return (React.createElement("svg", { viewBox: "0 0 220 220", className: "w-full h-full" },
+        React.createElement("rect", { width: "220", height: "220", fill: "#0F172A", rx: "8" }),
+        React.createElement("text", { x: "110", y: "16", textAnchor: "middle", fill: "#475569", fontSize: "9", fontFamily: "monospace" }, "6\u00D76m LAB"),
+        React.createElement("rect", { x: "10", y: "20", width: "200", height: "190", fill: "none", stroke: "#1E293B", strokeWidth: "1.5", rx: "4" }),
+        radii.map((r, i) => (React.createElement("g", { key: i },
+            React.createElement("circle", { cx: cx, cy: cy, r: r, fill: "none", stroke: colors[i], strokeWidth: "1", strokeDasharray: "3,3", opacity: "0.3" }),
+            React.createElement("circle", { cx: cx, cy: cy, r: r, fill: "none", stroke: colors[i], strokeWidth: "1.5", strokeDasharray: "200", strokeDashoffset: "0", opacity: "0.7" }),
+            React.createElement("circle", { cx: cx + r * Math.cos((angles[i] * Math.PI) / 180), cy: cy + r * Math.sin((angles[i] * Math.PI) / 180), r: "5", fill: colors[i], opacity: "0.95" }),
+            React.createElement("text", { x: cx + (r + 8) * Math.cos(((angles[i] - 20) * Math.PI) / 180), y: cy + (r + 8) * Math.sin(((angles[i] - 20) * Math.PI) / 180), fill: colors[i], fontSize: "8", textAnchor: "middle", opacity: "0.8" },
+                "R",
+                i + 1)))),
+        React.createElement("circle", { cx: cx, cy: cy, r: "3", fill: "#475569" }),
+        React.createElement("text", { x: "110", y: "200", textAnchor: "middle", fill: "#475569", fontSize: "8", fontFamily: "monospace" }, "All robots clockwise \u2022 staggered 30s starts")));
+}
+function LawnmowerViz() {
+    const colors = ["#34D399", "#60A5FA", "#F472B6", "#FBBF24", "#A78BFA", "#FB923C", "#E879F9", "#38BDF8"];
+    const stripeW = 24;
+    const startX = 12;
+    const topY = 28, botY = 195;
+    return (React.createElement("svg", { viewBox: "0 0 220 220", className: "w-full h-full" },
+        React.createElement("rect", { width: "220", height: "220", fill: "#0F172A", rx: "8" }),
+        React.createElement("text", { x: "110", y: "16", textAnchor: "middle", fill: "#475569", fontSize: "9", fontFamily: "monospace" }, "6\u00D76m LAB \u2014 3 RUNS"),
+        React.createElement("rect", { x: "10", y: "20", width: "200", height: "178", fill: "none", stroke: "#1E293B", strokeWidth: "1.5", rx: "4" }),
+        colors.map((c, i) => {
+            const x = startX + i * stripeW;
+            const isEven = i % 2 === 0;
+            const y1 = isEven ? topY + 4 : botY - 4;
+            const y2 = isEven ? botY - 4 : topY + 4;
+            return (React.createElement("g", { key: i },
+                React.createElement("rect", { x: x, y: topY, width: stripeW, height: botY - topY, fill: c, opacity: "0.04" }),
+                React.createElement("line", { x1: x + stripeW / 2, y1: y1, x2: x + stripeW / 2, y2: y2, stroke: c, strokeWidth: "1.5", opacity: "0.8" }),
+                React.createElement("polygon", { points: `${x + stripeW / 2 - 3},${y2} ${x + stripeW / 2 + 3},${y2} ${x + stripeW / 2},${y2 + (isEven ? 6 : -6)}`, fill: c, opacity: "0.9" }),
+                React.createElement("circle", { cx: x + stripeW / 2, cy: y1, r: "4.5", fill: c, opacity: "0.95" }),
+                React.createElement("text", { x: x + stripeW / 2, y: topY - 4, textAnchor: "middle", fill: c, fontSize: "7", fontFamily: "monospace" },
+                    "R",
+                    i + 1)));
+        }),
+        React.createElement("text", { x: "40", y: "210", fill: "#475569", fontSize: "7.5", fontFamily: "monospace" }, "RUN A: adjacent"),
+        React.createElement("text", { x: "95", y: "210", fill: "#64748B", fontSize: "7.5", fontFamily: "monospace" }, "B: skip-1"),
+        React.createElement("text", { x: "140", y: "210", fill: "#334155", fontSize: "7.5", fontFamily: "monospace" }, "C: separated")));
+}
+function TeamSizeViz() {
+    const configs = [
+        { n: 2, color: "#34D399", label: "N=2" },
+        { n: 4, color: "#60A5FA", label: "N=4" },
+        { n: 6, color: "#F472B6", label: "N=6" },
+        { n: 8, color: "#FBBF24", label: "N=8" },
+    ];
+    return (React.createElement("svg", { viewBox: "0 0 220 220", className: "w-full h-full" },
+        React.createElement("rect", { width: "220", height: "220", fill: "#0F172A", rx: "8" }),
+        React.createElement("text", { x: "110", y: "14", textAnchor: "middle", fill: "#475569", fontSize: "9", fontFamily: "monospace" }, "4 RUNS \u2014 SAME PATHS, DIFFERENT N"),
+        configs.map((cfg, ci) => {
+            const col = ci % 2;
+            const row = Math.floor(ci / 2);
+            const ox = 12 + col * 104;
+            const oy = 22 + row * 96;
+            const w = 96, h = 84;
+            const stripeW = w / cfg.n;
+            return (React.createElement("g", { key: ci },
+                React.createElement("rect", { x: ox, y: oy, width: w, height: h, fill: "#0F1A2E", rx: "3" }),
+                React.createElement("rect", { x: ox, y: oy, width: w, height: h, fill: "none", stroke: cfg.color, strokeWidth: "1", rx: "3", opacity: "0.4" }),
+                React.createElement("text", { x: ox + w / 2, y: oy + h + 12, textAnchor: "middle", fill: cfg.color, fontSize: "9", fontFamily: "monospace" }, cfg.label),
+                Array.from({ length: cfg.n }).map((_, i) => {
+                    const sx = ox + i * stripeW + stripeW / 2;
+                    const isEven = i % 2 === 0;
+                    return (React.createElement("g", { key: i },
+                        React.createElement("line", { x1: sx, y1: oy + 6, x2: sx, y2: oy + h - 6, stroke: cfg.color, strokeWidth: "1.2", opacity: "0.5", strokeDasharray: isEven ? "0" : "2,2" }),
+                        React.createElement("circle", { cx: sx, cy: isEven ? oy + 8 : oy + h - 8, r: "3.5", fill: cfg.color, opacity: "0.9" })));
+                })));
+        }),
+        React.createElement("text", { x: "110", y: "214", textAnchor: "middle", fill: "#475569", fontSize: "8", fontFamily: "monospace" }, "Overlap held constant ~50% across all runs")));
+}
+function RendezvousViz() {
+    const leftColor = "#60A5FA", rightColor = "#F472B6", corridorColor = "#FBBF24";
+    const robots = [
+        { x: 40, y: 60, c: leftColor }, { x: 55, y: 100, c: leftColor }, { x: 40, y: 140, c: leftColor }, { x: 65, y: 75, c: leftColor }, { x: 55, y: 130, c: leftColor },
+        { x: 165, y: 60, c: rightColor }, { x: 150, y: 100, c: rightColor }, { x: 165, y: 140, c: rightColor }, { x: 145, y: 75, c: rightColor }, { x: 155, y: 130, c: rightColor },
+    ];
+    return (React.createElement("svg", { viewBox: "0 0 220 220", className: "w-full h-full" },
+        React.createElement("rect", { width: "220", height: "220", fill: "#0F172A", rx: "8" }),
+        React.createElement("text", { x: "110", y: "14", textAnchor: "middle", fill: "#475569", fontSize: "9", fontFamily: "monospace" }, "6\u00D76m LAB \u2014 RENDEZVOUS STRUCTURE"),
+        React.createElement("rect", { x: "10", y: "20", width: "200", height: "160", fill: "none", stroke: "#1E293B", strokeWidth: "1.5", rx: "4" }),
+        React.createElement("rect", { x: "10", y: "20", width: "94", height: "160", fill: leftColor, opacity: "0.04" }),
+        React.createElement("text", { x: "57", y: "38", textAnchor: "middle", fill: leftColor, fontSize: "8", fontFamily: "monospace", opacity: "0.7" }, "LEFT (5 robots)"),
+        React.createElement("rect", { x: "116", y: "20", width: "94", height: "160", fill: rightColor, opacity: "0.04" }),
+        React.createElement("text", { x: "163", y: "38", textAnchor: "middle", fill: rightColor, fontSize: "8", fontFamily: "monospace", opacity: "0.7" }, "RIGHT (5 robots)"),
+        React.createElement("rect", { x: "104", y: "20", width: "12", height: "160", fill: corridorColor, opacity: "0.15" }),
+        React.createElement("line", { x1: "110", y1: "20", x2: "110", y2: "180", stroke: corridorColor, strokeWidth: "1", strokeDasharray: "4,3", opacity: "0.6" }),
+        React.createElement("text", { x: "110", y: "193", textAnchor: "middle", fill: corridorColor, fontSize: "7.5", fontFamily: "monospace" }, "RENDEZVOUS"),
+        React.createElement("text", { x: "110", y: "202", textAnchor: "middle", fill: corridorColor, fontSize: "7", fontFamily: "monospace" }, "1.5m corridor"),
+        robots.map((r, i) => (React.createElement("g", { key: i },
+            React.createElement("circle", { cx: r.x, cy: r.y, r: "5", fill: r.c, opacity: "0.9" }),
+            React.createElement("line", { x1: r.x, y1: r.y, x2: "110", y2: r.y, stroke: r.c, strokeWidth: "0.8", strokeDasharray: "3,3", opacity: "0.3" })))),
+        React.createElement("text", { x: "80", y: "105", fill: leftColor, fontSize: "14", opacity: "0.5" }, "\u2192"),
+        React.createElement("text", { x: "126", y: "105", fill: rightColor, fontSize: "14", opacity: "0.5" }, "\u2190"),
+        React.createElement("text", { x: "58", y: "214", fill: "#475569", fontSize: "7.5", fontFamily: "monospace" }, "3 runs: 30s / 60s / 120s rendezvous")));
+}
+function DynamicViz() {
+    const robotColor = "#60A5FA";
+    const walkerColor = "#F87171";
+    return (React.createElement("svg", { viewBox: "0 0 220 220", className: "w-full h-full" },
+        React.createElement("rect", { width: "220", height: "220", fill: "#0F172A", rx: "8" }),
+        React.createElement("text", { x: "110", y: "14", textAnchor: "middle", fill: "#475569", fontSize: "9", fontFamily: "monospace" }, "HERE EAST ~20\u00D715m \u2014 DYNAMIC AGENTS"),
+        React.createElement("rect", { x: "10", y: "20", width: "200", height: "165", fill: "none", stroke: "#1E293B", strokeWidth: "1.5", rx: "4" }),
+        Array.from({ length: 12 }).map((_, i) => {
+            const col = i % 4, row = Math.floor(i / 4);
+            const cx = 30 + col * 52, cy = 45 + row * 52;
+            const isEven = col % 2 === 0;
+            return (React.createElement("g", { key: i },
+                React.createElement("rect", { x: cx - 20, y: cy - 20, width: 40, height: 40, fill: robotColor, opacity: "0.04", rx: "2" }),
+                React.createElement("line", { x1: cx, y1: cy - 16, x2: cx, y2: cy + 16, stroke: robotColor, strokeWidth: "1", opacity: "0.4", strokeDasharray: isEven ? "0" : "2,2" }),
+                React.createElement("circle", { cx: cx, cy: isEven ? cy - 14 : cy + 14, r: "4", fill: robotColor, opacity: "0.85" })));
+        }),
+        React.createElement("line", { x1: "15", y1: "65", x2: "205", y2: "140", stroke: walkerColor, strokeWidth: "1.5", strokeDasharray: "5,3", opacity: "0.6" }),
+        React.createElement("line", { x1: "15", y1: "140", x2: "205", y2: "65", stroke: walkerColor, strokeWidth: "1.5", strokeDasharray: "5,3", opacity: "0.6" }),
+        React.createElement("circle", { cx: "80", cy: "90", r: "6", fill: walkerColor, opacity: "0.9" }),
+        React.createElement("circle", { cx: "150", cy: "115", r: "6", fill: walkerColor, opacity: "0.9" }),
+        React.createElement("circle", { cx: "55", cy: "125", r: "6", fill: walkerColor, opacity: "0.9" }),
+        React.createElement("circle", { cx: "170", cy: "80", r: "6", fill: walkerColor, opacity: "0.9" }),
+        React.createElement("text", { x: "86", y: "88", fill: walkerColor, fontSize: "7", fontFamily: "monospace" }, "W1"),
+        React.createElement("text", { x: "156", y: "113", fill: walkerColor, fontSize: "7", fontFamily: "monospace" }, "W2"),
+        React.createElement("text", { x: "61", y: "123", fill: walkerColor, fontSize: "7", fontFamily: "monospace" }, "W3"),
+        React.createElement("text", { x: "176", y: "78", fill: walkerColor, fontSize: "7", fontFamily: "monospace" }, "W4"),
+        React.createElement("text", { x: "25", y: "198", fill: robotColor, fontSize: "7.5", fontFamily: "monospace" }, "\u25CF 12 robots"),
+        React.createElement("text", { x: "100", y: "198", fill: walkerColor, fontSize: "7.5", fontFamily: "monospace" }, "\u25CF 4 walkers"),
+        React.createElement("text", { x: "110", y: "211", textAnchor: "middle", fill: "#475569", fontSize: "7.5", fontFamily: "monospace" }, "3 runs: 0 / 2 / 4 walkers active")));
+}
+function SwarmViz() {
+    const colors = Array.from({ length: 20 }, (_, i) => `hsl(${200 + i * 8},70%,60%)`);
+    return (React.createElement("svg", { viewBox: "0 0 220 220", className: "w-full h-full" },
+        React.createElement("rect", { width: "220", height: "220", fill: "#0F172A", rx: "8" }),
+        React.createElement("text", { x: "110", y: "14", textAnchor: "middle", fill: "#475569", fontSize: "9", fontFamily: "monospace" }, "HERE EAST \u2014 20 ROBOTS 4\u00D75 GRID"),
+        React.createElement("rect", { x: "10", y: "20", width: "200", height: "165", fill: "none", stroke: "#1E293B", strokeWidth: "1.5", rx: "4" }),
+        Array.from({ length: 20 }).map((_, i) => {
+            const col = i % 4, row = Math.floor(i / 4);
+            const cx = 30 + col * 48, cy = 42 + row * 30;
+            const cw = 40, ch = 24;
+            const c = colors[i];
+            return (React.createElement("g", { key: i },
+                React.createElement("rect", { x: cx - cw / 2, y: cy - ch / 2, width: cw, height: ch, fill: c, opacity: "0.06", rx: "2", stroke: c, strokeWidth: "0.5", strokeOpacity: "0.2" }),
+                React.createElement("line", { x1: cx, y1: cy - 8, x2: cx, y2: cy + 8, stroke: c, strokeWidth: "1", opacity: "0.5" }),
+                React.createElement("circle", { cx: cx, cy: cy - 6, r: "3.5", fill: c, opacity: "0.9" })));
+        }),
+        React.createElement("rect", { x: "95", y: "20", width: "30", height: "165", fill: "#FBBF24", opacity: "0.06" }),
+        React.createElement("line", { x1: "110", y1: "20", x2: "110", y2: "185", stroke: "#FBBF24", strokeWidth: "1", strokeDasharray: "4,3", opacity: "0.4" }),
+        React.createElement("text", { x: "110", y: "197", textAnchor: "middle", fill: "#FBBF24", fontSize: "7.5", fontFamily: "monospace" }, "rendezvous corridor"),
+        React.createElement("text", { x: "35", y: "211", fill: "#8B5CF6", fontSize: "7.5", fontFamily: "monospace" }, "Run A: full WiFi"),
+        React.createElement("text", { x: "120", y: "211", fill: "#A78BFA", fontSize: "7.5", fontFamily: "monospace" }, "Run B: 1Mbps/robot")));
+}
+function HeterogeneousViz() {
+    const explorerColor = "#34D399";
+    const relayColor = "#F59E0B";
+    const relayPositions = [
+        { x: 40, y: 55 }, { x: 110, y: 55 }, { x: 180, y: 55 },
+        { x: 40, y: 120 }, { x: 110, y: 120 }, { x: 180, y: 120 },
+        { x: 40, y: 180 }, { x: 110, y: 180 }, { x: 180, y: 180 },
+        { x: 75, y: 87 }, { x: 145, y: 87 },
+    ];
+    return (React.createElement("svg", { viewBox: "0 0 220 220", className: "w-full h-full" },
+        React.createElement("rect", { width: "220", height: "220", fill: "#0F172A", rx: "8" }),
+        React.createElement("text", { x: "110", y: "14", textAnchor: "middle", fill: "#475569", fontSize: "9", fontFamily: "monospace" }, "HERE EAST \u2014 HETEROGENEOUS ROLES"),
+        React.createElement("rect", { x: "10", y: "20", width: "200", height: "170", fill: "none", stroke: "#1E293B", strokeWidth: "1.5", rx: "4" }),
+        Array.from({ length: 10 }).map((_, i) => {
+            const x = 20 + i * 18 + 9;
+            const isEven = i % 2 === 0;
+            return (React.createElement("g", { key: i },
+                React.createElement("line", { x1: x, y1: isEven ? 28 : 182, x2: x, y2: isEven ? 182 : 28, stroke: explorerColor, strokeWidth: "1", opacity: "0.35", strokeDasharray: "2,3" }),
+                React.createElement("circle", { cx: x, cy: isEven ? 30 : 180, r: "3.5", fill: explorerColor, opacity: "0.8" })));
+        }),
+        relayPositions.map((p, i) => (React.createElement("g", { key: i },
+            React.createElement("rect", { x: p.x - 7, y: p.y - 7, width: 14, height: 14, fill: relayColor, opacity: "0.15", rx: "2", stroke: relayColor, strokeWidth: "1", strokeOpacity: "0.6" }),
+            React.createElement("circle", { cx: p.x, cy: p.y, r: "3", fill: relayColor, opacity: "0.9" })))),
+        [[0, 1], [1, 2], [0, 3], [1, 4], [2, 5], [3, 4], [4, 5], [3, 6], [4, 7], [5, 8], [9, 10]].map(([a, b], i) => (React.createElement("line", { key: i, x1: relayPositions[a].x, y1: relayPositions[a].y, x2: relayPositions[b].x, y2: relayPositions[b].y, stroke: relayColor, strokeWidth: "0.7", opacity: "0.25", strokeDasharray: "3,2" }))),
+        React.createElement("text", { x: "30", y: "208", fill: explorerColor, fontSize: "7.5", fontFamily: "monospace" }, "\u25CF 10 explorers (moving)"),
+        React.createElement("text", { x: "130", y: "208", fill: relayColor, fontSize: "7.5", fontFamily: "monospace" }, "\u25A0 10 relays (static)")));
+}
+function TopologyViz() {
+    const nodes = Array.from({ length: 20 }, (_, i) => {
+        const angle = (i / 20) * 2 * Math.PI;
+        return { x: 110 + 80 * Math.cos(angle), y: 100 + 70 * Math.sin(angle) };
+    });
+    const configs = [
+        { label: "A: Full Mesh", color: "#34D399", links: [[0, 5], [0, 10], [0, 15], [5, 10], [5, 15], [10, 15]] },
+        { label: "B: Chain", color: "#60A5FA", links: [[0, 1], [1, 2], [2, 3], [3, 4], [4, 5]] },
+        { label: "C: Clusters", color: "#F472B6", links: [[0, 1], [1, 2], [9, 10], [10, 11]] },
+        { label: "D: 30% Loss", color: "#FBBF24", links: [[0, 3], [2, 8], [5, 15]] },
+    ];
+    return (React.createElement("svg", { viewBox: "0 0 220 220", className: "w-full h-full" },
+        React.createElement("rect", { width: "220", height: "220", fill: "#0F172A", rx: "8" }),
+        React.createElement("text", { x: "110", y: "14", textAnchor: "middle", fill: "#475569", fontSize: "9", fontFamily: "monospace" }, "HERE EAST \u2014 4 NETWORK CONDITIONS"),
+        nodes.map((n, i) => (React.createElement("circle", { key: i, cx: n.x, cy: n.y, r: "4", fill: "#334155", opacity: "0.6" }))),
+        configs.map((cfg, ci) => {
+            const ox = ci % 2 === 0 ? 0 : 110, oy = ci < 2 ? 0 : 108;
+            return (React.createElement("g", { key: ci },
+                cfg.links.map(([a, b], li) => (React.createElement("line", { key: li, x1: nodes[a].x, y1: nodes[a].y, x2: nodes[b].x, y2: nodes[b].y, stroke: cfg.color, strokeWidth: "1.5", opacity: "0.5" }))),
+                React.createElement("text", { x: ox + 55, y: oy + 210, textAnchor: "middle", fill: cfg.color, fontSize: "7", fontFamily: "monospace" }, cfg.label)));
+        }),
+        nodes.map((n, i) => (React.createElement("circle", { key: `top-${i}`, cx: n.x, cy: n.y, r: "3.5", fill: "#1E293B", stroke: "#475569", strokeWidth: "0.8" }))),
+        React.createElement("text", { x: "110", y: "200", textAnchor: "middle", fill: "#475569", fontSize: "7.5", fontFamily: "monospace" }, "Same robot paths across all 4 runs")));
+}
+function AliasingViz() {
+    const boxColor = "#94A3B8";
+    const robotColor = "#8B5CF6";
+    return (React.createElement("svg", { viewBox: "0 0 220 220", className: "w-full h-full" },
+        React.createElement("rect", { width: "220", height: "220", fill: "#0F172A", rx: "8" }),
+        React.createElement("text", { x: "110", y: "14", textAnchor: "middle", fill: "#475569", fontSize: "9", fontFamily: "monospace" }, "HERE EAST \u2014 PERCEPTUAL ALIASING"),
+        React.createElement("rect", { x: "10", y: "20", width: "200", height: "165", fill: "none", stroke: "#1E293B", strokeWidth: "1.5", rx: "4" }),
+        Array.from({ length: 20 }).map((_, i) => {
+            const col = i % 5, row = Math.floor(i / 5);
+            const bx = 22 + col * 38, by = 32 + row * 38;
+            return (React.createElement("g", { key: i },
+                React.createElement("rect", { x: bx, y: by, width: 16, height: 16, fill: boxColor, opacity: "0.2", rx: "1", stroke: boxColor, strokeWidth: "0.8", strokeOpacity: "0.4" }),
+                React.createElement("rect", { x: bx + 2, y: by - 4, width: 12, height: 12, fill: boxColor, opacity: "0.12", rx: "1", stroke: boxColor, strokeWidth: "0.5", strokeOpacity: "0.3" })));
+        }),
+        Array.from({ length: 6 }).map((_, i) => {
+            const x = 16 + i * 34;
+            const c = `hsl(${260 + i * 15},60%,65%)`;
+            return (React.createElement("g", { key: i },
+                React.createElement("line", { x1: x, y1: 28, x2: x, y2: 178, stroke: c, strokeWidth: "1", opacity: "0.45", strokeDasharray: "2,4" }),
+                React.createElement("circle", { cx: x, cy: i % 2 === 0 ? 30 : 176, r: "3.5", fill: c, opacity: "0.85" })));
+        }),
+        React.createElement("line", { x1: "50", y1: "70", x2: "88", y2: "70", stroke: "#F87171", strokeWidth: "1", strokeDasharray: "2,2", opacity: "0.7" }),
+        React.createElement("line", { x1: "50", y1: "108", x2: "88", y2: "108", stroke: "#F87171", strokeWidth: "1", strokeDasharray: "2,2", opacity: "0.7" }),
+        React.createElement("text", { x: "69", y: "67", textAnchor: "middle", fill: "#F87171", fontSize: "7" }, "false LC"),
+        React.createElement("text", { x: "28", y: "199", fill: robotColor, fontSize: "7.5", fontFamily: "monospace" }, "\u25CF 30 robots"),
+        React.createElement("text", { x: "110", y: "208", textAnchor: "middle", fill: "#475569", fontSize: "7.5", fontFamily: "monospace" }, "Run A: identical boxes | Run B: varied markers")));
+}
+function IncrementalViz() {
+    const colors = ["#34D399", "#60A5FA", "#F472B6", "#FBBF24", "#A78BFA"];
+    const waves = [10, 20, 30, 40, 50];
+    return (React.createElement("svg", { viewBox: "0 0 220 220", className: "w-full h-full" },
+        React.createElement("rect", { width: "220", height: "220", fill: "#0F172A", rx: "8" }),
+        React.createElement("text", { x: "110", y: "14", textAnchor: "middle", fill: "#475569", fontSize: "9", fontFamily: "monospace" }, "HERE EAST \u2014 INCREMENTAL DEPLOYMENT"),
+        React.createElement("rect", { x: "10", y: "20", width: "200", height: "140", fill: "none", stroke: "#1E293B", strokeWidth: "1.5", rx: "4" }),
+        React.createElement("line", { x1: "15", y1: "175", x2: "210", y2: "175", stroke: "#334155", strokeWidth: "1" }),
+        [0, 5, 10, 15, 20, 30].map((t, i) => {
+            const x = 15 + (i / 5) * 195;
+            return (React.createElement("g", { key: i },
+                React.createElement("line", { x1: x, y1: "172", x2: x, y2: "178", stroke: "#475569", strokeWidth: "1" }),
+                React.createElement("text", { x: x, y: "187", textAnchor: "middle", fill: "#475569", fontSize: "7", fontFamily: "monospace" },
+                    t,
+                    "m")));
+        }),
+        React.createElement("text", { x: "110", y: "197", textAnchor: "middle", fill: "#475569", fontSize: "7.5", fontFamily: "monospace" }, "time \u2192"),
+        waves.map((n, wi) => {
+            const startX = 15 + wi * 39;
+            const endX = 210;
+            const y = 30 + wi * 22;
+            const c = colors[wi];
+            const count = n - (wi > 0 ? waves[wi - 1] : 0);
+            return (React.createElement("g", { key: wi },
+                React.createElement("line", { x1: startX, y1: "175", x2: startX, y2: y + 6, stroke: c, strokeWidth: "1", strokeDasharray: "2,2", opacity: "0.5" }),
+                React.createElement("line", { x1: startX, y1: y, x2: endX, y2: y, stroke: c, strokeWidth: "1.5", opacity: "0.7" }),
+                Array.from({ length: Math.min(count, 8) }).map((_, ri) => (React.createElement("circle", { key: ri, cx: startX + 8 + ri * 12, cy: y, r: "3.5", fill: c, opacity: "0.85" }))),
+                count > 8 && React.createElement("text", { x: startX + 108, y: y + 3, fill: c, fontSize: "7", fontFamily: "monospace" },
+                    "+",
+                    count - 8),
+                React.createElement("text", { x: startX - 2, y: y - 5, fill: c, fontSize: "7.5", fontFamily: "monospace" },
+                    n,
+                    " robots")));
+        }),
+        React.createElement("line", { x1: "15", y1: "150", x2: "210", y2: "150", stroke: "#F87171", strokeWidth: "1.5", strokeDasharray: "4,3", opacity: "0.6" }),
+        React.createElement("circle", { cx: "110", cy: "150", r: "4", fill: "#F87171", opacity: "0.85" }),
+        React.createElement("text", { x: "168", y: "148", fill: "#F87171", fontSize: "7.5", fontFamily: "monospace" }, "1 walker")));
+}
+const vizMap = {
+    concentric: ConcentricViz,
+    lawnmower: LawnmowerViz,
+    teamsize: TeamSizeViz,
+    rendezvous: RendezvousViz,
+    dynamic: DynamicViz,
+    swarm: SwarmViz,
+    heterogeneous: HeterogeneousViz,
+    topology: TopologyViz,
+    aliasing: AliasingViz,
+    incremental: IncrementalViz,
+};
+function App() {
+    const [active, setActive] = useState(0);
+    const s = scenarios[active];
+    const VizComp = vizMap[s.viz];
+    const isLab = s.where.includes("Lab");
+    const controlColor = isLab ? "#34D399" : "#FBBF24";
+    const mocapSteps = [
+        { label: "What MoCap is", text: "Infrared cameras around the lab track reflective markers on each robot at ~250Hz to sub-centimetre accuracy. Already installed in your UCL lab." },
+        { label: "How you use it", text: "Feed live MoCap pose into the P-controller as feedback — not odometry. Robot drives to where commanded. Odometry is logged as sensor data for the SLAM algorithm only." },
+        { label: "Why it matters", text: "S2 Runs A/B/C must be directly comparable. MoCap feedback eliminates inter-run odometry drift, ensuring each run executes the same physical path to within centimetres." },
+    ];
+    const odomSteps = [
+        { label: "Situation", text: "No MoCap at Here East. Robots use scripted P-controller with wheel odometry. Drift accumulates over large spaces and long run durations." },
+        { label: "Fix — AprilTag anchors", text: "Print AprilTags on A3 paper, tape to floor at ~3m grid. When the RGB-D camera detects a tag the robot knows its exact position and resets odometry, bounding drift to <5cm per segment." },
+        { label: "Paper transparency", text: "Disclose explicitly: 'Scripted P-controller with odometry feedback and AprilTag resets at 3m intervals.' Reviewers penalise non-disclosure, not the method itself." },
+    ];
+    const controlSteps = isLab ? mocapSteps : odomSteps;
+    return (React.createElement("div", { style: { fontFamily: "'IBM Plex Mono','Courier New',monospace", background: "#020817", minHeight: "100vh", color: "#E2E8F0" } },
+        React.createElement("style", null, `
+        @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600&family=IBM+Plex+Sans:wght@300;400;500;600;700&display=swap');
+        *{box-sizing:border-box;margin:0;padding:0;}
+        ::-webkit-scrollbar{width:4px;}::-webkit-scrollbar-track{background:#0F172A;}::-webkit-scrollbar-thumb{background:#334155;border-radius:2px;}
+        body{background:#020817;}
+        .sc-item:hover{background:#0A1628 !important;}
+        .nav-btn:hover:not(:disabled){background:#1E293B !important;color:#CBD5E1 !important;}
+      `),
+        React.createElement("div", { style: { borderBottom: "1px solid #1E293B", padding: "16px 28px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: "16px" } },
+            React.createElement("div", null,
+                React.createElement("div", { style: { fontSize: "9px", color: "#334155", letterSpacing: "3px", marginBottom: "3px", fontFamily: "'IBM Plex Mono',monospace" } }, "UCL ROBOTICS & AI \u00B7 GROUP PROJECT"),
+                React.createElement("div", { style: { fontSize: "18px", fontWeight: "600", color: "#F1F5F9", fontFamily: "'IBM Plex Sans',sans-serif", letterSpacing: "-0.4px", lineHeight: "1.2" } }, "Multi-Robot C-SLAM Dataset"),
+                React.createElement("div", { style: { fontSize: "11px", color: "#475569", marginTop: "2px", fontFamily: "'IBM Plex Mono',monospace" } }, "10 scenario designs \u00B7 incremental execution plan")),
+            React.createElement("div", { style: { display: "flex", gap: "6px", flexShrink: 0 } }, [["S1–S2", "RA-L", "#34D399"], ["S1–S4", "ICRA", "#60A5FA"], ["S1–S6", "IJRR", "#A78BFA"], ["S1–S10", "Field-defining", "#F59E0B"]].map(([range, label, c]) => (React.createElement("div", { key: label, style: { padding: "5px 10px", borderRadius: "4px", border: `1px solid ${c}28`, background: `${c}0A`, textAlign: "center", minWidth: "72px" } },
+                React.createElement("div", { style: { fontSize: "10px", color: c, fontFamily: "'IBM Plex Mono',monospace", fontWeight: "600" } }, range),
+                React.createElement("div", { style: { fontSize: "8px", color: "#475569", fontFamily: "'IBM Plex Mono',monospace", marginTop: "1px", whiteSpace: "nowrap" } }, label)))))),
+        React.createElement("div", { style: { display: "flex", height: "calc(100vh - 73px)" } },
+            React.createElement("div", { style: { width: "210px", borderRight: "1px solid #1E293B", overflowY: "auto", flexShrink: 0 } }, scenarios.map((sc, i) => (React.createElement("div", { key: i, className: "sc-item", onClick: () => setActive(i), style: {
+                    padding: "10px 14px", cursor: "pointer", borderBottom: "1px solid #0A0F1E",
+                    background: active === i ? "#0A1628" : "transparent",
+                    borderLeft: active === i ? `2px solid ${sc.tagColor}` : "2px solid transparent",
+                    transition: "background 0.12s"
+                } },
+                React.createElement("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "2px" } },
+                    React.createElement("span", { style: { fontSize: "12px", fontWeight: "600", color: active === i ? sc.tagColor : "#64748B", fontFamily: "'IBM Plex Mono',monospace" } }, sc.id),
+                    React.createElement("span", { style: { fontSize: "7px", padding: "1px 4px", borderRadius: "2px", background: active === i ? sc.tagColor + "18" : "#1E293B", color: active === i ? sc.tagColor : "#334155", fontFamily: "'IBM Plex Mono',monospace", whiteSpace: "nowrap" } }, sc.tag)),
+                React.createElement("div", { style: { fontSize: "11px", color: active === i ? "#CBD5E1" : "#475569", fontFamily: "'IBM Plex Sans',sans-serif", lineHeight: "1.3" } }, sc.title),
+                React.createElement("div", { style: { fontSize: "9px", color: "#1E293B", marginTop: "2px", fontFamily: "'IBM Plex Mono',monospace", color: active === i ? "#334155" : "#1E293B" } },
+                    typeof sc.robots === "number" ? `${sc.robots} robots` : sc.robots + " robots",
+                    " \u00B7 ",
+                    sc.where.split("(")[0].trim()))))),
+            React.createElement("div", { style: { flex: 1, overflowY: "auto", padding: "24px 28px" } },
+                React.createElement("div", { style: { marginBottom: "18px" } },
+                    React.createElement("div", { style: { display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap", marginBottom: "6px" } },
+                        React.createElement("span", { style: { fontSize: "26px", fontWeight: "700", color: "#F1F5F9", fontFamily: "'IBM Plex Sans',sans-serif", lineHeight: "1" } }, s.id),
+                        React.createElement("span", { style: { fontSize: "18px", fontWeight: "500", color: s.tagColor, fontFamily: "'IBM Plex Sans',sans-serif", lineHeight: "1" } }, s.title),
+                        React.createElement("span", { style: { fontSize: "8px", padding: "3px 8px", borderRadius: "3px", background: s.tagColor + "18", color: s.tagColor, border: `1px solid ${s.tagColor}35`, fontFamily: "'IBM Plex Mono',monospace", letterSpacing: "1px" } }, s.tag)),
+                    React.createElement("div", { style: { display: "flex", flexWrap: "wrap", gap: "16px", fontSize: "10px", color: "#475569", fontFamily: "'IBM Plex Mono',monospace" } },
+                        React.createElement("span", null,
+                            "\uD83D\uDCCD ",
+                            s.where),
+                        React.createElement("span", null,
+                            "\uD83E\uDD16 ",
+                            s.robots,
+                            " robots"),
+                        React.createElement("span", null,
+                            "\u2194 ",
+                            s.overlap,
+                            " overlap"),
+                        React.createElement("span", null, s.dynamic ? "⚡ dynamic" : "◯ static"),
+                        React.createElement("span", null,
+                            "\uD83D\uDD01 ",
+                            s.runs,
+                            " run",
+                            s.runs > 1 ? "s" : ""),
+                        React.createElement("span", { style: { color: s.tagColor, marginLeft: "4px" } },
+                            "isolates: ",
+                            s.variable))),
+                React.createElement("div", { style: { display: "grid", gridTemplateColumns: "220px 1fr", gap: "16px", marginBottom: "16px", alignItems: "start" } },
+                    React.createElement("div", { style: { background: "#050D1A", border: "1px solid #1E293B", borderRadius: "6px", overflow: "hidden" } },
+                        React.createElement("div", { style: { padding: "8px 12px", borderBottom: "1px solid #1E293B", fontSize: "8px", color: "#334155", fontFamily: "'IBM Plex Mono',monospace", letterSpacing: "2px" } }, "PATH DIAGRAM"),
+                        React.createElement("div", { style: { padding: "6px" } },
+                            React.createElement(VizComp, null))),
+                    React.createElement("div", { style: { background: "#050D1A", border: "1px solid #1E293B", borderRadius: "6px" } },
+                        React.createElement("div", { style: { padding: "8px 12px", borderBottom: "1px solid #1E293B", fontSize: "8px", color: "#334155", fontFamily: "'IBM Plex Mono',monospace", letterSpacing: "2px" } }, "SETUP"),
+                        React.createElement("div", { style: { padding: "14px" } }, s.setup.map((step, i) => (React.createElement("div", { key: i, style: { display: "flex", gap: "10px", marginBottom: i < s.setup.length - 1 ? "10px" : "0", alignItems: "flex-start" } },
+                            React.createElement("span", { style: { fontSize: "9px", color: s.tagColor, fontFamily: "'IBM Plex Mono',monospace", minWidth: "16px", paddingTop: "2px", opacity: 0.7, flexShrink: 0 } }, String(i + 1).padStart(2, "0")),
+                            React.createElement("span", { style: { fontSize: "12px", color: "#CBD5E1", fontFamily: "'IBM Plex Sans',sans-serif", lineHeight: "1.55" } }, step))))))),
+                React.createElement("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px", marginBottom: "16px" } },
+                    React.createElement("div", { style: { background: "#050D1A", border: "1px solid #1E293B", borderRadius: "6px", display: "flex", flexDirection: "column" } },
+                        React.createElement("div", { style: { padding: "8px 12px", borderBottom: "1px solid #1E293B", fontSize: "8px", color: "#334155", fontFamily: "'IBM Plex Mono',monospace", letterSpacing: "2px" } }, "JUSTIFICATION"),
+                        React.createElement("div", { style: { padding: "14px", fontSize: "12px", color: "#94A3B8", lineHeight: "1.7", fontFamily: "'IBM Plex Sans',sans-serif", flex: 1 } }, s.justification)),
+                    React.createElement("div", { style: { background: "#050D1A", border: `1px solid ${s.tagColor}28`, borderRadius: "6px", display: "flex", flexDirection: "column" } },
+                        React.createElement("div", { style: { padding: "8px 12px", borderBottom: `1px solid ${s.tagColor}18`, fontSize: "8px", color: s.tagColor, fontFamily: "'IBM Plex Mono',monospace", letterSpacing: "2px", opacity: 0.75 } }, "NOVELTY CLAIM"),
+                        React.createElement("div", { style: { padding: "14px", fontSize: "12px", color: "#CBD5E1", lineHeight: "1.7", fontFamily: "'IBM Plex Sans',sans-serif", flex: 1 } }, s.novelty))),
+                React.createElement("div", { style: { background: "#050D1A", border: `1px solid ${controlColor}22`, borderRadius: "6px", marginBottom: "16px" } },
+                    React.createElement("div", { style: { padding: "8px 12px", borderBottom: `1px solid ${controlColor}18`, display: "flex", alignItems: "center", justifyContent: "space-between" } },
+                        React.createElement("span", { style: { fontSize: "8px", color: controlColor, fontFamily: "'IBM Plex Mono',monospace", letterSpacing: "2px", opacity: 0.8 } }, "ROBOT CONTROL METHOD"),
+                        React.createElement("span", { style: { fontSize: "8px", padding: "2px 8px", borderRadius: "3px", background: controlColor + "18", color: controlColor, border: `1px solid ${controlColor}35`, fontFamily: "'IBM Plex Mono',monospace" } }, isLab ? "MOCAP CLOSED-LOOP P-CONTROLLER" : "ODOMETRY + APRILTAG FLOOR ANCHORS")),
+                    React.createElement("div", { style: { padding: "12px", display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "10px" } }, controlSteps.map((step, i) => (React.createElement("div", { key: i, style: { background: "#0A1628", borderRadius: "5px", padding: "11px 12px", borderLeft: `2px solid ${controlColor}45` } },
+                        React.createElement("div", { style: { fontSize: "8px", color: controlColor, fontFamily: "'IBM Plex Mono',monospace", marginBottom: "5px", opacity: 0.75, letterSpacing: "0.5px" } }, step.label.toUpperCase()),
+                        React.createElement("div", { style: { fontSize: "11px", color: "#94A3B8", lineHeight: "1.55", fontFamily: "'IBM Plex Sans',sans-serif" } }, step.text))))),
+                    React.createElement("div", { style: { padding: "8px 12px", borderTop: `1px solid ${controlColor}12`, display: "flex", gap: "20px", flexWrap: "wrap" } }, isLab ? (React.createElement(React.Fragment, null,
+                        React.createElement("span", { style: { fontSize: "9px", fontFamily: "'IBM Plex Mono',monospace" } },
+                            React.createElement("span", { style: { color: controlColor } }, "feedback: "),
+                            React.createElement("span", { style: { color: "#475569" } }, "MoCap pose @ 250Hz")),
+                        React.createElement("span", { style: { fontSize: "9px", fontFamily: "'IBM Plex Mono',monospace" } },
+                            React.createElement("span", { style: { color: controlColor } }, "odometry role: "),
+                            React.createElement("span", { style: { color: "#475569" } }, "sensor data only \u2014 not controller input")),
+                        React.createElement("span", { style: { fontSize: "9px", fontFamily: "'IBM Plex Mono',monospace" } },
+                            React.createElement("span", { style: { color: controlColor } }, "reproducibility: "),
+                            React.createElement("span", { style: { color: "#475569" } }, "sub-centimetre across repeated runs")))) : (React.createElement(React.Fragment, null,
+                        React.createElement("span", { style: { fontSize: "9px", fontFamily: "'IBM Plex Mono',monospace" } },
+                            React.createElement("span", { style: { color: controlColor } }, "feedback: "),
+                            React.createElement("span", { style: { color: "#475569" } }, "odometry (~10\u201320cm/min raw drift)")),
+                        React.createElement("span", { style: { fontSize: "9px", fontFamily: "'IBM Plex Mono',monospace" } },
+                            React.createElement("span", { style: { color: controlColor } }, "drift correction: "),
+                            React.createElement("span", { style: { color: "#475569" } }, "AprilTag anchors at 3m floor grid")),
+                        React.createElement("span", { style: { fontSize: "9px", fontFamily: "'IBM Plex Mono',monospace" } },
+                            React.createElement("span", { style: { color: controlColor } }, "bounded drift: "),
+                            React.createElement("span", { style: { color: "#475569" } }, "<5cm per 3m segment after correction")))))),
+                React.createElement("div", { style: { background: "#050D1A", border: "1px solid #1E293B", borderRadius: "6px", padding: "10px 16px", display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "16px", flexWrap: "wrap", gap: "8px" } },
+                    React.createElement("span", { style: { fontSize: "8px", color: "#334155", fontFamily: "'IBM Plex Mono',monospace", letterSpacing: "2px" } }, "PUBLICATION TRACK"),
+                    React.createElement("div", { style: { display: "flex", gap: "6px", flexWrap: "wrap" } }, [["S1+S2", "RA-L", "#34D399", 2], ["S1–S4", "ICRA", "#60A5FA", 4], ["S1–S6", "IJRR", "#A78BFA", 6], ["S1–S10", "Field-defining", "#F59E0B", 10]].map(([range, label, c, thresh], i, arr) => {
+                        const sNum = parseInt(s.id.slice(1));
+                        const prevThresh = i === 0 ? 0 : arr[i - 1][3];
+                        const isActive = sNum <= thresh && sNum > prevThresh;
+                        const isPast = sNum >= thresh;
+                        return (React.createElement("div", { key: label, style: {
+                                fontSize: "9px", padding: "3px 9px", borderRadius: "3px", fontFamily: "'IBM Plex Mono',monospace",
+                                background: isActive ? c + "22" : isPast ? c + "0C" : "#0A0F1E",
+                                color: isActive ? c : isPast ? c + "70" : "#334155",
+                                border: `1px solid ${isActive ? c + "45" : "#1E293B"}`,
+                                fontWeight: isActive ? "600" : "400"
+                            } },
+                            range,
+                            " \u2192 ",
+                            label));
+                    }))),
+                React.createElement("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", gap: "12px" } },
+                    React.createElement("button", { className: "nav-btn", onClick: () => setActive(Math.max(0, active - 1)), disabled: active === 0, style: { padding: "7px 18px", background: "#0A0F1E", border: "1px solid #1E293B", borderRadius: "4px", color: active === 0 ? "#1E293B" : "#64748B", cursor: active === 0 ? "default" : "pointer", fontSize: "10px", fontFamily: "'IBM Plex Mono',monospace", minWidth: "80px", transition: "all 0.12s" } }, active > 0 ? `← ${scenarios[active - 1].id}` : "←"),
+                    React.createElement("span", { style: { fontSize: "9px", color: "#334155", fontFamily: "'IBM Plex Mono',monospace" } },
+                        active + 1,
+                        " / ",
+                        scenarios.length),
+                    React.createElement("button", { className: "nav-btn", onClick: () => setActive(Math.min(scenarios.length - 1, active + 1)), disabled: active === scenarios.length - 1, style: { padding: "7px 18px", background: "#0A0F1E", border: "1px solid #1E293B", borderRadius: "4px", color: active === scenarios.length - 1 ? "#1E293B" : "#64748B", cursor: active === scenarios.length - 1 ? "default" : "pointer", fontSize: "10px", fontFamily: "'IBM Plex Mono',monospace", minWidth: "80px", transition: "all 0.12s" } }, active < scenarios.length - 1 ? `${scenarios[active + 1].id} →` : "→"))))));
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(App));
+  </script>
+</body>
+</html>
