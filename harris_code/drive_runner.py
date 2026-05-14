@@ -31,7 +31,7 @@ from ros1_bridge import ROS1Bridge
 
 
 KP_POS    = 0.7
-V_MAX     = 0.25
+V_MAX     = 0.40
 TOL_POS   = 0.2
 KP_TH     = 1.5
 OMEGA_MAX = 0.6

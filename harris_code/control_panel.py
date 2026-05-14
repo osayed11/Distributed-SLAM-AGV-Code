@@ -314,58 +314,31 @@ def main():
     # -------------------------------------------------------------------------
     # Scenario window — preload paths and trigger from a button
     # -------------------------------------------------------------------------
-    sc_fig = plt.figure(figsize=(6.0, 5.6))
+    sc_fig = plt.figure(figsize=(5.6, 2.8))
     sc_fig.canvas.manager.set_window_title("Scenarios")
 
-    # Top bar: status message + shared Cancel button.
-    ax_sc_msg    = sc_fig.add_axes([0.03, 0.94, 0.63, 0.04]); ax_sc_msg.axis("off")
-    ax_sc_cancel = sc_fig.add_axes([0.70, 0.92, 0.27, 0.06])
+    ax_sc_msg    = sc_fig.add_axes([0.03, 0.88, 0.63, 0.08]); ax_sc_msg.axis("off")
+    ax_sc_cancel = sc_fig.add_axes([0.70, 0.86, 0.27, 0.10])
 
-    # Scenario 1: lawnmower (multi-robot, vertical stripes).
-    ax_lawn_title    = sc_fig.add_axes([0.03, 0.84, 0.94, 0.05]); ax_lawn_title.axis("off")
-    ax_lawn_box      = sc_fig.add_axes([0.30, 0.76, 0.62, 0.05])
-    ax_lawn_stripes  = sc_fig.add_axes([0.30, 0.68, 0.62, 0.05])
-    ax_lawn_margin   = sc_fig.add_axes([0.30, 0.60, 0.62, 0.05])
-    ax_lawn_laps     = sc_fig.add_axes([0.30, 0.52, 0.62, 0.05])
-    ax_lawn_run_a    = sc_fig.add_axes([0.05, 0.42, 0.28, 0.06])
-    ax_lawn_run_b    = sc_fig.add_axes([0.36, 0.42, 0.28, 0.06])
-    ax_lawn_run_c    = sc_fig.add_axes([0.67, 0.42, 0.28, 0.06])
+    ax_line_title = sc_fig.add_axes([0.03, 0.74, 0.94, 0.08]); ax_line_title.axis("off")
+    ax_line_endx  = sc_fig.add_axes([0.30, 0.56, 0.62, 0.10])
+    ax_line_endy  = sc_fig.add_axes([0.30, 0.38, 0.62, 0.10])
+    ax_line_run   = sc_fig.add_axes([0.20, 0.06, 0.60, 0.20])
 
-    # Scenario 2: line (single-robot A→B→A, robot 0).
-    ax_line_title  = sc_fig.add_axes([0.03, 0.34, 0.94, 0.05]); ax_line_title.axis("off")
-    ax_line_endx   = sc_fig.add_axes([0.30, 0.26, 0.62, 0.05])
-    ax_line_endy   = sc_fig.add_axes([0.30, 0.18, 0.62, 0.05])
-    ax_line_laps   = sc_fig.add_axes([0.30, 0.10, 0.62, 0.05])
-    ax_line_run    = sc_fig.add_axes([0.20, 0.01, 0.60, 0.06])
+    ax_line_title.text(0.5, 0.5,
+                       "Straight Line  (robot 0:  A = Goal X/Y  →  B = end X/Y)",
+                       fontsize=11, fontweight="bold", ha="center", va="center")
 
-    ax_lawn_title.text(0.5, 0.5,
-                       "Scenario 1: Lawnmower  (auto-detects online robots, "
-                       "lab centered on robot 0's start)",
-                       fontsize=10, fontweight="bold", ha="center", va="center")
-    ax_line_title.text(0.5, 0.5, "Scenario 2: Line  (A = Goal X / Y, B = end X / Y, robot 0)",
-                       fontsize=10, fontweight="bold", ha="center", va="center")
-
-    tb_lawn_box     = TextBox(ax_lawn_box,     "box size (m)", initial="4.0")
-    tb_lawn_stripes = TextBox(ax_lawn_stripes, "stripes",      initial="8")
-    tb_lawn_margin  = TextBox(ax_lawn_margin,  "wall margin",  initial="0.3")
-    tb_lawn_laps    = TextBox(ax_lawn_laps,    "laps",         initial="1")
-    btn_run_a = Button(ax_lawn_run_a, "Run A · adjacent",
-                       color="lightgreen", hovercolor="#00cc44")
-    btn_run_b = Button(ax_lawn_run_b, "Run B · skip-one",
-                       color="lightgreen", hovercolor="#00cc44")
-    btn_run_c = Button(ax_lawn_run_c, "Run C · max sep",
-                       color="lightgreen", hovercolor="#00cc44")
-
-    tb_end_x     = TextBox(ax_line_endx,  "end X (m)", initial="2.0")
-    tb_end_y     = TextBox(ax_line_endy,  "end Y (m)", initial="0.0")
-    tb_line_laps = TextBox(ax_line_laps,  "laps",      initial="1")
-    btn_run_line = Button(ax_line_run, "Run Scenario 2 (Line)",
+    tb_end_x = TextBox(ax_line_endx, "end X (m)", initial="1.5")
+    tb_end_y = TextBox(ax_line_endy, "end Y (m)", initial="0.0")
+    btn_run_line = Button(ax_line_run, "Run Straight Line",
                           color="lightgreen", hovercolor="#00cc44")
 
-    btn_cancel = Button(ax_sc_cancel, "Cancel", color="lightsalmon", hovercolor="#cc4444")
+    btn_cancel = Button(ax_sc_cancel, "Cancel",
+                        color="lightsalmon", hovercolor="#cc4444")
     sc_msg = ax_sc_msg.text(0.0, 0.5,
-                            "tolerance = main 'Tolerance' slider. "
-                            "1 lap = bottom→top→bottom (or A→B→A).",
+                            "robot drives A → B in one smooth motion.  "
+                            "set A with the main Goal X/Y sliders.",
                             fontsize=9, va="center", color="gray")
 
     def _refresh_scenario_overlay():
@@ -387,86 +360,6 @@ def main():
             cur_wp = wps[rstate["idx"]]
             cur.set_data([cur_wp[0]], [cur_wp[1]])
 
-    def _start_lawnmower(run_mode):
-        try:
-            box_size  = float(tb_lawn_box.text)
-            n_stripes = int(tb_lawn_stripes.text)
-            margin    = float(tb_lawn_margin.text)
-            laps      = int(tb_lawn_laps.text)
-        except ValueError:
-            sc_msg.set_text("lawnmower: invalid numeric input")
-            sc_msg.set_color("red")
-            sc_fig.canvas.draw_idle()
-            return
-        if box_size <= 0 or n_stripes < 1 or margin < 0 or laps < 1:
-            sc_msg.set_text("lawnmower: need box>0, stripes>=1, margin>=0, laps>=1")
-            sc_msg.set_color("red")
-            sc_fig.canvas.draw_idle()
-            return
-
-        active = [i for i in range(n) if _robot_online(i)]
-        if not active:
-            sc_msg.set_text("lawnmower: no online robots detected")
-            sc_msg.set_color("red")
-            sc_fig.canvas.draw_idle()
-            return
-        K = len(active)
-
-        if run_mode == "A":
-            # Adjacent — K consecutive stripes, centered around the middle.
-            start = max(0, (n_stripes - K) // 2)
-            stripe_indices = [(start + i) % n_stripes for i in range(K)]
-        elif run_mode == "B":
-            # Skip-one — every other stripe, wrapping if necessary.
-            stripe_indices = [(2 * i) % n_stripes for i in range(K)]
-        elif run_mode == "C":
-            # Maximally separated — evenly spread across the full lab.
-            if K == 1:
-                stripe_indices = [n_stripes // 2]
-            else:
-                stripe_indices = [int(round(i * (n_stripes - 1) / (K - 1)))
-                                  for i in range(K)]
-        else:
-            return
-
-        half = box_size / 2.0
-        stripe_w = box_size / n_stripes
-        y_bot = -half + margin
-        y_top =  half - margin
-
-        robots = {}
-        for assigned_i, rid in enumerate(active):
-            stripe = stripe_indices[assigned_i]
-            x = -half + (stripe + 0.5) * stripe_w
-            # bottom → top → bottom (round trip). With look-ahead, the robot
-            # arcs through the top and the final bottom for multi-lap runs.
-            positions = [(x, y_bot), (x, y_top), (x, y_bot)]
-            robots[rid] = {
-                "waypoints": _waypoints_with_headings(positions),
-                "idx":       0,
-                "lap":       1,
-                "done":      False,
-            }
-
-        _scenario["active"]     = True
-        _scenario["name"]       = f"lawn-{run_mode}"
-        _scenario["robots"]     = robots
-        _scenario["total_laps"] = laps
-
-        for rid in robots:
-            _send_robot_goal(rid)
-
-        assign_str = ", ".join(f"r{rid}→s{stripe_indices[i]}"
-                               for i, rid in enumerate(active))
-        sc_msg.set_text(f"lawnmower {run_mode}: K={K} robot(s), {laps} lap(s) — {assign_str}")
-        sc_msg.set_color("black")
-        _refresh_scenario_overlay()
-        sc_fig.canvas.draw_idle()
-        fig.canvas.draw_idle()
-        print(f"[control_panel] scenario started: lawn-{run_mode} "
-              f"active={active} stripes={stripe_indices} box={box_size}m "
-              f"n_stripes={n_stripes} laps={laps}")
-
     def _cancel_scenario(_event=None):
         if not _scenario["active"]:
             sc_msg.set_text("no scenario running.")
@@ -485,14 +378,8 @@ def main():
         try:
             end_x = float(tb_end_x.text)
             end_y = float(tb_end_y.text)
-            laps  = int(tb_line_laps.text)
         except ValueError:
             sc_msg.set_text("line: invalid numeric input")
-            sc_msg.set_color("red")
-            sc_fig.canvas.draw_idle()
-            return
-        if laps < 1:
-            sc_msg.set_text("line: need laps>=1")
             sc_msg.set_color("red")
             sc_fig.canvas.draw_idle()
             return
@@ -504,28 +391,30 @@ def main():
             sc_fig.canvas.draw_idle()
             return
 
-        # Line is always for robot 0. Other robots are unaffected.
-        positions = [(sx, sy), (end_x, end_y), (sx, sy)]
+        # One-way: A → B. Single waypoint, robot drives there and stops.
+        # Heading is the direction from A to B so the camera faces forward
+        # for the whole run.
+        heading = float(np.arctan2(end_y - sy, end_x - sx))
+        waypoints = [(end_x, end_y, heading)]
+
         _scenario["active"]     = True
-        _scenario["name"]       = f"line ({sx:.2f},{sy:.2f})→({end_x:.2f},{end_y:.2f})"
+        _scenario["name"]       = f"line→({end_x:.2f},{end_y:.2f})"
         _scenario["robots"]     = {0: {
-            "waypoints": _waypoints_with_headings(positions),
+            "waypoints": waypoints,
             "idx": 0, "lap": 1, "done": False,
         }}
-        _scenario["total_laps"] = laps
+        _scenario["total_laps"] = 1
 
         _send_robot_goal(0)
-        sc_msg.set_text(f"running line on r0: {laps} round-trip(s)")
+        length = float(np.hypot(end_x - sx, end_y - sy))
+        sc_msg.set_text(f"driving r0 to ({end_x:.2f}, {end_y:.2f}) — {length:.2f} m")
         sc_msg.set_color("black")
         _refresh_scenario_overlay()
         sc_fig.canvas.draw_idle()
         fig.canvas.draw_idle()
-        print(f"[control_panel] scenario started: line "
-              f"A=({sx:.2f},{sy:.2f}) B=({end_x:.2f},{end_y:.2f}) laps={laps}")
+        print(f"[control_panel] line started: A=({sx:.2f},{sy:.2f}) "
+              f"B=({end_x:.2f},{end_y:.2f}) length={length:.2f}m")
 
-    btn_run_a.on_clicked(lambda e: _start_lawnmower("A"))
-    btn_run_b.on_clicked(lambda e: _start_lawnmower("B"))
-    btn_run_c.on_clicked(lambda e: _start_lawnmower("C"))
     btn_run_line.on_clicked(_start_line)
     btn_cancel.on_clicked(_cancel_scenario)
 
