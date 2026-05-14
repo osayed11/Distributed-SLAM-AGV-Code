@@ -218,6 +218,18 @@ def main():
         "origin_theta": 0.0,   # raw mocap heading at calibration
         "alpha":        0.0,   # rotation applied: room_theta = mocap_theta + alpha
     }
+    # Laps state machine. One lap = drive to start → wait → drive to end.
+    _laps = {
+        "active":             False,
+        "total_laps":         2,
+        "wait_sec":           1.0,
+        "current_lap":        0,
+        "phase":              "idle",  # "to_start" / "wait_at_start" / "to_end"
+        "phase_t0":           0.0,
+        "start_room":         (0.0, 0.0),
+        "end_room":           (0.0, 1.5),
+        "heading_lock_mocap": 0.0,
+    }
 
     def _mocap_to_room(mx, my, mth):
         if not _calib["set"]:
@@ -352,22 +364,27 @@ def main():
     # -------------------------------------------------------------------------
     # Scenario window — frame calibration + shuttle between two fixed points.
     # -------------------------------------------------------------------------
-    sc_fig = plt.figure(figsize=(5.8, 4.2))
+    sc_fig = plt.figure(figsize=(6.0, 4.8))
     sc_fig.canvas.manager.set_window_title("Shuttle")
 
-    ax_sc_msg    = sc_fig.add_axes([0.03, 0.93, 0.48, 0.05]); ax_sc_msg.axis("off")
-    ax_btn_origin = sc_fig.add_axes([0.53, 0.92, 0.20, 0.06])
-    ax_sc_cancel = sc_fig.add_axes([0.76, 0.92, 0.20, 0.06])
+    ax_sc_msg    = sc_fig.add_axes([0.03, 0.94, 0.48, 0.05]); ax_sc_msg.axis("off")
+    ax_btn_origin = sc_fig.add_axes([0.53, 0.93, 0.20, 0.06])
+    ax_sc_cancel = sc_fig.add_axes([0.76, 0.93, 0.20, 0.06])
 
-    ax_calib_label = sc_fig.add_axes([0.03, 0.84, 0.94, 0.05]); ax_calib_label.axis("off")
-    ax_title     = sc_fig.add_axes([0.03, 0.76, 0.94, 0.06]); ax_title.axis("off")
+    ax_calib_label = sc_fig.add_axes([0.03, 0.86, 0.94, 0.05]); ax_calib_label.axis("off")
+    ax_title     = sc_fig.add_axes([0.03, 0.78, 0.94, 0.05]); ax_title.axis("off")
 
-    ax_start_x   = sc_fig.add_axes([0.30, 0.64, 0.62, 0.07])
-    ax_start_y   = sc_fig.add_axes([0.30, 0.53, 0.62, 0.07])
-    ax_end_x     = sc_fig.add_axes([0.30, 0.39, 0.62, 0.07])
-    ax_end_y     = sc_fig.add_axes([0.30, 0.28, 0.62, 0.07])
-    ax_btn_start = sc_fig.add_axes([0.05, 0.04, 0.44, 0.18])
-    ax_btn_go    = sc_fig.add_axes([0.51, 0.04, 0.44, 0.18])
+    ax_start_x   = sc_fig.add_axes([0.30, 0.69, 0.62, 0.05])
+    ax_start_y   = sc_fig.add_axes([0.30, 0.61, 0.62, 0.05])
+    ax_end_x     = sc_fig.add_axes([0.30, 0.51, 0.62, 0.05])
+    ax_end_y     = sc_fig.add_axes([0.30, 0.43, 0.62, 0.05])
+
+    ax_laps      = sc_fig.add_axes([0.20, 0.33, 0.20, 0.05])
+    ax_wait      = sc_fig.add_axes([0.65, 0.33, 0.20, 0.05])
+
+    ax_btn_start = sc_fig.add_axes([0.03, 0.05, 0.30, 0.22])
+    ax_btn_go    = sc_fig.add_axes([0.35, 0.05, 0.30, 0.22])
+    ax_btn_laps  = sc_fig.add_axes([0.67, 0.05, 0.30, 0.22])
 
     ax_title.text(0.5, 0.5,
                   "Shuttle (robot 0) — heading locked, pure translation",
@@ -377,11 +394,15 @@ def main():
     tb_start_y = TextBox(ax_start_y, "start Y (m)", initial="0.0")
     tb_end_x   = TextBox(ax_end_x,   "end X (m)",   initial="0.0")
     tb_end_y   = TextBox(ax_end_y,   "end Y (m)",   initial="1.5")
+    tb_laps    = TextBox(ax_laps,    "laps",        initial="2")
+    tb_wait    = TextBox(ax_wait,    "wait (s)",    initial="1.0")
 
-    btn_go_start = Button(ax_btn_start, "Go to Start Position",
+    btn_go_start = Button(ax_btn_start, "Go to Start",
                           color="lightblue", hovercolor="#4488cc")
     btn_go       = Button(ax_btn_go, "Go",
                           color="lightgreen", hovercolor="#00cc44")
+    btn_run_laps = Button(ax_btn_laps, "Run Laps",
+                          color="plum", hovercolor="#9966cc")
     btn_set_origin = Button(ax_btn_origin, "Set Origin",
                             color="lightyellow", hovercolor="#ddaa00")
 
@@ -417,18 +438,127 @@ def main():
             cur.set_data([cur_wp[0]], [cur_wp[1]])
 
     def _cancel_scenario(_event=None):
-        if not _scenario["active"]:
-            sc_msg.set_text("no scenario running.")
-            sc_msg.set_color("gray")
-        else:
-            _scenario["active"] = False
+        was_running = _scenario["active"] or _laps["active"]
+        _scenario["active"] = False
+        _laps["active"]     = False
+        if was_running:
             pub.send_multipart([b"ctrl_stop", ctrl_stop_msg()])
             sc_msg.set_text("cancelled.")
             sc_msg.set_color("black")
-            print("[control_panel] scenario cancelled")
+            print("[control_panel] cancelled")
+        else:
+            sc_msg.set_text("nothing running.")
+            sc_msg.set_color("gray")
         _refresh_scenario_overlay()
         sc_fig.canvas.draw_idle()
         fig.canvas.draw_idle()
+
+    def _send_laps_target(room_x, room_y):
+        """Send a single goal to robot 0, using the laps run's locked heading."""
+        mx, my, _ = _room_to_mocap(room_x, room_y, 0.0)
+        pub.send_multipart([
+            b"goal",
+            goal_msg(mx, my, _laps["heading_lock_mocap"],
+                     _goal["tol"], robot_id=0),
+        ])
+
+    def _start_laps(_event=None):
+        try:
+            sx = float(tb_start_x.text)
+            sy = float(tb_start_y.text)
+            ex = float(tb_end_x.text)
+            ey = float(tb_end_y.text)
+            laps = int(tb_laps.text)
+            wait = float(tb_wait.text)
+        except ValueError:
+            sc_msg.set_text("laps: invalid numeric input")
+            sc_msg.set_color("red")
+            sc_fig.canvas.draw_idle()
+            return
+        if laps < 1 or wait < 0:
+            sc_msg.set_text("laps: need laps>=1 and wait>=0")
+            sc_msg.set_color("red")
+            sc_fig.canvas.draw_idle()
+            return
+
+        pose0, _ = state.best_pose(0)
+        if pose0 is None:
+            sc_msg.set_text("laps: no pose for r0 — can't lock heading")
+            sc_msg.set_color("red")
+            sc_fig.canvas.draw_idle()
+            return
+
+        # Stop any scenario in flight.
+        _scenario["active"] = False
+        _scenario["robots"] = {}
+        _refresh_scenario_overlay()
+
+        _laps["total_laps"]         = laps
+        _laps["wait_sec"]           = wait
+        _laps["current_lap"]        = 1
+        _laps["phase"]              = "to_start"
+        _laps["start_room"]         = (sx, sy)
+        _laps["end_room"]           = (ex, ey)
+        _laps["heading_lock_mocap"] = float(pose0[2])
+        _laps["active"]             = True
+
+        _send_laps_target(sx, sy)
+        sc_msg.set_text(f"laps: starting lap 1/{laps} (→ start)")
+        sc_msg.set_color("black")
+        sc_fig.canvas.draw_idle()
+        print(f"[control_panel] laps started: {laps} lap(s), wait={wait:.1f}s, "
+              f"start=({sx:.2f},{sy:.2f}), end=({ex:.2f},{ey:.2f})")
+
+    def _laps_tick():
+        if not _laps["active"]:
+            return ""
+        pose0, _ = state.best_pose(0)
+        if pose0 is None:
+            return "[laps] waiting for pose"
+        rx, ry, _ = _mocap_to_room(pose0[0], pose0[1], pose0[2])
+        tol = _goal["tol"]
+        now = time.time()
+        cur = _laps["current_lap"]
+        total = _laps["total_laps"]
+
+        if _laps["phase"] == "to_start":
+            sx, sy = _laps["start_room"]
+            d = float(np.hypot(rx - sx, ry - sy))
+            if d <= tol:
+                _laps["phase"] = "wait_at_start"
+                _laps["phase_t0"] = now
+                return f"[laps {cur}/{total}] at start — waiting {_laps['wait_sec']:.1f}s"
+            return f"[laps {cur}/{total}] → start  ({d*100:.0f} cm)"
+
+        if _laps["phase"] == "wait_at_start":
+            elapsed = now - _laps["phase_t0"]
+            if elapsed >= _laps["wait_sec"]:
+                _laps["phase"] = "to_end"
+                ex, ey = _laps["end_room"]
+                _send_laps_target(ex, ey)
+                return f"[laps {cur}/{total}] → end"
+            return f"[laps {cur}/{total}] waiting at start  ({elapsed:.1f}/{_laps['wait_sec']:.1f}s)"
+
+        if _laps["phase"] == "to_end":
+            ex, ey = _laps["end_room"]
+            d = float(np.hypot(rx - ex, ry - ey))
+            if d <= tol:
+                if cur >= total:
+                    _laps["active"] = False
+                    pub.send_multipart([b"ctrl_stop", ctrl_stop_msg()])
+                    sc_msg.set_text(f"laps done — {total} lap(s) completed.")
+                    sc_msg.set_color("darkgreen")
+                    sc_fig.canvas.draw_idle()
+                    print(f"[control_panel] laps complete ({total} lap(s))")
+                    return "[laps] done"
+                _laps["current_lap"] += 1
+                _laps["phase"] = "to_start"
+                sx, sy = _laps["start_room"]
+                _send_laps_target(sx, sy)
+                return f"[laps {_laps['current_lap']}/{total}] → start"
+            return f"[laps {cur}/{total}] → end  ({d*100:.0f} cm)"
+
+        return ""
 
     def _go_to(target_x_room, target_y_room, label):
         """Send a single goal to robot 0 at (target_x_room, target_y_room) in
@@ -443,9 +573,10 @@ def main():
             return
         locked_mocap_heading = float(pose0[2])
 
-        # Clear any scenario state so the sequencer doesn't fight us.
+        # Clear any scenario or laps run so they don't fight us.
         _scenario["active"] = False
         _scenario["robots"] = {}
+        _laps["active"]     = False
         _refresh_scenario_overlay()
 
         # Convert the room-frame target position into raw mocap so the robot
@@ -530,6 +661,7 @@ def main():
 
     btn_go_start.on_clicked(_go_to_start)
     btn_go.on_clicked(_go_to_end)
+    btn_run_laps.on_clicked(_start_laps)
     btn_set_origin.on_clicked(_set_origin)
     btn_cancel.on_clicked(_cancel_scenario)
 
@@ -651,10 +783,14 @@ def main():
             source_text.set_text("pose source: — (waiting)")
 
         scenario_status = _scenario_tick()
+        laps_status     = _laps_tick()
 
-        # Status: scenario takes precedence when active; otherwise show dist to goal.
+        # Status: laps > scenario > dist-to-goal.
         pose0, _ = state.best_pose(0)
-        if scenario_status:
+        if laps_status:
+            status_text.set_text(laps_status)
+            status_text.get_bbox_patch().set_facecolor("lavender")
+        elif scenario_status:
             status_text.set_text(scenario_status)
             status_text.get_bbox_patch().set_facecolor("lavender")
         elif pose0 is not None:
