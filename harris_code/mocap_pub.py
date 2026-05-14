@@ -80,6 +80,10 @@ def main():
     parser.add_argument("--config", default="real_robot/config/network.yaml")
     parser.add_argument("--server", default=None,
                         help="PhaseSpace server IP (overrides config)")
+    parser.add_argument("--rate", type=float, default=30.0,
+                        help="Max publish rate in Hz. OWL streams up to 960 Hz per "
+                             "rigid; without a cap the laptop gets bombarded. Default "
+                             "30 Hz is plenty for the 20 Hz control loop.")
     args = parser.parse_args()
 
     with open(args.config) as f:
@@ -124,28 +128,39 @@ def main():
     signal.signal(signal.SIGINT, _shutdown)
     signal.signal(signal.SIGTERM, _shutdown)
 
+    period = 1.0 / args.rate
+    next_tick = time.monotonic()
+    print(f"Publish rate capped at {args.rate:.1f} Hz "
+          f"(OWL can stream much faster; we coalesce to the latest pose per tick)")
+
     while running:
-        n = lib.owl_poll(buf, MAX_RIGIDS)
-        if n < 0:
-            print("OWL error event — continuing")
-            continue
-        if n > 0:
+        # Drain every event OWL has queued so we don't fall behind, but only
+        # keep the most recent pose per rigid for this tick.
+        latest = {}  # ps_id -> (x, y, theta)
+        while running:
+            n = lib.owl_poll(buf, MAX_RIGIDS)
+            if n < 0:
+                print("OWL error event — continuing")
+                break
+            if n == 0:
+                break
             frame_count += 1
+            for i in range(n):
+                ps_id = int(buf[i * STRIDE])
+                active_this_window.add(ps_id)
 
-        for i in range(n):
-            ps_id = int(buf[i * STRIDE])
-            active_this_window.add(ps_id)
+                if ps_id not in known_ids:
+                    known_ids.add(ps_id)
+                    label = f"logical {id_map[ps_id]}" if ps_id in id_map else "not in config"
+                    print(f"  [new] PhaseSpace rigid {ps_id} detected ({label})")
 
-            if ps_id not in known_ids:
-                known_ids.add(ps_id)
-                label = f"logical {id_map[ps_id]}" if ps_id in id_map else "not in config"
-                print(f"  [new] PhaseSpace rigid {ps_id} detected ({label})")
+                if ps_id not in id_map:
+                    continue
+                p = buf[i * STRIDE + 1: i * STRIDE + 8]
+                x, y, qw, qx, qy, qz = _owl_to_ros(p)
+                latest[ps_id] = (x, y, _yaw(qw, qx, qy, qz))
 
-            if ps_id not in id_map:
-                continue
-            p = buf[i * STRIDE + 1: i * STRIDE + 8]
-            x, y, qw, qx, qy, qz = _owl_to_ros(p)
-            theta = _yaw(qw, qx, qy, qz)
+        for ps_id, (x, y, theta) in latest.items():
             pub.send_multipart([b"pose", _pose_msg(id_map[ps_id], x, y, theta)])
 
         now = time.time()
@@ -158,10 +173,18 @@ def main():
                 )
             else:
                 ids_str = "none"
-            print(f"[{fps:.1f} Hz]  active rigids: {ids_str}")
+            print(f"[owl {fps:.1f} Hz | pub {args.rate:.0f} Hz]  active rigids: {ids_str}")
             frame_count = 0
             last_status = now
             active_this_window.clear()
+
+        next_tick += period
+        delay = next_tick - time.monotonic()
+        if delay > 0:
+            time.sleep(delay)
+        else:
+            # We fell behind — re-anchor to now instead of spinning to catch up.
+            next_tick = time.monotonic()
 
     lib.owl_close()
     print("Shutdown.")
