@@ -312,33 +312,40 @@ def main():
     btn_softstop.on_clicked(_soft_stop)
 
     # -------------------------------------------------------------------------
-    # Scenario window — preload paths and trigger from a button
+    # Scenario window — shuttle between two fixed points, heading locked.
     # -------------------------------------------------------------------------
-    sc_fig = plt.figure(figsize=(5.6, 2.8))
-    sc_fig.canvas.manager.set_window_title("Scenarios")
+    sc_fig = plt.figure(figsize=(5.8, 3.6))
+    sc_fig.canvas.manager.set_window_title("Shuttle")
 
-    ax_sc_msg    = sc_fig.add_axes([0.03, 0.88, 0.63, 0.08]); ax_sc_msg.axis("off")
-    ax_sc_cancel = sc_fig.add_axes([0.70, 0.86, 0.27, 0.10])
+    ax_sc_msg    = sc_fig.add_axes([0.03, 0.91, 0.63, 0.06]); ax_sc_msg.axis("off")
+    ax_sc_cancel = sc_fig.add_axes([0.70, 0.89, 0.27, 0.08])
 
-    ax_line_title = sc_fig.add_axes([0.03, 0.74, 0.94, 0.08]); ax_line_title.axis("off")
-    ax_line_endx  = sc_fig.add_axes([0.30, 0.56, 0.62, 0.10])
-    ax_line_endy  = sc_fig.add_axes([0.30, 0.38, 0.62, 0.10])
-    ax_line_run   = sc_fig.add_axes([0.20, 0.06, 0.60, 0.20])
+    ax_title     = sc_fig.add_axes([0.03, 0.79, 0.94, 0.07]); ax_title.axis("off")
+    ax_start_x   = sc_fig.add_axes([0.30, 0.68, 0.62, 0.07])
+    ax_start_y   = sc_fig.add_axes([0.30, 0.57, 0.62, 0.07])
+    ax_end_x     = sc_fig.add_axes([0.30, 0.43, 0.62, 0.07])
+    ax_end_y     = sc_fig.add_axes([0.30, 0.32, 0.62, 0.07])
+    ax_btn_start = sc_fig.add_axes([0.05, 0.05, 0.44, 0.20])
+    ax_btn_go    = sc_fig.add_axes([0.51, 0.05, 0.44, 0.20])
 
-    ax_line_title.text(0.5, 0.5,
-                       "Straight Line  (robot 0:  A = Goal X/Y  →  B = end X/Y)",
-                       fontsize=11, fontweight="bold", ha="center", va="center")
+    ax_title.text(0.5, 0.5,
+                  "Shuttle (robot 0) — heading locked, pure translation",
+                  fontsize=11, fontweight="bold", ha="center", va="center")
 
-    tb_end_x = TextBox(ax_line_endx, "end X (m)", initial="1.5")
-    tb_end_y = TextBox(ax_line_endy, "end Y (m)", initial="0.0")
-    btn_run_line = Button(ax_line_run, "Run Straight Line",
+    tb_start_x = TextBox(ax_start_x, "start X (m)", initial="-0.5")
+    tb_start_y = TextBox(ax_start_y, "start Y (m)", initial="1.0")
+    tb_end_x   = TextBox(ax_end_x,   "end X (m)",   initial="1.0")
+    tb_end_y   = TextBox(ax_end_y,   "end Y (m)",   initial="1.0")
+
+    btn_go_start = Button(ax_btn_start, "Go to Start Position",
+                          color="lightblue", hovercolor="#4488cc")
+    btn_go       = Button(ax_btn_go, "Go",
                           color="lightgreen", hovercolor="#00cc44")
 
     btn_cancel = Button(ax_sc_cancel, "Cancel",
                         color="lightsalmon", hovercolor="#cc4444")
     sc_msg = ax_sc_msg.text(0.0, 0.5,
-                            "robot drives A → B in one smooth motion.  "
-                            "set A with the main Goal X/Y sliders.",
+                            "heading is captured at click time → robot only translates",
                             fontsize=9, va="center", color="gray")
 
     def _refresh_scenario_overlay():
@@ -374,48 +381,62 @@ def main():
         sc_fig.canvas.draw_idle()
         fig.canvas.draw_idle()
 
-    def _start_line(_event=None):
-        try:
-            end_x = float(tb_end_x.text)
-            end_y = float(tb_end_y.text)
-        except ValueError:
-            sc_msg.set_text("line: invalid numeric input")
+    def _go_to(target_x, target_y, label):
+        """Send a single goal to robot 0 at (target_x, target_y), locking
+        the goal heading to the robot's *current* heading. Heading-P then
+        has nothing to do, so the robot only translates (mecanum strafe /
+        reverse as needed) and never rotates."""
+        pose0, _ = state.best_pose(0)
+        if pose0 is None:
+            sc_msg.set_text(f"{label}: no pose for r0 — can't lock heading")
             sc_msg.set_color("red")
             sc_fig.canvas.draw_idle()
             return
+        locked_heading = float(pose0[2])
 
-        sx, sy = _goal["x"], _goal["y"]
-        if abs(end_x - sx) < 1e-6 and abs(end_y - sy) < 1e-6:
-            sc_msg.set_text("line: end coincides with Goal X/Y")
-            sc_msg.set_color("red")
-            sc_fig.canvas.draw_idle()
-            return
-
-        # One-way: A → B. Single waypoint, robot drives there and stops.
-        # Heading is the direction from A to B so the camera faces forward
-        # for the whole run.
-        heading = float(np.arctan2(end_y - sy, end_x - sx))
-        waypoints = [(end_x, end_y, heading)]
-
-        _scenario["active"]     = True
-        _scenario["name"]       = f"line→({end_x:.2f},{end_y:.2f})"
-        _scenario["robots"]     = {0: {
-            "waypoints": waypoints,
-            "idx": 0, "lap": 1, "done": False,
-        }}
-        _scenario["total_laps"] = 1
-
-        _send_robot_goal(0)
-        length = float(np.hypot(end_x - sx, end_y - sy))
-        sc_msg.set_text(f"driving r0 to ({end_x:.2f}, {end_y:.2f}) — {length:.2f} m")
-        sc_msg.set_color("black")
+        # Clear any scenario state so the sequencer doesn't fight us.
+        _scenario["active"] = False
+        _scenario["robots"] = {}
         _refresh_scenario_overlay()
+
+        pub.send_multipart([
+            b"goal",
+            goal_msg(target_x, target_y, locked_heading,
+                     _goal["tol"], robot_id=0),
+        ])
+        sc_msg.set_text(f"{label}: → ({target_x:.2f}, {target_y:.2f})  "
+                        f"θ locked at {np.degrees(locked_heading):.1f}°")
+        sc_msg.set_color("black")
         sc_fig.canvas.draw_idle()
         fig.canvas.draw_idle()
-        print(f"[control_panel] line started: A=({sx:.2f},{sy:.2f}) "
-              f"B=({end_x:.2f},{end_y:.2f}) length={length:.2f}m")
+        print(f"[control_panel] {label}: ({target_x:.2f},{target_y:.2f}) "
+              f"heading_lock={locked_heading:.3f}rad "
+              f"({np.degrees(locked_heading):.1f}°)")
 
-    btn_run_line.on_clicked(_start_line)
+    def _go_to_start(_event=None):
+        try:
+            sx = float(tb_start_x.text)
+            sy = float(tb_start_y.text)
+        except ValueError:
+            sc_msg.set_text("invalid start coords")
+            sc_msg.set_color("red")
+            sc_fig.canvas.draw_idle()
+            return
+        _go_to(sx, sy, "go to start")
+
+    def _go_to_end(_event=None):
+        try:
+            ex = float(tb_end_x.text)
+            ey = float(tb_end_y.text)
+        except ValueError:
+            sc_msg.set_text("invalid end coords")
+            sc_msg.set_color("red")
+            sc_fig.canvas.draw_idle()
+            return
+        _go_to(ex, ey, "go")
+
+    btn_go_start.on_clicked(_go_to_start)
+    btn_go.on_clicked(_go_to_end)
     btn_cancel.on_clicked(_cancel_scenario)
 
     def _scenario_tick():
