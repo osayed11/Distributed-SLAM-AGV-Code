@@ -167,14 +167,19 @@ def main():
                              fill=False, linestyle="--", linewidth=1.4, zorder=5)
     ax.add_patch(tol_circle)
 
-    # Scenario overlay: the planned waypoint path and the currently-active waypoint.
-    scenario_line,    = ax.plot([], [], color="purple", linestyle=":", linewidth=1.2,
-                                alpha=0.7, zorder=4, label="path (not running)")
-    scenario_dots,    = ax.plot([], [], marker="o", markersize=6, color="purple",
-                                linestyle="None", alpha=0.5, zorder=4)
-    scenario_current, = ax.plot([], [], marker="o", markersize=12,
-                                markerfacecolor="none", markeredgecolor="purple",
-                                markeredgewidth=2, linestyle="None", zorder=5)
+    # Scenario overlays — one per robot, color-matched. Each consists of the
+    # planned path, the waypoint dots, and a ring around the active waypoint.
+    scenario_overlays = []
+    for i in range(n):
+        col = ROBOT_COLORS[i % len(ROBOT_COLORS)]
+        ln,   = ax.plot([], [], color=col, linestyle=":", linewidth=1.2,
+                        alpha=0.7, zorder=4)
+        dots, = ax.plot([], [], marker="o", markersize=6, color=col,
+                        linestyle="None", alpha=0.5, zorder=4)
+        cur,  = ax.plot([], [], marker="o", markersize=12, markerfacecolor="none",
+                        markeredgecolor=col, markeredgewidth=2,
+                        linestyle="None", zorder=5)
+        scenario_overlays.append((ln, dots, cur))
 
     status_text = ax.text(0.02, 0.97, "click map or use sliders — then Send Goal",
                           transform=ax.transAxes, fontsize=10, va="top", ha="left",
@@ -195,14 +200,45 @@ def main():
     # -------------------------------------------------------------------------
     _goal = {"x": 0.0, "y": 0.0, "theta": 0.0, "tol": args.goal_tol, "sent": False}
     _block_slider = [False]
+    # Multi-robot scenario state. `robots` maps robot_id → that robot's path
+    # state: {waypoints: [(x,y,th), ...], idx, lap, done}.
     _scenario = {
-        "active":   False,
-        "name":     "",
-        "waypoints": [],   # list of (x, y, theta)
-        "idx":      0,
-        "lap":      0,
+        "active":     False,
+        "name":       "",
+        "robots":     {},
         "total_laps": 1,
     }
+
+    def _robot_online(i):
+        """Return True if we have a recent mocap or odom pose for this robot."""
+        now = time.time()
+        with state.lock:
+            mfresh = (not np.isnan(state.mocap_pose[i, 0])
+                      and now - state.mocap_ts[i] < 1.0)
+            ofresh = (not np.isnan(state.odom_pose[i, 0])
+                      and now - state.odom_ts[i] < 1.0)
+        return mfresh or ofresh
+
+    def _waypoints_with_headings(positions):
+        """Compute heading at each waypoint = direction toward the next
+        non-coincident waypoint (handles A,B,A-style paths cleanly)."""
+        N = len(positions)
+        wps = []
+        for i, (px, py) in enumerate(positions):
+            nx, ny = px, py
+            for off in range(1, N):
+                cand = positions[(i + off) % N]
+                if abs(cand[0] - px) > 1e-6 or abs(cand[1] - py) > 1e-6:
+                    nx, ny = cand
+                    break
+            wps.append((px, py, float(np.arctan2(ny - py, nx - px))))
+        return wps
+
+    def _send_robot_goal(rid):
+        wp = _scenario["robots"][rid]["waypoints"][_scenario["robots"][rid]["idx"]]
+        pub.send_multipart([
+            b"goal", goal_msg(wp[0], wp[1], wp[2], _goal["tol"], robot_id=rid),
+        ])
 
     def _refresh_marker():
         gx, gy, gth = _goal["x"], _goal["y"], _goal["theta"]
@@ -278,113 +314,158 @@ def main():
     # -------------------------------------------------------------------------
     # Scenario window — preload paths and trigger from a button
     # -------------------------------------------------------------------------
-    sc_fig = plt.figure(figsize=(5.5, 5.4))
+    sc_fig = plt.figure(figsize=(6.0, 5.6))
     sc_fig.canvas.manager.set_window_title("Scenarios")
 
     # Top bar: status message + shared Cancel button.
     ax_sc_msg    = sc_fig.add_axes([0.03, 0.94, 0.63, 0.04]); ax_sc_msg.axis("off")
     ax_sc_cancel = sc_fig.add_axes([0.70, 0.92, 0.27, 0.06])
 
-    # Scenario 1: circle.
-    ax_circ_title  = sc_fig.add_axes([0.03, 0.84, 0.94, 0.05]); ax_circ_title.axis("off")
-    ax_circ_radius = sc_fig.add_axes([0.30, 0.76, 0.62, 0.05])
-    ax_circ_wpts   = sc_fig.add_axes([0.30, 0.68, 0.62, 0.05])
-    ax_circ_laps   = sc_fig.add_axes([0.30, 0.60, 0.62, 0.05])
-    ax_circ_run    = sc_fig.add_axes([0.20, 0.50, 0.60, 0.07])
+    # Scenario 1: lawnmower (multi-robot, vertical stripes).
+    ax_lawn_title    = sc_fig.add_axes([0.03, 0.84, 0.94, 0.05]); ax_lawn_title.axis("off")
+    ax_lawn_box      = sc_fig.add_axes([0.30, 0.76, 0.62, 0.05])
+    ax_lawn_stripes  = sc_fig.add_axes([0.30, 0.68, 0.62, 0.05])
+    ax_lawn_margin   = sc_fig.add_axes([0.30, 0.60, 0.62, 0.05])
+    ax_lawn_laps     = sc_fig.add_axes([0.30, 0.52, 0.62, 0.05])
+    ax_lawn_run_a    = sc_fig.add_axes([0.05, 0.42, 0.28, 0.06])
+    ax_lawn_run_b    = sc_fig.add_axes([0.36, 0.42, 0.28, 0.06])
+    ax_lawn_run_c    = sc_fig.add_axes([0.67, 0.42, 0.28, 0.06])
 
-    # Scenario 2: line (round-trip A→B→A).
-    ax_line_title  = sc_fig.add_axes([0.03, 0.42, 0.94, 0.05]); ax_line_title.axis("off")
-    ax_line_endx   = sc_fig.add_axes([0.30, 0.32, 0.62, 0.05])
-    ax_line_endy   = sc_fig.add_axes([0.30, 0.22, 0.62, 0.05])
-    ax_line_laps   = sc_fig.add_axes([0.30, 0.12, 0.62, 0.05])
-    ax_line_run    = sc_fig.add_axes([0.20, 0.01, 0.60, 0.07])
+    # Scenario 2: line (single-robot A→B→A, robot 0).
+    ax_line_title  = sc_fig.add_axes([0.03, 0.34, 0.94, 0.05]); ax_line_title.axis("off")
+    ax_line_endx   = sc_fig.add_axes([0.30, 0.26, 0.62, 0.05])
+    ax_line_endy   = sc_fig.add_axes([0.30, 0.18, 0.62, 0.05])
+    ax_line_laps   = sc_fig.add_axes([0.30, 0.10, 0.62, 0.05])
+    ax_line_run    = sc_fig.add_axes([0.20, 0.01, 0.60, 0.06])
 
-    ax_circ_title.text(0.5, 0.5, "Scenario 1: Circle  (center = Goal X / Y)",
+    ax_lawn_title.text(0.5, 0.5,
+                       "Scenario 1: Lawnmower  (auto-detects online robots, "
+                       "lab centered on robot 0's start)",
                        fontsize=10, fontweight="bold", ha="center", va="center")
-    ax_line_title.text(0.5, 0.5, "Scenario 2: Line  (A = Goal X / Y, B = end X / Y)",
+    ax_line_title.text(0.5, 0.5, "Scenario 2: Line  (A = Goal X / Y, B = end X / Y, robot 0)",
                        fontsize=10, fontweight="bold", ha="center", va="center")
 
-    tb_radius   = TextBox(ax_circ_radius, "radius (m)", initial="1.0")
-    tb_wpts     = TextBox(ax_circ_wpts,   "waypoints",  initial="16")
-    tb_laps     = TextBox(ax_circ_laps,   "laps",       initial="1")
-    btn_run_circ = Button(ax_circ_run,    "Run Scenario 1 (Circle)",
+    tb_lawn_box     = TextBox(ax_lawn_box,     "box size (m)", initial="4.0")
+    tb_lawn_stripes = TextBox(ax_lawn_stripes, "stripes",      initial="8")
+    tb_lawn_margin  = TextBox(ax_lawn_margin,  "wall margin",  initial="0.3")
+    tb_lawn_laps    = TextBox(ax_lawn_laps,    "laps",         initial="1")
+    btn_run_a = Button(ax_lawn_run_a, "Run A · adjacent",
+                       color="lightgreen", hovercolor="#00cc44")
+    btn_run_b = Button(ax_lawn_run_b, "Run B · skip-one",
+                       color="lightgreen", hovercolor="#00cc44")
+    btn_run_c = Button(ax_lawn_run_c, "Run C · max sep",
+                       color="lightgreen", hovercolor="#00cc44")
+
+    tb_end_x     = TextBox(ax_line_endx,  "end X (m)", initial="2.0")
+    tb_end_y     = TextBox(ax_line_endy,  "end Y (m)", initial="0.0")
+    tb_line_laps = TextBox(ax_line_laps,  "laps",      initial="1")
+    btn_run_line = Button(ax_line_run, "Run Scenario 2 (Line)",
                           color="lightgreen", hovercolor="#00cc44")
 
-    tb_end_x    = TextBox(ax_line_endx,   "end X (m)",  initial="2.0")
-    tb_end_y    = TextBox(ax_line_endy,   "end Y (m)",  initial="0.0")
-    tb_line_laps = TextBox(ax_line_laps,  "laps",       initial="1")
-    btn_run_line = Button(ax_line_run,    "Run Scenario 2 (Line)",
-                          color="lightgreen", hovercolor="#00cc44")
-
-    btn_cancel  = Button(ax_sc_cancel, "Cancel", color="lightsalmon", hovercolor="#cc4444")
-    sc_msg = ax_sc_msg.text(0.0, 0.5, "tolerance = main 'Tolerance' slider.  "
-                                      "1 lap of Line = A→B→A.",
+    btn_cancel = Button(ax_sc_cancel, "Cancel", color="lightsalmon", hovercolor="#cc4444")
+    sc_msg = ax_sc_msg.text(0.0, 0.5,
+                            "tolerance = main 'Tolerance' slider. "
+                            "1 lap = bottom→top→bottom (or A→B→A).",
                             fontsize=9, va="center", color="gray")
 
     def _refresh_scenario_overlay():
-        wps = _scenario["waypoints"]
-        if not wps or not _scenario["active"]:
-            scenario_line.set_data([], [])
-            scenario_dots.set_data([], [])
-            scenario_current.set_data([], [])
+        for ln, dots, cur in scenario_overlays:
+            ln.set_data([], [])
+            dots.set_data([], [])
+            cur.set_data([], [])
+        if not _scenario["active"]:
             return
-        xs = [w[0] for w in wps] + [wps[0][0]]  # close the loop
-        ys = [w[1] for w in wps] + [wps[0][1]]
-        scenario_line.set_data(xs, ys)
-        scenario_dots.set_data(xs[:-1], ys[:-1])
-        cur = wps[_scenario["idx"]]
-        scenario_current.set_data([cur[0]], [cur[1]])
+        for rid, rstate in _scenario["robots"].items():
+            if rid >= len(scenario_overlays):
+                continue
+            wps = rstate["waypoints"]
+            ln, dots, cur = scenario_overlays[rid]
+            xs = [w[0] for w in wps] + [wps[0][0]]
+            ys = [w[1] for w in wps] + [wps[0][1]]
+            ln.set_data(xs, ys)
+            dots.set_data(xs[:-1], ys[:-1])
+            cur_wp = wps[rstate["idx"]]
+            cur.set_data([cur_wp[0]], [cur_wp[1]])
 
-    def _send_current_waypoint():
-        wp = _scenario["waypoints"][_scenario["idx"]]
-        pub.send_multipart([
-            b"goal",
-            goal_msg(wp[0], wp[1], wp[2], _goal["tol"], robot_id=-1),
-        ])
-
-    def _start_circle(_event=None):
+    def _start_lawnmower(run_mode):
         try:
-            radius = float(tb_radius.text)
-            laps   = int(tb_laps.text)
-            n_wpts = int(tb_wpts.text)
+            box_size  = float(tb_lawn_box.text)
+            n_stripes = int(tb_lawn_stripes.text)
+            margin    = float(tb_lawn_margin.text)
+            laps      = int(tb_lawn_laps.text)
         except ValueError:
-            sc_msg.set_text("invalid numeric input — check radius / laps / waypoints")
+            sc_msg.set_text("lawnmower: invalid numeric input")
             sc_msg.set_color("red")
             sc_fig.canvas.draw_idle()
             return
-        if n_wpts < 3 or radius <= 0 or laps < 1:
-            sc_msg.set_text("need radius>0, laps>=1, waypoints>=3")
+        if box_size <= 0 or n_stripes < 1 or margin < 0 or laps < 1:
+            sc_msg.set_text("lawnmower: need box>0, stripes>=1, margin>=0, laps>=1")
             sc_msg.set_color("red")
             sc_fig.canvas.draw_idle()
             return
 
-        cx, cy = _goal["x"], _goal["y"]
-        waypoints = []
-        for i in range(n_wpts):
-            t = 2.0 * np.pi * i / n_wpts
-            # Heading = tangent to the circle at this point (CCW traversal),
-            # so the front-mounted camera points along the direction of motion.
-            heading = t + np.pi / 2.0
-            heading = (heading + np.pi) % (2.0 * np.pi) - np.pi  # wrap to [-π, π]
-            waypoints.append((cx + radius * np.cos(t),
-                              cy + radius * np.sin(t),
-                              heading))
+        active = [i for i in range(n) if _robot_online(i)]
+        if not active:
+            sc_msg.set_text("lawnmower: no online robots detected")
+            sc_msg.set_color("red")
+            sc_fig.canvas.draw_idle()
+            return
+        K = len(active)
+
+        if run_mode == "A":
+            # Adjacent — K consecutive stripes, centered around the middle.
+            start = max(0, (n_stripes - K) // 2)
+            stripe_indices = [(start + i) % n_stripes for i in range(K)]
+        elif run_mode == "B":
+            # Skip-one — every other stripe, wrapping if necessary.
+            stripe_indices = [(2 * i) % n_stripes for i in range(K)]
+        elif run_mode == "C":
+            # Maximally separated — evenly spread across the full lab.
+            if K == 1:
+                stripe_indices = [n_stripes // 2]
+            else:
+                stripe_indices = [int(round(i * (n_stripes - 1) / (K - 1)))
+                                  for i in range(K)]
+        else:
+            return
+
+        half = box_size / 2.0
+        stripe_w = box_size / n_stripes
+        y_bot = -half + margin
+        y_top =  half - margin
+
+        robots = {}
+        for assigned_i, rid in enumerate(active):
+            stripe = stripe_indices[assigned_i]
+            x = -half + (stripe + 0.5) * stripe_w
+            # bottom → top → bottom (round trip). With look-ahead, the robot
+            # arcs through the top and the final bottom for multi-lap runs.
+            positions = [(x, y_bot), (x, y_top), (x, y_bot)]
+            robots[rid] = {
+                "waypoints": _waypoints_with_headings(positions),
+                "idx":       0,
+                "lap":       1,
+                "done":      False,
+            }
 
         _scenario["active"]     = True
-        _scenario["name"]       = f"circle r={radius:.2f}m"
-        _scenario["waypoints"]  = waypoints
-        _scenario["idx"]        = 0
-        _scenario["lap"]        = 1
+        _scenario["name"]       = f"lawn-{run_mode}"
+        _scenario["robots"]     = robots
         _scenario["total_laps"] = laps
 
-        _send_current_waypoint()
-        sc_msg.set_text(f"running circle: r={radius:.2f}m, {n_wpts} waypoints, {laps} lap(s)")
+        for rid in robots:
+            _send_robot_goal(rid)
+
+        assign_str = ", ".join(f"r{rid}→s{stripe_indices[i]}"
+                               for i, rid in enumerate(active))
+        sc_msg.set_text(f"lawnmower {run_mode}: K={K} robot(s), {laps} lap(s) — {assign_str}")
         sc_msg.set_color("black")
         _refresh_scenario_overlay()
         sc_fig.canvas.draw_idle()
         fig.canvas.draw_idle()
-        print(f"[control_panel] scenario started: circle "
-              f"center=({cx:.2f},{cy:.2f}) r={radius:.2f} n={n_wpts} laps={laps}")
+        print(f"[control_panel] scenario started: lawn-{run_mode} "
+              f"active={active} stripes={stripe_indices} box={box_size}m "
+              f"n_stripes={n_stripes} laps={laps}")
 
     def _cancel_scenario(_event=None):
         if not _scenario["active"]:
@@ -393,7 +474,7 @@ def main():
         else:
             _scenario["active"] = False
             pub.send_multipart([b"ctrl_stop", ctrl_stop_msg()])
-            sc_msg.set_text(f"cancelled at waypoint {_scenario['idx']+1}.")
+            sc_msg.set_text("cancelled.")
             sc_msg.set_color("black")
             print("[control_panel] scenario cancelled")
         _refresh_scenario_overlay()
@@ -406,50 +487,35 @@ def main():
             end_y = float(tb_end_y.text)
             laps  = int(tb_line_laps.text)
         except ValueError:
-            sc_msg.set_text("invalid numeric input — check end X/Y / laps")
+            sc_msg.set_text("line: invalid numeric input")
             sc_msg.set_color("red")
             sc_fig.canvas.draw_idle()
             return
         if laps < 1:
-            sc_msg.set_text("need laps>=1")
+            sc_msg.set_text("line: need laps>=1")
             sc_msg.set_color("red")
             sc_fig.canvas.draw_idle()
             return
 
         sx, sy = _goal["x"], _goal["y"]
         if abs(end_x - sx) < 1e-6 and abs(end_y - sy) < 1e-6:
-            sc_msg.set_text("end point coincides with Goal X/Y — set a different end")
+            sc_msg.set_text("line: end coincides with Goal X/Y")
             sc_msg.set_color("red")
             sc_fig.canvas.draw_idle()
             return
 
-        # A line only needs its endpoints. Intermediate samples just cause the
-        # P controller to brake at each one. Round trip = A → B → A.
+        # Line is always for robot 0. Other robots are unaffected.
         positions = [(sx, sy), (end_x, end_y), (sx, sy)]
-
-        # Heading at each waypoint = direction toward the *next meaningful*
-        # waypoint. positions[-1] is co-located with positions[0], so for the
-        # last entry we look one further ahead (positions[1]=B) — this keeps
-        # the camera facing forward for the lap-to-lap transition.
-        N = len(positions)
-        waypoints = []
-        for i, (px, py) in enumerate(positions):
-            nidx = (i + 1) % N
-            nx, ny = positions[nidx]
-            if abs(nx - px) < 1e-6 and abs(ny - py) < 1e-6 and N > 2:
-                nidx = (i + 2) % N
-                nx, ny = positions[nidx]
-            waypoints.append((px, py, float(np.arctan2(ny - py, nx - px))))
-
         _scenario["active"]     = True
         _scenario["name"]       = f"line ({sx:.2f},{sy:.2f})→({end_x:.2f},{end_y:.2f})"
-        _scenario["waypoints"]  = waypoints
-        _scenario["idx"]        = 0
-        _scenario["lap"]        = 1
+        _scenario["robots"]     = {0: {
+            "waypoints": _waypoints_with_headings(positions),
+            "idx": 0, "lap": 1, "done": False,
+        }}
         _scenario["total_laps"] = laps
 
-        _send_current_waypoint()
-        sc_msg.set_text(f"running line: {laps} round-trip(s)")
+        _send_robot_goal(0)
+        sc_msg.set_text(f"running line on r0: {laps} round-trip(s)")
         sc_msg.set_color("black")
         _refresh_scenario_overlay()
         sc_fig.canvas.draw_idle()
@@ -457,63 +523,86 @@ def main():
         print(f"[control_panel] scenario started: line "
               f"A=({sx:.2f},{sy:.2f}) B=({end_x:.2f},{end_y:.2f}) laps={laps}")
 
-    btn_run_circ.on_clicked(_start_circle)
+    btn_run_a.on_clicked(lambda e: _start_lawnmower("A"))
+    btn_run_b.on_clicked(lambda e: _start_lawnmower("B"))
+    btn_run_c.on_clicked(lambda e: _start_lawnmower("C"))
     btn_run_line.on_clicked(_start_line)
     btn_cancel.on_clicked(_cancel_scenario)
 
     def _scenario_tick():
-        """Called from the animation loop. Advances to the next waypoint when
-        the robot is within a look-ahead distance of the current one (so the
-        P controller never has to fully decelerate at intermediate waypoints)."""
+        """Per-robot look-ahead sequencer. Each robot in _scenario['robots']
+        advances independently along its own waypoint list. Scenario ends
+        when *all* participating robots have completed their laps."""
         if not _scenario["active"]:
             return ""
-        pose0, _ = state.best_pose(0)
-        if pose0 is None:
-            return "[scenario waiting for pose]"
-        wps = _scenario["waypoints"]
-        idx = _scenario["idx"]
-        cur = wps[idx]
-        dist = float(np.hypot(pose0[0] - cur[0], pose0[1] - cur[1]))
+        if not _scenario["robots"]:
+            _scenario["active"] = False
+            return ""
 
-        # The "advance" threshold: at the very last waypoint of the very last
-        # lap, fall back to the precise tolerance so the robot actually settles
-        # at the endpoint. Everywhere else, look ahead half the way to the
-        # next *non-coincident* waypoint — robot keeps cruising into the turn.
-        is_last_wp   = (idx >= len(wps) - 1)
-        is_final_lap = (_scenario["lap"] >= _scenario["total_laps"])
-        if is_last_wp and is_final_lap:
-            advance = _goal["tol"]
-        else:
-            # Find the next waypoint that isn't co-located with the current
-            # one (handles the line's final-A duplicate cleanly).
-            look = None
-            for off in (1, 2):
-                cand = wps[(idx + off) % len(wps)]
-                if abs(cand[0] - cur[0]) > 1e-6 or abs(cand[1] - cur[1]) > 1e-6:
-                    look = cand
-                    break
-            spacing = float(np.hypot(cur[0] - look[0], cur[1] - look[1])) if look else 0.0
-            advance = max(_goal["tol"], 0.5 * spacing)
+        parts = []
+        all_done = True
+        any_dirty = False
 
-        if dist <= advance:
-            _scenario["idx"] += 1
-            if _scenario["idx"] >= len(wps):
-                if _scenario["lap"] >= _scenario["total_laps"]:
-                    _scenario["active"] = False
-                    pub.send_multipart([b"ctrl_stop", ctrl_stop_msg()])
-                    sc_msg.set_text(f"done — {_scenario['total_laps']} lap(s) completed.")
-                    sc_msg.set_color("darkgreen")
-                    sc_fig.canvas.draw_idle()
-                    print("[control_panel] scenario complete")
-                    _refresh_scenario_overlay()
-                    return "[scenario done]"
-                _scenario["lap"] += 1
-                _scenario["idx"]  = 0
-            _send_current_waypoint()
+        for rid, rstate in _scenario["robots"].items():
+            if rstate["done"]:
+                parts.append(f"r{rid}:done")
+                continue
+            all_done = False
+
+            pose, _ = state.best_pose(rid)
+            if pose is None:
+                parts.append(f"r{rid}:no_pose")
+                continue
+
+            wps = rstate["waypoints"]
+            idx = rstate["idx"]
+            cur = wps[idx]
+            dist = float(np.hypot(pose[0] - cur[0], pose[1] - cur[1]))
+
+            is_last_wp   = (idx >= len(wps) - 1)
+            is_final_lap = (rstate["lap"] >= _scenario["total_laps"])
+            if is_last_wp and is_final_lap:
+                advance = _goal["tol"]
+            else:
+                look = None
+                for off in range(1, len(wps)):
+                    cand = wps[(idx + off) % len(wps)]
+                    if abs(cand[0] - cur[0]) > 1e-6 or abs(cand[1] - cur[1]) > 1e-6:
+                        look = cand
+                        break
+                spacing = float(np.hypot(cur[0] - look[0], cur[1] - look[1])) if look else 0.0
+                advance = max(_goal["tol"], 0.5 * spacing)
+
+            if dist <= advance:
+                rstate["idx"] += 1
+                if rstate["idx"] >= len(wps):
+                    if rstate["lap"] >= _scenario["total_laps"]:
+                        rstate["done"] = True
+                        parts.append(f"r{rid}:done")
+                        any_dirty = True
+                        continue
+                    rstate["lap"] += 1
+                    rstate["idx"] = 0
+                _send_robot_goal(rid)
+                any_dirty = True
+
+            parts.append(f"r{rid}:l{rstate['lap']}/{_scenario['total_laps']}"
+                         f"w{rstate['idx']+1}/{len(wps)} {dist*100:.0f}cm")
+
+        if any_dirty:
             _refresh_scenario_overlay()
-        return (f"[{_scenario['name']}] lap {_scenario['lap']}/{_scenario['total_laps']} "
-                f"wp {_scenario['idx']+1}/{len(wps)}  "
-                f"dist={dist*100:.0f} cm  ahead@{advance*100:.0f} cm")
+
+        if all_done:
+            _scenario["active"] = False
+            pub.send_multipart([b"ctrl_stop", ctrl_stop_msg()])
+            sc_msg.set_text(f"done — all robots completed {_scenario['total_laps']} lap(s).")
+            sc_msg.set_color("darkgreen")
+            sc_fig.canvas.draw_idle()
+            print("[control_panel] scenario complete")
+            _refresh_scenario_overlay()
+            return "[scenario done]"
+
+        return f"[{_scenario['name']}]  " + "  ".join(parts)
 
     # -------------------------------------------------------------------------
     # Animation loop
@@ -581,9 +670,10 @@ def main():
             ax.set_xlim(min(cur_xl[0], xmin), max(cur_xl[1], xmax))
             ax.set_ylim(min(cur_yl[0], ymin), max(cur_yl[1], ymax))
 
+        scenario_artists = [a for tup in scenario_overlays for a in tup]
         return (robot_circles + robot_arrows + robot_labels + trail_lines +
-                [goal_star, goal_heading, status_text, sent_text, source_text,
-                 scenario_line, scenario_dots, scenario_current])
+                scenario_artists +
+                [goal_star, goal_heading, status_text, sent_text, source_text])
 
     _anim = FuncAnimation(fig, _update, interval=50, blit=False)
     plt.show()
