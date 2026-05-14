@@ -338,9 +338,13 @@ def main():
         waypoints = []
         for i in range(n_wpts):
             t = 2.0 * np.pi * i / n_wpts
+            # Heading = tangent to the circle at this point (CCW traversal),
+            # so the front-mounted camera points along the direction of motion.
+            heading = t + np.pi / 2.0
+            heading = (heading + np.pi) % (2.0 * np.pi) - np.pi  # wrap to [-π, π]
             waypoints.append((cx + radius * np.cos(t),
                               cy + radius * np.sin(t),
-                              0.0))
+                              heading))
 
         _scenario["active"]     = True
         _scenario["name"]       = f"circle r={radius:.2f}m"
