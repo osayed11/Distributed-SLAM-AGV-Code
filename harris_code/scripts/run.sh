@@ -103,11 +103,11 @@ if $DO_ROBOT; then
       sleep 0.5
       tmux new-session -d -s $ROBOT_SESSION -n ros
       tmux send-keys -t $ROBOT_SESSION:ros \
-        'source /home/ubuntu/myagv_ros/devel/setup.bash && roslaunch myagv_odometry myagv_active.launch' Enter
+        'roslaunch myagv_odometry myagv_active.launch' Enter
       sleep 2
       tmux new-window -t $ROBOT_SESSION -n drive
       tmux send-keys -t $ROBOT_SESSION:drive \
-        'source /home/ubuntu/myagv_ros/devel/setup.bash && cd $REMOTE_DIR && $REMOTE_PYTHON drive_runner.py --config network.yaml --id $ID' Enter
+        'cd $REMOTE_DIR && $REMOTE_PYTHON drive_runner.py --config network.yaml --id $ID' Enter
 EOF
     echo "  attach: ssh $REMOTE_USER@$IP -t tmux attach -t $ROBOT_SESSION"
   done
