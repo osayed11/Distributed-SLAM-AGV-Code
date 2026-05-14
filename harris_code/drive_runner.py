@@ -1,13 +1,19 @@
 """
 Robot-side drive-to-point runner.
 
-Runs on the myAGV alongside myagv_ros. Reads /odom from the local ROS1
-stack via ros1_bridge.py, listens for goal/estop/ctrl_stop messages from
-the laptop GUI over ZMQ, runs a simple P controller (position + heading
-concurrently), and publishes /cmd_vel.
+Runs on the myAGV alongside myagv_ros. Subscribes to mocap pose for its
+own logical id from the laptop's mocap_pub_port and uses that as the
+control pose (so the world frame matches the laptop GUI's clicks).
+Listens for goal/estop/ctrl_stop from goal_pub_port, runs a simple P
+controller (position + heading concurrently), publishes /cmd_vel.
 
-Also publishes its own pose back to the laptop over ZMQ at the control
-rate so the GUI can render the robot when no mocap stream is available.
+If mocap goes stale (server crashes or rigid drops), the controller
+halts and prints a warning rather than driving on /odom alone — odom
+boots at (0, 0) and isn't world-aligned, so blind odom control would
+walk off in random directions.
+
+/odom is still published over ZMQ so the GUI can show a fallback when
+mocap is unavailable (display only — not used for control).
 
 Usage on the robot:
     python3 drive_runner.py --config network.yaml --id 0
@@ -30,6 +36,7 @@ TOL_POS   = 0.2
 KP_TH     = 1.5
 OMEGA_MAX = 0.6
 TOL_TH    = 0.1
+MOCAP_FRESH_SEC = 0.5  # halt control if no mocap pose within this window
 
 
 class DriveRunner:
@@ -45,7 +52,8 @@ class DriveRunner:
 
         self._sub = ctx.socket(zmq.SUB)
         self._sub.connect(f"tcp://{cfg['laptop']['ip']}:{cfg['laptop']['goal_pub_port']}")
-        for topic in (b"goal", b"estop", b"ctrl_stop"):
+        self._sub.connect(f"tcp://{cfg['laptop']['ip']}:{cfg['laptop']['mocap_pub_port']}")
+        for topic in (b"goal", b"estop", b"ctrl_stop", b"pose"):
             self._sub.setsockopt(zmq.SUBSCRIBE, topic)
 
         self._ros = ROS1Bridge(node_name=f"drive_runner_{robot_id}")
@@ -55,6 +63,9 @@ class DriveRunner:
         self._paused = False
         self._running = True
         self._last_heartbeat = 0.0
+        self._mocap_pose = None       # (x, y, theta) — world frame from mocap
+        self._mocap_ts   = 0.0
+        self._mocap_warned = False    # rate-limit the "no mocap" warnings
 
         signal.signal(signal.SIGINT,  self._handle_sigint)
         signal.signal(signal.SIGTERM, self._handle_sigint)
@@ -94,10 +105,19 @@ class DriveRunner:
                 print(f"[drive {self._id}] goal updated to "
                       f"({d['x']:.2f}, {d['y']:.2f}, {d['theta']:.2f} rad) "
                       f"tol={self._goal_tol:.2f} m")
+            if t == "pose":
+                # Only mocap-source pose for our own id is used for control.
+                if d.get("id") != self._id:
+                    continue
+                if d.get("source", "mocap") != "mocap":
+                    continue
+                self._mocap_pose = (float(d["x"]), float(d["y"]), float(d["theta"]))
+                self._mocap_ts = time.time()
 
-    def _compute_cmd(self, odom: dict):
-        """Return (vx_body, vy_body, omega, dist, th_err)."""
-        x, y, theta = odom["x"], odom["y"], odom["theta"]
+    def _compute_cmd(self, pose):
+        """pose = (x, y, theta) in world frame. Returns
+        (vx_body, vy_body, omega, dist, th_err)."""
+        x, y, theta = pose
         gx, gy, gth = self._goal
 
         dx, dy = gx - x, gy - y
@@ -137,16 +157,32 @@ class DriveRunner:
             now = time.monotonic()
             if now >= next_tick:
                 odom = self._ros.get_odom()
+                # Publish /odom-derived pose for the GUI fallback (display only).
                 self._pub.send_multipart([
                     b"pose",
                     pose_msg(self._id, odom["x"], odom["y"], odom["theta"],
                              source="odom"),
                 ])
 
+                mocap_age = time.time() - self._mocap_ts
+                mocap_fresh = (self._mocap_pose is not None
+                               and mocap_age < MOCAP_FRESH_SEC)
+
                 if self._goal is None or self._paused:
                     self._ros.send_cmd(0.0, 0.0, 0.0)
+                elif not mocap_fresh:
+                    # World-frame control needs world-frame pose. /odom isn't
+                    # world-aligned, so halt rather than drive blind.
+                    self._ros.send_cmd(0.0, 0.0, 0.0)
+                    if not self._mocap_warned:
+                        print(f"[drive {self._id}] no fresh mocap pose "
+                              f"(age={mocap_age:.1f}s) — halting until mocap returns")
+                        self._mocap_warned = True
                 else:
-                    vx_b, vy_b, omega, dist, th_err = self._compute_cmd(odom)
+                    if self._mocap_warned:
+                        print(f"[drive {self._id}] mocap recovered — resuming")
+                        self._mocap_warned = False
+                    vx_b, vy_b, omega, dist, th_err = self._compute_cmd(self._mocap_pose)
                     self._ros.send_cmd(vx_b, vy_b, omega)
 
                     if dist < self._goal_tol and abs(th_err) < TOL_TH:
@@ -158,9 +194,10 @@ class DriveRunner:
 
                     if now - self._last_heartbeat >= 5.0:
                         self._last_heartbeat = now
+                        mx, my, mth = self._mocap_pose
                         print(f"[drive {self._id}] heartbeat — "
-                              f"pos=({odom['x']:.2f}, {odom['y']:.2f}) "
-                              f"θ={np.degrees(odom['theta']):.1f}°  "
+                              f"mocap=({mx:.2f}, {my:.2f}) "
+                              f"θ={np.degrees(mth):.1f}°  "
                               f"dist={dist*100:.1f} cm  "
                               f"cmd=({vx_b:.3f}, {vy_b:.3f}, ω={omega:.2f})")
 
