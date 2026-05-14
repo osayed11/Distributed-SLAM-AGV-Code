@@ -22,7 +22,7 @@ import matplotlib
 matplotlib.use("TkAgg")
 import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation
-from matplotlib.widgets import Slider, Button
+from matplotlib.widgets import Slider, Button, TextBox
 
 from messages import goal_msg, estop_msg, ctrl_stop_msg, unpack
 
@@ -167,6 +167,15 @@ def main():
                              fill=False, linestyle="--", linewidth=1.4, zorder=5)
     ax.add_patch(tol_circle)
 
+    # Scenario overlay: the planned waypoint path and the currently-active waypoint.
+    scenario_line,    = ax.plot([], [], color="purple", linestyle=":", linewidth=1.2,
+                                alpha=0.7, zorder=4, label="path (not running)")
+    scenario_dots,    = ax.plot([], [], marker="o", markersize=6, color="purple",
+                                linestyle="None", alpha=0.5, zorder=4)
+    scenario_current, = ax.plot([], [], marker="o", markersize=12,
+                                markerfacecolor="none", markeredgecolor="purple",
+                                markeredgewidth=2, linestyle="None", zorder=5)
+
     status_text = ax.text(0.02, 0.97, "click map or use sliders — then Send Goal",
                           transform=ax.transAxes, fontsize=10, va="top", ha="left",
                           bbox=dict(boxstyle="round,pad=0.3", fc="white", alpha=0.85))
@@ -182,10 +191,18 @@ def main():
     ax.legend(loc="lower right", fontsize=8)
 
     # -------------------------------------------------------------------------
-    # Goal state
+    # Goal + scenario state
     # -------------------------------------------------------------------------
     _goal = {"x": 0.0, "y": 0.0, "theta": 0.0, "tol": args.goal_tol, "sent": False}
     _block_slider = [False]
+    _scenario = {
+        "active":   False,
+        "name":     "",
+        "waypoints": [],   # list of (x, y, theta)
+        "idx":      0,
+        "lap":      0,
+        "total_laps": 1,
+    }
 
     def _refresh_marker():
         gx, gy, gth = _goal["x"], _goal["y"], _goal["theta"]
@@ -241,12 +258,14 @@ def main():
         fig.canvas.draw_idle()
 
     def _stop(_event=None):
+        _scenario["active"] = False
         pub.send_multipart([b"estop", estop_msg()])
         print("[control_panel] ESTOP sent")
         sent_text.set_text("ESTOP sent")
         fig.canvas.draw_idle()
 
     def _soft_stop(_event=None):
+        _scenario["active"] = False
         pub.send_multipart([b"ctrl_stop", ctrl_stop_msg()])
         print("[control_panel] soft stop sent")
         sent_text.set_text("soft stop sent")
@@ -255,6 +274,138 @@ def main():
     btn_send.on_clicked(_send)
     btn_stop.on_clicked(_stop)
     btn_softstop.on_clicked(_soft_stop)
+
+    # -------------------------------------------------------------------------
+    # Scenario window — preload paths and trigger from a button
+    # -------------------------------------------------------------------------
+    sc_fig = plt.figure(figsize=(5.2, 2.6))
+    sc_fig.canvas.manager.set_window_title("Scenarios")
+
+    ax_sc_radius = sc_fig.add_axes([0.30, 0.78, 0.62, 0.14])
+    ax_sc_laps   = sc_fig.add_axes([0.30, 0.58, 0.62, 0.14])
+    ax_sc_wpts   = sc_fig.add_axes([0.30, 0.38, 0.62, 0.14])
+    ax_sc_run    = sc_fig.add_axes([0.05, 0.08, 0.40, 0.22])
+    ax_sc_cancel = sc_fig.add_axes([0.55, 0.08, 0.40, 0.22])
+    ax_sc_msg    = sc_fig.add_axes([0.05, 0.005, 0.90, 0.05]); ax_sc_msg.axis("off")
+
+    tb_radius = TextBox(ax_sc_radius, "radius (m)",   initial="1.0")
+    tb_laps   = TextBox(ax_sc_laps,   "laps",         initial="1")
+    tb_wpts   = TextBox(ax_sc_wpts,   "waypoints",    initial="16")
+    btn_run    = Button(ax_sc_run,    "Run Circle",   color="lightgreen", hovercolor="#00cc44")
+    btn_cancel = Button(ax_sc_cancel, "Cancel",       color="lightsalmon", hovercolor="#cc4444")
+    sc_msg = ax_sc_msg.text(0.0, 0.5, "circle center = Goal X / Y sliders. "
+                                      "tolerance = main 'Tolerance' slider.",
+                            fontsize=9, va="center", color="gray")
+
+    def _refresh_scenario_overlay():
+        wps = _scenario["waypoints"]
+        if not wps or not _scenario["active"]:
+            scenario_line.set_data([], [])
+            scenario_dots.set_data([], [])
+            scenario_current.set_data([], [])
+            return
+        xs = [w[0] for w in wps] + [wps[0][0]]  # close the loop
+        ys = [w[1] for w in wps] + [wps[0][1]]
+        scenario_line.set_data(xs, ys)
+        scenario_dots.set_data(xs[:-1], ys[:-1])
+        cur = wps[_scenario["idx"]]
+        scenario_current.set_data([cur[0]], [cur[1]])
+
+    def _send_current_waypoint():
+        wp = _scenario["waypoints"][_scenario["idx"]]
+        pub.send_multipart([
+            b"goal",
+            goal_msg(wp[0], wp[1], wp[2], _goal["tol"], robot_id=-1),
+        ])
+
+    def _start_circle(_event=None):
+        try:
+            radius = float(tb_radius.text)
+            laps   = int(tb_laps.text)
+            n_wpts = int(tb_wpts.text)
+        except ValueError:
+            sc_msg.set_text("invalid numeric input — check radius / laps / waypoints")
+            sc_msg.set_color("red")
+            sc_fig.canvas.draw_idle()
+            return
+        if n_wpts < 3 or radius <= 0 or laps < 1:
+            sc_msg.set_text("need radius>0, laps>=1, waypoints>=3")
+            sc_msg.set_color("red")
+            sc_fig.canvas.draw_idle()
+            return
+
+        cx, cy = _goal["x"], _goal["y"]
+        waypoints = []
+        for i in range(n_wpts):
+            t = 2.0 * np.pi * i / n_wpts
+            waypoints.append((cx + radius * np.cos(t),
+                              cy + radius * np.sin(t),
+                              0.0))
+
+        _scenario["active"]     = True
+        _scenario["name"]       = f"circle r={radius:.2f}m"
+        _scenario["waypoints"]  = waypoints
+        _scenario["idx"]        = 0
+        _scenario["lap"]        = 1
+        _scenario["total_laps"] = laps
+
+        _send_current_waypoint()
+        sc_msg.set_text(f"running circle: r={radius:.2f}m, {n_wpts} waypoints, {laps} lap(s)")
+        sc_msg.set_color("black")
+        _refresh_scenario_overlay()
+        sc_fig.canvas.draw_idle()
+        fig.canvas.draw_idle()
+        print(f"[control_panel] scenario started: circle "
+              f"center=({cx:.2f},{cy:.2f}) r={radius:.2f} n={n_wpts} laps={laps}")
+
+    def _cancel_scenario(_event=None):
+        if not _scenario["active"]:
+            sc_msg.set_text("no scenario running.")
+            sc_msg.set_color("gray")
+        else:
+            _scenario["active"] = False
+            pub.send_multipart([b"ctrl_stop", ctrl_stop_msg()])
+            sc_msg.set_text(f"cancelled at waypoint {_scenario['idx']+1}.")
+            sc_msg.set_color("black")
+            print("[control_panel] scenario cancelled")
+        _refresh_scenario_overlay()
+        sc_fig.canvas.draw_idle()
+        fig.canvas.draw_idle()
+
+    btn_run.on_clicked(_start_circle)
+    btn_cancel.on_clicked(_cancel_scenario)
+
+    def _scenario_tick():
+        """Called from the animation loop. Advances to the next waypoint when
+        the robot is within tolerance of the current one. Returns a short
+        status string for the main window."""
+        if not _scenario["active"]:
+            return ""
+        pose0, _ = state.best_pose(0)
+        if pose0 is None:
+            return "[scenario waiting for pose]"
+        wps = _scenario["waypoints"]
+        cur = wps[_scenario["idx"]]
+        dist = float(np.hypot(pose0[0] - cur[0], pose0[1] - cur[1]))
+        if dist <= _goal["tol"]:
+            _scenario["idx"] += 1
+            if _scenario["idx"] >= len(wps):
+                if _scenario["lap"] >= _scenario["total_laps"]:
+                    _scenario["active"] = False
+                    pub.send_multipart([b"ctrl_stop", ctrl_stop_msg()])
+                    sc_msg.set_text(f"done — {_scenario['total_laps']} lap(s) completed.")
+                    sc_msg.set_color("darkgreen")
+                    sc_fig.canvas.draw_idle()
+                    print("[control_panel] scenario complete")
+                    _refresh_scenario_overlay()
+                    return "[scenario done]"
+                _scenario["lap"] += 1
+                _scenario["idx"]  = 0
+            _send_current_waypoint()
+            _refresh_scenario_overlay()
+        return (f"[circle] lap {_scenario['lap']}/{_scenario['total_laps']} "
+                f"wp {_scenario['idx']+1}/{len(wps)}  "
+                f"dist={dist*100:.0f} cm")
 
     # -------------------------------------------------------------------------
     # Animation loop
@@ -294,9 +445,14 @@ def main():
         else:
             source_text.set_text("pose source: — (waiting)")
 
-        # Status: distance to goal for robot 0 (primary indicator)
+        scenario_status = _scenario_tick()
+
+        # Status: scenario takes precedence when active; otherwise show dist to goal.
         pose0, _ = state.best_pose(0)
-        if pose0 is not None:
+        if scenario_status:
+            status_text.set_text(scenario_status)
+            status_text.get_bbox_patch().set_facecolor("lavender")
+        elif pose0 is not None:
             dist = float(np.hypot(pose0[0] - _goal["x"], pose0[1] - _goal["y"]))
             pending = "" if _goal["sent"] else "  [PENDING — click Send Goal]"
             msg = f"r0 dist to goal: {dist*100:.1f} cm{pending}"
@@ -318,7 +474,8 @@ def main():
             ax.set_ylim(min(cur_yl[0], ymin), max(cur_yl[1], ymax))
 
         return (robot_circles + robot_arrows + robot_labels + trail_lines +
-                [goal_star, goal_heading, status_text, sent_text, source_text])
+                [goal_star, goal_heading, status_text, sent_text, source_text,
+                 scenario_line, scenario_dots, scenario_current])
 
     _anim = FuncAnimation(fig, _update, interval=50, blit=False)
     plt.show()
