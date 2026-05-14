@@ -208,6 +208,40 @@ def main():
         "robots":     {},
         "total_laps": 1,
     }
+    # SE(2) calibration from raw mocap frame → room frame. Convention: at the
+    # moment of "Set Origin" the robot's nose points along room +Y, and its
+    # position becomes (0, 0). alpha = π/2 − mocap_theta_at_calibration.
+    _calib = {
+        "set":          False,
+        "origin_x":     0.0,   # raw mocap x of calibration pose
+        "origin_y":     0.0,   # raw mocap y of calibration pose
+        "origin_theta": 0.0,   # raw mocap heading at calibration
+        "alpha":        0.0,   # rotation applied: room_theta = mocap_theta + alpha
+    }
+
+    def _mocap_to_room(mx, my, mth):
+        if not _calib["set"]:
+            return mx, my, mth
+        a = _calib["alpha"]
+        dx = mx - _calib["origin_x"]
+        dy = my - _calib["origin_y"]
+        c, s = np.cos(a), np.sin(a)
+        rx = dx * c - dy * s
+        ry = dx * s + dy * c
+        rth = (mth + a + np.pi) % (2 * np.pi) - np.pi
+        return rx, ry, rth
+
+    def _room_to_mocap(rx, ry, rth):
+        if not _calib["set"]:
+            return rx, ry, rth
+        a = _calib["alpha"]
+        c, s = np.cos(a), np.sin(a)
+        dx =  rx * c + ry * s
+        dy = -rx * s + ry * c
+        mx = dx + _calib["origin_x"]
+        my = dy + _calib["origin_y"]
+        mth = (rth - a + np.pi) % (2 * np.pi) - np.pi
+        return mx, my, mth
 
     def _robot_online(i):
         """Return True if we have a recent mocap or odom pose for this robot."""
@@ -236,8 +270,10 @@ def main():
 
     def _send_robot_goal(rid):
         wp = _scenario["robots"][rid]["waypoints"][_scenario["robots"][rid]["idx"]]
+        # Waypoints are in room frame; the robot expects raw mocap.
+        mx, my, mth = _room_to_mocap(wp[0], wp[1], wp[2])
         pub.send_multipart([
-            b"goal", goal_msg(wp[0], wp[1], wp[2], _goal["tol"], robot_id=rid),
+            b"goal", goal_msg(mx, my, mth, _goal["tol"], robot_id=rid),
         ])
 
     def _refresh_marker():
@@ -285,11 +321,13 @@ def main():
 
     def _send(_event=None):
         gx, gy, gth, gtol = _goal["x"], _goal["y"], _goal["theta"], _goal["tol"]
-        # Broadcast to all robots — robot_id=-1.
-        pub.send_multipart([b"goal", goal_msg(gx, gy, gth, gtol, robot_id=-1)])
+        # _goal stores room-frame; robot expects raw mocap.
+        gx_mc, gy_mc, gth_mc = _room_to_mocap(gx, gy, gth)
+        pub.send_multipart([b"goal", goal_msg(gx_mc, gy_mc, gth_mc, gtol, robot_id=-1)])
         _goal["sent"] = True
         sent_text.set_text(f"last sent: ({gx:.2f}, {gy:.2f}, {gth:.2f} rad) tol={gtol:.2f} m")
-        print(f"[control_panel] sent x={gx:.3f} y={gy:.3f} theta={gth:.3f} tol={gtol:.3f}")
+        print(f"[control_panel] sent room=({gx:.3f},{gy:.3f},{gth:.3f}) "
+              f"-> mocap=({gx_mc:.3f},{gy_mc:.3f},{gth_mc:.3f}) tol={gtol:.3f}")
         _refresh_marker()
         fig.canvas.draw_idle()
 
@@ -312,21 +350,24 @@ def main():
     btn_softstop.on_clicked(_soft_stop)
 
     # -------------------------------------------------------------------------
-    # Scenario window — shuttle between two fixed points, heading locked.
+    # Scenario window — frame calibration + shuttle between two fixed points.
     # -------------------------------------------------------------------------
-    sc_fig = plt.figure(figsize=(5.8, 3.6))
+    sc_fig = plt.figure(figsize=(5.8, 4.2))
     sc_fig.canvas.manager.set_window_title("Shuttle")
 
-    ax_sc_msg    = sc_fig.add_axes([0.03, 0.91, 0.63, 0.06]); ax_sc_msg.axis("off")
-    ax_sc_cancel = sc_fig.add_axes([0.70, 0.89, 0.27, 0.08])
+    ax_sc_msg    = sc_fig.add_axes([0.03, 0.93, 0.48, 0.05]); ax_sc_msg.axis("off")
+    ax_btn_origin = sc_fig.add_axes([0.53, 0.92, 0.20, 0.06])
+    ax_sc_cancel = sc_fig.add_axes([0.76, 0.92, 0.20, 0.06])
 
-    ax_title     = sc_fig.add_axes([0.03, 0.79, 0.94, 0.07]); ax_title.axis("off")
-    ax_start_x   = sc_fig.add_axes([0.30, 0.68, 0.62, 0.07])
-    ax_start_y   = sc_fig.add_axes([0.30, 0.57, 0.62, 0.07])
-    ax_end_x     = sc_fig.add_axes([0.30, 0.43, 0.62, 0.07])
-    ax_end_y     = sc_fig.add_axes([0.30, 0.32, 0.62, 0.07])
-    ax_btn_start = sc_fig.add_axes([0.05, 0.05, 0.44, 0.20])
-    ax_btn_go    = sc_fig.add_axes([0.51, 0.05, 0.44, 0.20])
+    ax_calib_label = sc_fig.add_axes([0.03, 0.84, 0.94, 0.05]); ax_calib_label.axis("off")
+    ax_title     = sc_fig.add_axes([0.03, 0.76, 0.94, 0.06]); ax_title.axis("off")
+
+    ax_start_x   = sc_fig.add_axes([0.30, 0.64, 0.62, 0.07])
+    ax_start_y   = sc_fig.add_axes([0.30, 0.53, 0.62, 0.07])
+    ax_end_x     = sc_fig.add_axes([0.30, 0.39, 0.62, 0.07])
+    ax_end_y     = sc_fig.add_axes([0.30, 0.28, 0.62, 0.07])
+    ax_btn_start = sc_fig.add_axes([0.05, 0.04, 0.44, 0.18])
+    ax_btn_go    = sc_fig.add_axes([0.51, 0.04, 0.44, 0.18])
 
     ax_title.text(0.5, 0.5,
                   "Shuttle (robot 0) — heading locked, pure translation",
@@ -341,12 +382,20 @@ def main():
                           color="lightblue", hovercolor="#4488cc")
     btn_go       = Button(ax_btn_go, "Go",
                           color="lightgreen", hovercolor="#00cc44")
+    btn_set_origin = Button(ax_btn_origin, "Set Origin",
+                            color="lightyellow", hovercolor="#ddaa00")
 
     btn_cancel = Button(ax_sc_cancel, "Cancel",
                         color="lightsalmon", hovercolor="#cc4444")
     sc_msg = ax_sc_msg.text(0.0, 0.5,
-                            "heading is captured at click time → robot only translates",
+                            "1. position robot with nose along desired +Y, click Set Origin. "
+                            "2. Go / Go to Start.",
                             fontsize=9, va="center", color="gray")
+    calib_label = ax_calib_label.text(
+        0.5, 0.5, "frame: RAW MOCAP  (no calibration yet)",
+        fontsize=10, ha="center", va="center",
+        color="darkred", fontweight="bold",
+        bbox=dict(boxstyle="round,pad=0.3", fc="mistyrose", alpha=0.8))
 
     def _refresh_scenario_overlay():
         for ln, dots, cur in scenario_overlays:
@@ -381,37 +430,46 @@ def main():
         sc_fig.canvas.draw_idle()
         fig.canvas.draw_idle()
 
-    def _go_to(target_x, target_y, label):
-        """Send a single goal to robot 0 at (target_x, target_y), locking
-        the goal heading to the robot's *current* heading. Heading-P then
-        has nothing to do, so the robot only translates (mecanum strafe /
-        reverse as needed) and never rotates."""
+    def _go_to(target_x_room, target_y_room, label):
+        """Send a single goal to robot 0 at (target_x_room, target_y_room) in
+        room frame. Heading is locked to the robot's *current* mocap heading
+        (passed through as-is to the robot — heading-P then has zero error
+        and the robot only translates)."""
         pose0, _ = state.best_pose(0)
         if pose0 is None:
             sc_msg.set_text(f"{label}: no pose for r0 — can't lock heading")
             sc_msg.set_color("red")
             sc_fig.canvas.draw_idle()
             return
-        locked_heading = float(pose0[2])
+        locked_mocap_heading = float(pose0[2])
 
         # Clear any scenario state so the sequencer doesn't fight us.
         _scenario["active"] = False
         _scenario["robots"] = {}
         _refresh_scenario_overlay()
 
+        # Convert the room-frame target position into raw mocap so the robot
+        # (which is unaware of calibration) can drive to it directly. Heading
+        # is left in mocap frame because we're locking to the robot's own
+        # current mocap heading.
+        mx, my, _ = _room_to_mocap(target_x_room, target_y_room, 0.0)
+
         pub.send_multipart([
             b"goal",
-            goal_msg(target_x, target_y, locked_heading,
+            goal_msg(mx, my, locked_mocap_heading,
                      _goal["tol"], robot_id=0),
         ])
-        sc_msg.set_text(f"{label}: → ({target_x:.2f}, {target_y:.2f})  "
-                        f"θ locked at {np.degrees(locked_heading):.1f}°")
+
+        # Compute the room-frame version of the locked heading for display.
+        _, _, locked_room_heading = _mocap_to_room(0.0, 0.0, locked_mocap_heading)
+        sc_msg.set_text(f"{label}: → room ({target_x_room:.2f}, {target_y_room:.2f})  "
+                        f"θ locked at room {np.degrees(locked_room_heading):.1f}°")
         sc_msg.set_color("black")
         sc_fig.canvas.draw_idle()
         fig.canvas.draw_idle()
-        print(f"[control_panel] {label}: ({target_x:.2f},{target_y:.2f}) "
-              f"heading_lock={locked_heading:.3f}rad "
-              f"({np.degrees(locked_heading):.1f}°)")
+        print(f"[control_panel] {label}: room=({target_x_room:.2f},{target_y_room:.2f}) "
+              f"-> mocap=({mx:.3f},{my:.3f})  "
+              f"heading_lock={np.degrees(locked_room_heading):.1f}° (room)")
 
     def _go_to_start(_event=None):
         try:
@@ -435,8 +493,44 @@ def main():
             return
         _go_to(ex, ey, "go")
 
+    def _set_origin(_event=None):
+        # Snapshot robot 0's raw mocap pose. state.best_pose returns whatever
+        # _pose_listener stored, which is always raw mocap — the transform is
+        # applied at display time only.
+        pose0, _ = state.best_pose(0)
+        if pose0 is None:
+            sc_msg.set_text("set origin: no pose for r0 — is mocap running?")
+            sc_msg.set_color("red")
+            sc_fig.canvas.draw_idle()
+            return
+        mx0, my0, mth0 = float(pose0[0]), float(pose0[1]), float(pose0[2])
+        _calib["origin_x"]     = mx0
+        _calib["origin_y"]     = my0
+        _calib["origin_theta"] = mth0
+        _calib["alpha"]        = (np.pi / 2.0) - mth0   # nose along room +Y
+        _calib["set"]          = True
+
+        # Reset trails — old samples were in raw mocap and would jump.
+        for tx, ty in trails:
+            tx.clear(); ty.clear()
+
+        calib_label.set_text(
+            f"frame: ROOM  origin@mocap=({mx0:+.2f}, {my0:+.2f}) "
+            f"nose mθ={np.degrees(mth0):+.1f}°"
+        )
+        calib_label.set_color("darkgreen")
+        calib_label.get_bbox_patch().set_facecolor("honeydew")
+        sc_msg.set_text("origin set. robot is now at room (0, 0) facing room +Y.")
+        sc_msg.set_color("black")
+        sc_fig.canvas.draw_idle()
+        fig.canvas.draw_idle()
+        print(f"[control_panel] calibration set: "
+              f"origin_mocap=({mx0:.3f},{my0:.3f}) origin_theta={mth0:.3f}rad "
+              f"alpha={_calib['alpha']:.3f}rad ({np.degrees(_calib['alpha']):+.1f}°)")
+
     btn_go_start.on_clicked(_go_to_start)
     btn_go.on_clicked(_go_to_end)
+    btn_set_origin.on_clicked(_set_origin)
     btn_cancel.on_clicked(_cancel_scenario)
 
     def _scenario_tick():
@@ -464,10 +558,13 @@ def main():
                 parts.append(f"r{rid}:no_pose")
                 continue
 
+            # Waypoints stored in room frame; transform pose so distance check
+            # is in the same frame as the user-defined path.
+            rx, ry, _ = _mocap_to_room(pose[0], pose[1], pose[2])
             wps = rstate["waypoints"]
             idx = rstate["idx"]
             cur = wps[idx]
-            dist = float(np.hypot(pose[0] - cur[0], pose[1] - cur[1]))
+            dist = float(np.hypot(rx - cur[0], ry - cur[1]))
 
             is_last_wp   = (idx >= len(wps) - 1)
             is_final_lap = (rstate["lap"] >= _scenario["total_laps"])
@@ -531,7 +628,8 @@ def main():
             robot_arrows[i].set_visible(vis)
             robot_labels[i].set_visible(vis)
             if vis:
-                x, y, theta = pose
+                # state holds raw mocap; transform to room frame for display.
+                x, y, theta = _mocap_to_room(pose[0], pose[1], pose[2])
                 robot_circles[i].center = (x, y)
                 robot_labels[i].set_position((x, y))
                 dx = np.cos(theta) * ARROW_LEN
@@ -560,7 +658,10 @@ def main():
             status_text.set_text(scenario_status)
             status_text.get_bbox_patch().set_facecolor("lavender")
         elif pose0 is not None:
-            dist = float(np.hypot(pose0[0] - _goal["x"], pose0[1] - _goal["y"]))
+            # _goal is in room frame; transform pose to room frame for the
+            # distance display so it matches what the user typed.
+            rx, ry, _ = _mocap_to_room(pose0[0], pose0[1], pose0[2])
+            dist = float(np.hypot(rx - _goal["x"], ry - _goal["y"]))
             pending = "" if _goal["sent"] else "  [PENDING — click Send Goal]"
             msg = f"r0 dist to goal: {dist*100:.1f} cm{pending}"
             reached = dist < _goal["tol"]
