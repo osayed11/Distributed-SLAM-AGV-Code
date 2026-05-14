@@ -393,7 +393,7 @@ def main():
     tb_start_x = TextBox(ax_start_x, "start X (m)", initial="0.0")
     tb_start_y = TextBox(ax_start_y, "start Y (m)", initial="0.0")
     tb_end_x   = TextBox(ax_end_x,   "end X (m)",   initial="0.0")
-    tb_end_y   = TextBox(ax_end_y,   "end Y (m)",   initial="2.0")
+    tb_end_y   = TextBox(ax_end_y,   "end Y (m)",   initial="2.5")
     tb_laps    = TextBox(ax_laps,    "laps",        initial="2")
     tb_wait    = TextBox(ax_wait,    "wait (s)",    initial="1.0")
 
