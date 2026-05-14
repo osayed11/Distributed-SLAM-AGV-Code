@@ -294,10 +294,9 @@ def main():
 
     # Scenario 2: line (round-trip A→B→A).
     ax_line_title  = sc_fig.add_axes([0.03, 0.42, 0.94, 0.05]); ax_line_title.axis("off")
-    ax_line_endx   = sc_fig.add_axes([0.30, 0.34, 0.62, 0.05])
-    ax_line_endy   = sc_fig.add_axes([0.30, 0.26, 0.62, 0.05])
-    ax_line_wpts   = sc_fig.add_axes([0.30, 0.18, 0.62, 0.05])
-    ax_line_laps   = sc_fig.add_axes([0.30, 0.10, 0.62, 0.05])
+    ax_line_endx   = sc_fig.add_axes([0.30, 0.32, 0.62, 0.05])
+    ax_line_endy   = sc_fig.add_axes([0.30, 0.22, 0.62, 0.05])
+    ax_line_laps   = sc_fig.add_axes([0.30, 0.12, 0.62, 0.05])
     ax_line_run    = sc_fig.add_axes([0.20, 0.01, 0.60, 0.07])
 
     ax_circ_title.text(0.5, 0.5, "Scenario 1: Circle  (center = Goal X / Y)",
@@ -313,7 +312,6 @@ def main():
 
     tb_end_x    = TextBox(ax_line_endx,   "end X (m)",  initial="2.0")
     tb_end_y    = TextBox(ax_line_endy,   "end Y (m)",  initial="0.0")
-    tb_line_wpts = TextBox(ax_line_wpts,  "waypoints",  initial="8")
     tb_line_laps = TextBox(ax_line_laps,  "laps",       initial="1")
     btn_run_line = Button(ax_line_run,    "Run Scenario 2 (Line)",
                           color="lightgreen", hovercolor="#00cc44")
@@ -406,15 +404,14 @@ def main():
         try:
             end_x = float(tb_end_x.text)
             end_y = float(tb_end_y.text)
-            n_pts = int(tb_line_wpts.text)
             laps  = int(tb_line_laps.text)
         except ValueError:
-            sc_msg.set_text("invalid numeric input — check end X/Y / waypoints / laps")
+            sc_msg.set_text("invalid numeric input — check end X/Y / laps")
             sc_msg.set_color("red")
             sc_fig.canvas.draw_idle()
             return
-        if n_pts < 2 or laps < 1:
-            sc_msg.set_text("need waypoints>=2 and laps>=1")
+        if laps < 1:
+            sc_msg.set_text("need laps>=1")
             sc_msg.set_color("red")
             sc_fig.canvas.draw_idle()
             return
@@ -426,23 +423,22 @@ def main():
             sc_fig.canvas.draw_idle()
             return
 
-        # Forward leg A→B: n_pts points including both endpoints.
-        fwd = []
-        for i in range(n_pts):
-            s = i / (n_pts - 1)
-            fwd.append((sx + s * (end_x - sx), sy + s * (end_y - sy)))
-        # Round trip = forward + reverse, but drop reverse's first entry (=B,
-        # duplicate of fwd's last) and reverse's last entry (=A, duplicate of
-        # fwd's first — will be visited again at lap 2's start).
-        positions = fwd + list(reversed(fwd))[1:-1]   # length = 2*n_pts - 2
+        # A line only needs its endpoints. Intermediate samples just cause the
+        # P controller to brake at each one. Round trip = A → B → A.
+        positions = [(sx, sy), (end_x, end_y), (sx, sy)]
 
-        # Heading at each waypoint = direction toward the next waypoint
-        # (wrapping back to positions[0] for the very last, so multi-lap
-        # transitions also face the correct way).
-        waypoints = []
+        # Heading at each waypoint = direction toward the *next meaningful*
+        # waypoint. positions[-1] is co-located with positions[0], so for the
+        # last entry we look one further ahead (positions[1]=B) — this keeps
+        # the camera facing forward for the lap-to-lap transition.
         N = len(positions)
+        waypoints = []
         for i, (px, py) in enumerate(positions):
-            nx, ny = positions[(i + 1) % N]
+            nidx = (i + 1) % N
+            nx, ny = positions[nidx]
+            if abs(nx - px) < 1e-6 and abs(ny - py) < 1e-6 and N > 2:
+                nidx = (i + 2) % N
+                nx, ny = positions[nidx]
             waypoints.append((px, py, float(np.arctan2(ny - py, nx - px))))
 
         _scenario["active"]     = True
@@ -453,14 +449,13 @@ def main():
         _scenario["total_laps"] = laps
 
         _send_current_waypoint()
-        sc_msg.set_text(f"running line: {n_pts} pts per leg, {laps} round-trip(s)")
+        sc_msg.set_text(f"running line: {laps} round-trip(s)")
         sc_msg.set_color("black")
         _refresh_scenario_overlay()
         sc_fig.canvas.draw_idle()
         fig.canvas.draw_idle()
         print(f"[control_panel] scenario started: line "
-              f"A=({sx:.2f},{sy:.2f}) B=({end_x:.2f},{end_y:.2f}) "
-              f"n={n_pts} laps={laps}")
+              f"A=({sx:.2f},{sy:.2f}) B=({end_x:.2f},{end_y:.2f}) laps={laps}")
 
     btn_run_circ.on_clicked(_start_circle)
     btn_run_line.on_clicked(_start_line)
@@ -468,17 +463,39 @@ def main():
 
     def _scenario_tick():
         """Called from the animation loop. Advances to the next waypoint when
-        the robot is within tolerance of the current one. Returns a short
-        status string for the main window."""
+        the robot is within a look-ahead distance of the current one (so the
+        P controller never has to fully decelerate at intermediate waypoints)."""
         if not _scenario["active"]:
             return ""
         pose0, _ = state.best_pose(0)
         if pose0 is None:
             return "[scenario waiting for pose]"
         wps = _scenario["waypoints"]
-        cur = wps[_scenario["idx"]]
+        idx = _scenario["idx"]
+        cur = wps[idx]
         dist = float(np.hypot(pose0[0] - cur[0], pose0[1] - cur[1]))
-        if dist <= _goal["tol"]:
+
+        # The "advance" threshold: at the very last waypoint of the very last
+        # lap, fall back to the precise tolerance so the robot actually settles
+        # at the endpoint. Everywhere else, look ahead half the way to the
+        # next *non-coincident* waypoint — robot keeps cruising into the turn.
+        is_last_wp   = (idx >= len(wps) - 1)
+        is_final_lap = (_scenario["lap"] >= _scenario["total_laps"])
+        if is_last_wp and is_final_lap:
+            advance = _goal["tol"]
+        else:
+            # Find the next waypoint that isn't co-located with the current
+            # one (handles the line's final-A duplicate cleanly).
+            look = None
+            for off in (1, 2):
+                cand = wps[(idx + off) % len(wps)]
+                if abs(cand[0] - cur[0]) > 1e-6 or abs(cand[1] - cur[1]) > 1e-6:
+                    look = cand
+                    break
+            spacing = float(np.hypot(cur[0] - look[0], cur[1] - look[1])) if look else 0.0
+            advance = max(_goal["tol"], 0.5 * spacing)
+
+        if dist <= advance:
             _scenario["idx"] += 1
             if _scenario["idx"] >= len(wps):
                 if _scenario["lap"] >= _scenario["total_laps"]:
@@ -496,7 +513,7 @@ def main():
             _refresh_scenario_overlay()
         return (f"[{_scenario['name']}] lap {_scenario['lap']}/{_scenario['total_laps']} "
                 f"wp {_scenario['idx']+1}/{len(wps)}  "
-                f"dist={dist*100:.0f} cm")
+                f"dist={dist*100:.0f} cm  ahead@{advance*100:.0f} cm")
 
     # -------------------------------------------------------------------------
     # Animation loop
