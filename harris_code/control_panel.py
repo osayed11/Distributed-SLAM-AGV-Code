@@ -278,23 +278,49 @@ def main():
     # -------------------------------------------------------------------------
     # Scenario window — preload paths and trigger from a button
     # -------------------------------------------------------------------------
-    sc_fig = plt.figure(figsize=(5.2, 2.6))
+    sc_fig = plt.figure(figsize=(5.5, 5.4))
     sc_fig.canvas.manager.set_window_title("Scenarios")
 
-    ax_sc_radius = sc_fig.add_axes([0.30, 0.78, 0.62, 0.14])
-    ax_sc_laps   = sc_fig.add_axes([0.30, 0.58, 0.62, 0.14])
-    ax_sc_wpts   = sc_fig.add_axes([0.30, 0.38, 0.62, 0.14])
-    ax_sc_run    = sc_fig.add_axes([0.05, 0.08, 0.40, 0.22])
-    ax_sc_cancel = sc_fig.add_axes([0.55, 0.08, 0.40, 0.22])
-    ax_sc_msg    = sc_fig.add_axes([0.05, 0.005, 0.90, 0.05]); ax_sc_msg.axis("off")
+    # Top bar: status message + shared Cancel button.
+    ax_sc_msg    = sc_fig.add_axes([0.03, 0.94, 0.63, 0.04]); ax_sc_msg.axis("off")
+    ax_sc_cancel = sc_fig.add_axes([0.70, 0.92, 0.27, 0.06])
 
-    tb_radius = TextBox(ax_sc_radius, "radius (m)",   initial="1.0")
-    tb_laps   = TextBox(ax_sc_laps,   "laps",         initial="1")
-    tb_wpts   = TextBox(ax_sc_wpts,   "waypoints",    initial="16")
-    btn_run    = Button(ax_sc_run,    "Run Circle",   color="lightgreen", hovercolor="#00cc44")
-    btn_cancel = Button(ax_sc_cancel, "Cancel",       color="lightsalmon", hovercolor="#cc4444")
-    sc_msg = ax_sc_msg.text(0.0, 0.5, "circle center = Goal X / Y sliders. "
-                                      "tolerance = main 'Tolerance' slider.",
+    # Scenario 1: circle.
+    ax_circ_title  = sc_fig.add_axes([0.03, 0.84, 0.94, 0.05]); ax_circ_title.axis("off")
+    ax_circ_radius = sc_fig.add_axes([0.30, 0.76, 0.62, 0.05])
+    ax_circ_wpts   = sc_fig.add_axes([0.30, 0.68, 0.62, 0.05])
+    ax_circ_laps   = sc_fig.add_axes([0.30, 0.60, 0.62, 0.05])
+    ax_circ_run    = sc_fig.add_axes([0.20, 0.50, 0.60, 0.07])
+
+    # Scenario 2: line (round-trip A→B→A).
+    ax_line_title  = sc_fig.add_axes([0.03, 0.42, 0.94, 0.05]); ax_line_title.axis("off")
+    ax_line_endx   = sc_fig.add_axes([0.30, 0.34, 0.62, 0.05])
+    ax_line_endy   = sc_fig.add_axes([0.30, 0.26, 0.62, 0.05])
+    ax_line_wpts   = sc_fig.add_axes([0.30, 0.18, 0.62, 0.05])
+    ax_line_laps   = sc_fig.add_axes([0.30, 0.10, 0.62, 0.05])
+    ax_line_run    = sc_fig.add_axes([0.20, 0.01, 0.60, 0.07])
+
+    ax_circ_title.text(0.5, 0.5, "Scenario 1: Circle  (center = Goal X / Y)",
+                       fontsize=10, fontweight="bold", ha="center", va="center")
+    ax_line_title.text(0.5, 0.5, "Scenario 2: Line  (A = Goal X / Y, B = end X / Y)",
+                       fontsize=10, fontweight="bold", ha="center", va="center")
+
+    tb_radius   = TextBox(ax_circ_radius, "radius (m)", initial="1.0")
+    tb_wpts     = TextBox(ax_circ_wpts,   "waypoints",  initial="16")
+    tb_laps     = TextBox(ax_circ_laps,   "laps",       initial="1")
+    btn_run_circ = Button(ax_circ_run,    "Run Scenario 1 (Circle)",
+                          color="lightgreen", hovercolor="#00cc44")
+
+    tb_end_x    = TextBox(ax_line_endx,   "end X (m)",  initial="2.0")
+    tb_end_y    = TextBox(ax_line_endy,   "end Y (m)",  initial="0.0")
+    tb_line_wpts = TextBox(ax_line_wpts,  "waypoints",  initial="8")
+    tb_line_laps = TextBox(ax_line_laps,  "laps",       initial="1")
+    btn_run_line = Button(ax_line_run,    "Run Scenario 2 (Line)",
+                          color="lightgreen", hovercolor="#00cc44")
+
+    btn_cancel  = Button(ax_sc_cancel, "Cancel", color="lightsalmon", hovercolor="#cc4444")
+    sc_msg = ax_sc_msg.text(0.0, 0.5, "tolerance = main 'Tolerance' slider.  "
+                                      "1 lap of Line = A→B→A.",
                             fontsize=9, va="center", color="gray")
 
     def _refresh_scenario_overlay():
@@ -376,7 +402,68 @@ def main():
         sc_fig.canvas.draw_idle()
         fig.canvas.draw_idle()
 
-    btn_run.on_clicked(_start_circle)
+    def _start_line(_event=None):
+        try:
+            end_x = float(tb_end_x.text)
+            end_y = float(tb_end_y.text)
+            n_pts = int(tb_line_wpts.text)
+            laps  = int(tb_line_laps.text)
+        except ValueError:
+            sc_msg.set_text("invalid numeric input — check end X/Y / waypoints / laps")
+            sc_msg.set_color("red")
+            sc_fig.canvas.draw_idle()
+            return
+        if n_pts < 2 or laps < 1:
+            sc_msg.set_text("need waypoints>=2 and laps>=1")
+            sc_msg.set_color("red")
+            sc_fig.canvas.draw_idle()
+            return
+
+        sx, sy = _goal["x"], _goal["y"]
+        if abs(end_x - sx) < 1e-6 and abs(end_y - sy) < 1e-6:
+            sc_msg.set_text("end point coincides with Goal X/Y — set a different end")
+            sc_msg.set_color("red")
+            sc_fig.canvas.draw_idle()
+            return
+
+        # Forward leg A→B: n_pts points including both endpoints.
+        fwd = []
+        for i in range(n_pts):
+            s = i / (n_pts - 1)
+            fwd.append((sx + s * (end_x - sx), sy + s * (end_y - sy)))
+        # Round trip = forward + reverse, but drop reverse's first entry (=B,
+        # duplicate of fwd's last) and reverse's last entry (=A, duplicate of
+        # fwd's first — will be visited again at lap 2's start).
+        positions = fwd + list(reversed(fwd))[1:-1]   # length = 2*n_pts - 2
+
+        # Heading at each waypoint = direction toward the next waypoint
+        # (wrapping back to positions[0] for the very last, so multi-lap
+        # transitions also face the correct way).
+        waypoints = []
+        N = len(positions)
+        for i, (px, py) in enumerate(positions):
+            nx, ny = positions[(i + 1) % N]
+            waypoints.append((px, py, float(np.arctan2(ny - py, nx - px))))
+
+        _scenario["active"]     = True
+        _scenario["name"]       = f"line ({sx:.2f},{sy:.2f})→({end_x:.2f},{end_y:.2f})"
+        _scenario["waypoints"]  = waypoints
+        _scenario["idx"]        = 0
+        _scenario["lap"]        = 1
+        _scenario["total_laps"] = laps
+
+        _send_current_waypoint()
+        sc_msg.set_text(f"running line: {n_pts} pts per leg, {laps} round-trip(s)")
+        sc_msg.set_color("black")
+        _refresh_scenario_overlay()
+        sc_fig.canvas.draw_idle()
+        fig.canvas.draw_idle()
+        print(f"[control_panel] scenario started: line "
+              f"A=({sx:.2f},{sy:.2f}) B=({end_x:.2f},{end_y:.2f}) "
+              f"n={n_pts} laps={laps}")
+
+    btn_run_circ.on_clicked(_start_circle)
+    btn_run_line.on_clicked(_start_line)
     btn_cancel.on_clicked(_cancel_scenario)
 
     def _scenario_tick():
@@ -407,7 +494,7 @@ def main():
                 _scenario["idx"]  = 0
             _send_current_waypoint()
             _refresh_scenario_overlay()
-        return (f"[circle] lap {_scenario['lap']}/{_scenario['total_laps']} "
+        return (f"[{_scenario['name']}] lap {_scenario['lap']}/{_scenario['total_laps']} "
                 f"wp {_scenario['idx']+1}/{len(wps)}  "
                 f"dist={dist*100:.0f} cm")
 
