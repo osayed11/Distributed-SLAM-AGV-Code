@@ -496,14 +496,16 @@ def main():
         _laps["total_laps"]         = laps
         _laps["wait_sec"]           = wait
         _laps["current_lap"]        = 1
-        _laps["phase"]              = "to_start"
+        # warm-up to end first, so each lap is a clean end→start→end round
+        # trip regardless of where the robot currently is.
+        _laps["phase"]              = "warmup_to_end"
         _laps["start_room"]         = (sx, sy)
         _laps["end_room"]           = (ex, ey)
         _laps["heading_lock_mocap"] = float(pose0[2])
         _laps["active"]             = True
 
-        _send_laps_target(sx, sy)
-        sc_msg.set_text(f"laps: starting lap 1/{laps} (→ start)")
+        _send_laps_target(ex, ey)
+        sc_msg.set_text(f"laps: warm-up → end, then {laps} round-trip(s)")
         sc_msg.set_color("black")
         sc_fig.canvas.draw_idle()
         print(f"[control_panel] laps started: {laps} lap(s), wait={wait:.1f}s, "
@@ -520,6 +522,16 @@ def main():
         now = time.time()
         cur = _laps["current_lap"]
         total = _laps["total_laps"]
+
+        if _laps["phase"] == "warmup_to_end":
+            ex, ey = _laps["end_room"]
+            d = float(np.hypot(rx - ex, ry - ey))
+            if d <= tol:
+                _laps["phase"] = "to_start"
+                sx, sy = _laps["start_room"]
+                _send_laps_target(sx, sy)
+                return f"[laps {cur}/{total}] → start"
+            return f"[laps warm-up] → end  ({d*100:.0f} cm)"
 
         if _laps["phase"] == "to_start":
             sx, sy = _laps["start_room"]
