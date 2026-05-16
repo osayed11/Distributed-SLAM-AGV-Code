@@ -1,11 +1,14 @@
 #!/bin/bash
-# Fixed: Synchronized start and stop for consistent bag durations
-# "10.23.22.246" "10.23.37.117" "10.23.33.237"
-ROBOTS=("10.23.16.229" "10.23.37.117" "10.23.22.246" "10.23.118.99")
-RADII=("2.0" "1.5" "1.0" "0.5")
-LINEAR="0.20"
-DURATION="720.0"
-STAGGER=15
+# Lawnmower/Shuttle Fleet Launch Script
+# 1:1 Logic Clone of the working launch_fleet.sh
+
+ROBOTS=("10.23.117.240" "10.23.31.157" "10.23.22.246" "10.23.74.155")
+BIASES=("0.0" "0.0" "0.0" "0.0")
+REV_BIASES=("0.0" "0.0" "0.0" "0.0")
+LINEAR="0.1"
+LEG_DURATION="25"
+CYCLES="15"
+STAGGER=0
 
 read -sp "Password: " PASS
 echo -e "\n"
@@ -14,12 +17,13 @@ echo "⚙️ PHASE 1: Initializing Hardware & Logging on all robots..."
 for i in "${!ROBOTS[@]}"; do
     IP="${ROBOTS[$i]}"
     echo "🚀 [AGV$i] Connecting to $IP..."
+    
     sshpass -p "$PASS" ssh -n -o StrictHostKeyChecking=no -o ConnectTimeout=15 ubuntu@$IP "
         [ -f /opt/ros/noetic/setup.bash ] && source /opt/ros/noetic/setup.bash
         [ -f ~/slam_project/agv_ws/devel/setup.bash ] && source ~/slam_project/agv_ws/devel/setup.bash
         export REQUIRE_IMU=false; export REQUIRE_GT=false;
         LOG_FILE=\"/tmp/bringup_agv$i.log\"; > \$LOG_FILE
-        nohup bash ~/slam_project/scripts/logging/start_session.sh agv$i concentric > \$LOG_FILE 2>&1 &
+        nohup bash ~/slam_project/scripts/logging/start_session.sh agv$i shuttle > \$LOG_FILE 2>&1 &
 
         # Wait for rosbag (up to 120s)
         TIMEOUT=120; ELAPSED=0
@@ -53,7 +57,6 @@ for i in "${!ROBOTS[@]}"; do
         HEALTHY+=($i)
     else
         echo "  ❌ [AGV$i] rosbag NOT running — skipping in Phase 2"
-        # Show last few log lines for debugging
         sshpass -p "$PASS" ssh -n -o StrictHostKeyChecking=no -o ConnectTimeout=5 ubuntu@$IP \
             "tail -5 /tmp/bringup_agv$i.log 2>/dev/null" 2>/dev/null || true
         FAILED+=($i)
@@ -70,7 +73,7 @@ echo ""
 echo "🎯 PHASE 2: Commencing staggered drives..."
 for i in "${HEALTHY[@]}"; do
     IP="${ROBOTS[$i]}"
-    RADIUS="${RADII[$i]}"
+    BIAS="${BIASES[$i]}"
     DELAY=$((i * STAGGER))
     (
         [ $DELAY -gt 0 ] && echo "⏱️ [$(date +%T)] [AGV$i] Holding for ${DELAY}s..." && sleep $DELAY
@@ -80,7 +83,20 @@ for i in "${HEALTHY[@]}"; do
             [ -f /opt/ros/noetic/setup.bash ] && source /opt/ros/noetic/setup.bash
             [ -f ~/slam_project/agv_ws/devel/setup.bash ] && source ~/slam_project/agv_ws/devel/setup.bash
             
-            python3 -u ~/slam_project/scripts/logging/drive_circle.py --radius $RADIUS --linear $LINEAR --duration $DURATION --no-prompt
+            # Smart check for --rev-bias support
+            if grep -q \"rev-bias\" ~/slam_project/scripts/logging/drive_lawnmower.py; then
+                REV_FLAG=\"--rev-bias ${REV_BIASES[$i]}\"
+            else
+                REV_FLAG=\"\"
+            fi
+
+            python3 -u ~/slam_project/scripts/logging/drive_lawnmower.py \
+                --duration $LEG_DURATION \
+                --cycles $CYCLES \
+                --linear $LINEAR \
+                --bias $BIAS \
+                \$REV_FLAG \
+                --no-prompt
             echo '🏁 [AGV$i] Drive complete. Standing by for synchronized stop...'
         "
         echo "🔒 [$(date +%T)] [AGV$i] Drive finished."

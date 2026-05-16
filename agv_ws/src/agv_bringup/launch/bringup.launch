@@ -37,17 +37,27 @@
        the current wrapper/firmware stack. The dataset IMU requirement is
        satisfied by the base /imu from myagv_odometry_node. -->
   <include file="$(find realsense2_camera)/launch/rs_camera.launch">
-      <arg name="align_depth"         value="true"/>
-      <arg name="enable_pointcloud"   value="false"/>
-      <arg name="enable_sync"         value="$(arg enable_realsense_sync)"/>
-      <arg name="color_width"         value="$(arg color_width)"/>
-      <arg name="color_height"        value="$(arg color_height)"/>
-      <arg name="color_fps"           value="$(arg color_fps)"/>
-      <arg name="depth_width"         value="$(arg depth_width)"/>
-      <arg name="depth_height"        value="$(arg depth_height)"/>
-      <arg name="depth_fps"           value="$(arg depth_fps)"/>
-      <arg name="enable_accel"        value="false"/>
-      <arg name="enable_gyro"         value="false"/>
+      <arg name="align_depth"               value="true"/>
+      <arg name="enable_pointcloud"         value="false"/>
+      <arg name="enable_sync"               value="$(arg enable_realsense_sync)"/>
+      <arg name="color_width"               value="$(arg color_width)"/>
+      <arg name="color_height"              value="$(arg color_height)"/>
+      <arg name="color_fps"                 value="$(arg color_fps)"/>
+      <arg name="depth_width"               value="$(arg depth_width)"/>
+      <arg name="depth_height"              value="$(arg depth_height)"/>
+      <arg name="depth_fps"                 value="$(arg depth_fps)"/>
+      <arg name="enable_accel"              value="false"/>
+      <arg name="enable_gyro"               value="false"/>
+      <!-- Exposure & White Balance Fix -->
+      <arg name="enable_color_auto_exposure"      value="true"/>
+      <arg name="enable_color_auto_white_balance" value="true"/>
+      <arg name="enable_infra_auto_exposure"      value="true"/>
   </include>
+
+  <!-- Force Auto-Exposure to fix white-out issues -->
+  <rosparam>
+    /camera/rgb_camera/enable_auto_exposure: true
+    /camera/rgb_camera/auto_exposure_priority: true
+  </rosparam>
 
 </launch>
