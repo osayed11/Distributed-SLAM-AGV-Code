@@ -31,11 +31,11 @@ from ros1_bridge import ROS1Bridge
 
 
 KP_POS    = 0.5
-V_MAX     = 0.40
-TOL_POS   = 0.2
-KP_TH     = 0.8
-OMEGA_MAX = 0.6
-TOL_TH    = 0.1
+V_MAX     = 0.20      # halved for precision; precision over speed
+TOL_POS   = 0.10      # tightened for precise endpoint
+KP_TH     = 2.0
+OMEGA_MAX = 0.8
+TOL_TH    = 0.05      # ~3°; tighter so GOAL_REACHED waits for true alignment
 MOCAP_FRESH_SEC = 1.5  # halt control if no mocap pose within this window
 
 # Reject obviously-bad mocap poses. If a new sample disagrees with the last
