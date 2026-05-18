@@ -224,16 +224,24 @@ def main():
         for r in cfg["robots"]
     }
     # Laps state machine. One lap = drive to start → wait → drive to end.
+    # Shared run params; each robot has its own phase/lap counter so robots
+    # can desync (e.g. one finishes a lap faster than the other).
     _laps = {
-        "active":             False,
-        "total_laps":         2,
-        "wait_sec":           1.0,
-        "current_lap":        0,
-        "phase":              "idle",  # "to_start" / "wait_at_start" / "to_end"
-        "phase_t0":           0.0,
-        "start_room":         (0.0, 0.0),
-        "end_room":           (0.0, 1.5),
-        "heading_lock_mocap": 0.0,
+        "active":     False,
+        "total_laps": 2,
+        "wait_sec":   1.0,
+        "start_room": (0.0, 0.0),
+        "end_room":   (0.0, 1.5),
+        "robots": {
+            r["id"]: {
+                "current_lap":        0,
+                "phase":              "idle",  # warmup_to_end / to_start /
+                                               # wait_at_start / to_end / done
+                "phase_t0":           0.0,
+                "heading_lock_mocap": 0.0,
+            }
+            for r in cfg["robots"]
+        },
     }
 
     def _mocap_to_room(mx, my, mth, rid=0):
@@ -461,13 +469,15 @@ def main():
         sc_fig.canvas.draw_idle()
         fig.canvas.draw_idle()
 
-    def _send_laps_target(room_x, room_y):
-        """Send a single goal to robot 0, using the laps run's locked heading."""
-        mx, my, _ = _room_to_mocap(room_x, room_y, 0.0)
+    def _send_laps_target(rid, room_x, room_y):
+        """Send a goal to one robot using that robot's own room frame and the
+        heading lock captured at the start of this laps run."""
+        rstate = _laps["robots"][rid]
+        mx, my, _ = _room_to_mocap(room_x, room_y, 0.0, rid=rid)
         pub.send_multipart([
             b"goal",
-            goal_msg(mx, my, _laps["heading_lock_mocap"],
-                     _goal["tol"], robot_id=0),
+            goal_msg(mx, my, rstate["heading_lock_mocap"],
+                     _goal["tol"], robot_id=rid),
         ])
 
     def _start_laps(_event=None):
@@ -489,9 +499,14 @@ def main():
             sc_fig.canvas.draw_idle()
             return
 
-        pose0, _ = state.best_pose(0)
-        if pose0 is None:
-            sc_msg.set_text("laps: no pose for r0 — can't lock heading")
+        # Each robot needs a fresh pose so we can capture its heading lock.
+        missing = []
+        for r in cfg["robots"]:
+            rid = r["id"]
+            if state.best_pose(rid)[0] is None:
+                missing.append(rid)
+        if missing:
+            sc_msg.set_text(f"laps: no pose for r{missing} — can't start")
             sc_msg.set_color("red")
             sc_fig.canvas.draw_idle()
             return
@@ -501,90 +516,140 @@ def main():
         _scenario["robots"] = {}
         _refresh_scenario_overlay()
 
-        _laps["total_laps"]         = laps
-        _laps["wait_sec"]           = wait
-        _laps["current_lap"]        = 1
-        # warm-up to end first, so each lap is a clean end→start→end round
-        # trip regardless of where the robot currently is.
-        _laps["phase"]              = "warmup_to_end"
-        _laps["start_room"]         = (sx, sy)
-        _laps["end_room"]           = (ex, ey)
-        _laps["heading_lock_mocap"] = float(pose0[2])
-        _laps["active"]             = True
+        _laps["total_laps"] = laps
+        _laps["wait_sec"]   = wait
+        _laps["start_room"] = (sx, sy)
+        _laps["end_room"]   = (ex, ey)
 
-        _send_laps_target(ex, ey)
-        sc_msg.set_text(f"laps: warm-up → end, then {laps} round-trip(s)")
+        # Init every robot's lap state. Warm up to end first so each
+        # subsequent lap is a clean end → start → end round trip regardless
+        # of where the robot started.
+        for r in cfg["robots"]:
+            rid = r["id"]
+            pose_r, _ = state.best_pose(rid)
+            cal = _calib.get(rid)
+            if cal is not None and cal["set"]:
+                heading_lock = float(cal["origin_theta"])
+            else:
+                heading_lock = float(pose_r[2])
+            rstate = _laps["robots"][rid]
+            rstate["current_lap"]        = 1
+            rstate["phase"]              = "warmup_to_end"
+            rstate["phase_t0"]           = 0.0
+            rstate["heading_lock_mocap"] = heading_lock
+
+        _laps["active"] = True
+
+        # Kick off each robot's first target.
+        for r in cfg["robots"]:
+            _send_laps_target(r["id"], ex, ey)
+
+        sc_msg.set_text(f"laps: warm-up → end, then {laps} round-trip(s)  "
+                        f"({len(cfg['robots'])} robot(s))")
         sc_msg.set_color("black")
         sc_fig.canvas.draw_idle()
         print(f"[control_panel] laps started: {laps} lap(s), wait={wait:.1f}s, "
-              f"start=({sx:.2f},{sy:.2f}), end=({ex:.2f},{ey:.2f})")
+              f"start=({sx:.2f},{sy:.2f}), end=({ex:.2f},{ey:.2f}) "
+              f"robots={[r['id'] for r in cfg['robots']]}")
 
     def _laps_tick():
         if not _laps["active"]:
             return ""
-        pose0, _ = state.best_pose(0)
-        if pose0 is None:
-            return "[laps] waiting for pose"
-        rx, ry, _ = _mocap_to_room(pose0[0], pose0[1], pose0[2])
         tol = _goal["tol"]
         now = time.time()
-        cur = _laps["current_lap"]
         total = _laps["total_laps"]
+        sx_r, sy_r = _laps["start_room"]
+        ex_r, ey_r = _laps["end_room"]
 
-        if _laps["phase"] == "warmup_to_end":
-            ex, ey = _laps["end_room"]
-            d = float(np.hypot(rx - ex, ry - ey))
-            if d <= tol:
-                _laps["phase"] = "to_start"
-                sx, sy = _laps["start_room"]
-                _send_laps_target(sx, sy)
-                return f"[laps {cur}/{total}] → start"
-            return f"[laps warm-up] → end  ({d*100:.0f} cm)"
+        parts = []
+        all_done = True
 
-        if _laps["phase"] == "to_start":
-            sx, sy = _laps["start_room"]
-            d = float(np.hypot(rx - sx, ry - sy))
-            if d <= tol:
-                _laps["phase"] = "wait_at_start"
-                _laps["phase_t0"] = now
-                return f"[laps {cur}/{total}] at start — waiting {_laps['wait_sec']:.1f}s"
-            return f"[laps {cur}/{total}] → start  ({d*100:.0f} cm)"
+        for r in cfg["robots"]:
+            rid = r["id"]
+            rstate = _laps["robots"][rid]
+            phase = rstate["phase"]
+            cur = rstate["current_lap"]
 
-        if _laps["phase"] == "wait_at_start":
-            elapsed = now - _laps["phase_t0"]
-            if elapsed >= _laps["wait_sec"]:
-                _laps["phase"] = "to_end"
-                ex, ey = _laps["end_room"]
-                _send_laps_target(ex, ey)
-                return f"[laps {cur}/{total}] → end"
-            return f"[laps {cur}/{total}] waiting at start  ({elapsed:.1f}/{_laps['wait_sec']:.1f}s)"
+            if phase == "done":
+                parts.append(f"r{rid}:done")
+                continue
+            all_done = False
 
-        if _laps["phase"] == "to_end":
-            ex, ey = _laps["end_room"]
-            d = float(np.hypot(rx - ex, ry - ey))
-            if d <= tol:
-                if cur >= total:
-                    _laps["active"] = False
-                    pub.send_multipart([b"ctrl_stop", ctrl_stop_msg()])
-                    sc_msg.set_text(f"laps done — {total} lap(s) completed.")
-                    sc_msg.set_color("darkgreen")
-                    sc_fig.canvas.draw_idle()
-                    print(f"[control_panel] laps complete ({total} lap(s))")
-                    return "[laps] done"
-                _laps["current_lap"] += 1
-                _laps["phase"] = "to_start"
-                sx, sy = _laps["start_room"]
-                _send_laps_target(sx, sy)
-                return f"[laps {_laps['current_lap']}/{total}] → start"
-            return f"[laps {cur}/{total}] → end  ({d*100:.0f} cm)"
+            pose, _src = state.best_pose(rid)
+            if pose is None:
+                parts.append(f"r{rid}:no_pose")
+                continue
+            rx, ry, _ = _mocap_to_room(pose[0], pose[1], pose[2], rid=rid)
 
-        return ""
+            if phase == "warmup_to_end":
+                d = float(np.hypot(rx - ex_r, ry - ey_r))
+                if d <= tol:
+                    rstate["phase"] = "to_start"
+                    _send_laps_target(rid, sx_r, sy_r)
+                    parts.append(f"r{rid}:l{cur}/{total} →start")
+                else:
+                    parts.append(f"r{rid}:warm→end {d*100:.0f}cm")
+                continue
+
+            if phase == "to_start":
+                d = float(np.hypot(rx - sx_r, ry - sy_r))
+                if d <= tol:
+                    rstate["phase"]    = "wait_at_start"
+                    rstate["phase_t0"] = now
+                    parts.append(f"r{rid}:l{cur}/{total} @start "
+                                 f"wait{_laps['wait_sec']:.1f}s")
+                else:
+                    parts.append(f"r{rid}:l{cur}/{total} →start {d*100:.0f}cm")
+                continue
+
+            if phase == "wait_at_start":
+                elapsed = now - rstate["phase_t0"]
+                if elapsed >= _laps["wait_sec"]:
+                    rstate["phase"] = "to_end"
+                    _send_laps_target(rid, ex_r, ey_r)
+                    parts.append(f"r{rid}:l{cur}/{total} →end")
+                else:
+                    parts.append(f"r{rid}:l{cur}/{total} @start "
+                                 f"{elapsed:.1f}/{_laps['wait_sec']:.1f}s")
+                continue
+
+            if phase == "to_end":
+                d = float(np.hypot(rx - ex_r, ry - ey_r))
+                if d <= tol:
+                    if cur >= total:
+                        rstate["phase"] = "done"
+                        parts.append(f"r{rid}:done")
+                    else:
+                        rstate["current_lap"] = cur + 1
+                        rstate["phase"]       = "to_start"
+                        _send_laps_target(rid, sx_r, sy_r)
+                        parts.append(f"r{rid}:l{cur+1}/{total} →start")
+                else:
+                    parts.append(f"r{rid}:l{cur}/{total} →end {d*100:.0f}cm")
+                continue
+
+            parts.append(f"r{rid}:phase={phase}")
+
+        if all_done:
+            _laps["active"] = False
+            pub.send_multipart([b"ctrl_stop", ctrl_stop_msg()])
+            sc_msg.set_text(f"laps done — {total} lap(s) on all robots.")
+            sc_msg.set_color("darkgreen")
+            sc_fig.canvas.draw_idle()
+            print(f"[control_panel] laps complete on all robots ({total} lap(s))")
+            return "[laps] all done"
+
+        return "[laps]  " + "  |  ".join(parts)
 
     def _go_to(target_x_room, target_y_room, label):
         """Send the same room-frame target to every robot in the config.
         Each robot's room frame is independent — its own calibration converts
-        (target_x_room, target_y_room) to that robot's mocap-frame goal, and
-        heading is locked to that robot's current mocap heading."""
+        (target_x_room, target_y_room) to that robot's mocap-frame goal.
+
+        Heading is locked to that robot's *calibrated origin heading* (the
+        mocap θ captured at Set Origin), not its current heading. This way,
+        every Go actively corrects any drift accumulated from prior runs
+        instead of treating drifted-θ as the new reference."""
         targets = []
         missing = []
         for r in cfg["robots"]:
@@ -593,7 +658,13 @@ def main():
             if pose_r is None:
                 missing.append(rid)
                 continue
-            locked_mocap_heading = float(pose_r[2])
+            cal = _calib.get(rid)
+            if cal is not None and cal["set"]:
+                locked_mocap_heading = float(cal["origin_theta"])
+            else:
+                # No calibration yet — fall back to current heading so Go
+                # still works pre-Set-Origin (drift won't be corrected).
+                locked_mocap_heading = float(pose_r[2])
             mx, my, _ = _room_to_mocap(target_x_room, target_y_room, 0.0,
                                        rid=rid)
             targets.append((rid, mx, my, locked_mocap_heading))
