@@ -208,15 +208,20 @@ def main():
         "robots":     {},
         "total_laps": 1,
     }
-    # SE(2) calibration from raw mocap frame → room frame. Convention: at the
-    # moment of "Set Origin" the robot's nose points along room +Y, and its
-    # position becomes (0, 0). alpha = π/2 − mocap_theta_at_calibration.
+    # Per-robot SE(2) calibration from raw mocap frame → that robot's room
+    # frame. Convention: at the moment of "Set Origin" each robot's nose
+    # points along its own room +Y, and its position becomes (0, 0).
+    # alpha_r = π/2 − mocap_theta_at_calibration_r. Each robot has an
+    # independent room frame; the two are unrelated in mocap space.
     _calib = {
-        "set":          False,
-        "origin_x":     0.0,   # raw mocap x of calibration pose
-        "origin_y":     0.0,   # raw mocap y of calibration pose
-        "origin_theta": 0.0,   # raw mocap heading at calibration
-        "alpha":        0.0,   # rotation applied: room_theta = mocap_theta + alpha
+        r["id"]: {
+            "set":          False,
+            "origin_x":     0.0,
+            "origin_y":     0.0,
+            "origin_theta": 0.0,
+            "alpha":        0.0,
+        }
+        for r in cfg["robots"]
     }
     # Laps state machine. One lap = drive to start → wait → drive to end.
     _laps = {
@@ -231,27 +236,29 @@ def main():
         "heading_lock_mocap": 0.0,
     }
 
-    def _mocap_to_room(mx, my, mth):
-        if not _calib["set"]:
+    def _mocap_to_room(mx, my, mth, rid=0):
+        cal = _calib.get(rid)
+        if cal is None or not cal["set"]:
             return mx, my, mth
-        a = _calib["alpha"]
-        dx = mx - _calib["origin_x"]
-        dy = my - _calib["origin_y"]
+        a = cal["alpha"]
+        dx = mx - cal["origin_x"]
+        dy = my - cal["origin_y"]
         c, s = np.cos(a), np.sin(a)
         rx = dx * c - dy * s
         ry = dx * s + dy * c
         rth = (mth + a + np.pi) % (2 * np.pi) - np.pi
         return rx, ry, rth
 
-    def _room_to_mocap(rx, ry, rth):
-        if not _calib["set"]:
+    def _room_to_mocap(rx, ry, rth, rid=0):
+        cal = _calib.get(rid)
+        if cal is None or not cal["set"]:
             return rx, ry, rth
-        a = _calib["alpha"]
+        a = cal["alpha"]
         c, s = np.cos(a), np.sin(a)
         dx =  rx * c + ry * s
         dy = -rx * s + ry * c
-        mx = dx + _calib["origin_x"]
-        my = dy + _calib["origin_y"]
+        mx = dx + cal["origin_x"]
+        my = dy + cal["origin_y"]
         mth = (rth - a + np.pi) % (2 * np.pi) - np.pi
         return mx, my, mth
 
@@ -387,7 +394,8 @@ def main():
     ax_btn_laps  = sc_fig.add_axes([0.67, 0.05, 0.30, 0.22])
 
     ax_title.text(0.5, 0.5,
-                  "Shuttle (robot 0) — heading locked, pure translation",
+                  "Shuttle (all robots) — each in its own room frame, "
+                  "heading locked, pure translation",
                   fontsize=11, fontweight="bold", ha="center", va="center")
 
     tb_start_x = TextBox(ax_start_x, "start X (m)", initial="0.0")
@@ -573,17 +581,28 @@ def main():
         return ""
 
     def _go_to(target_x_room, target_y_room, label):
-        """Send a single goal to robot 0 at (target_x_room, target_y_room) in
-        room frame. Heading is locked to the robot's *current* mocap heading
-        (passed through as-is to the robot — heading-P then has zero error
-        and the robot only translates)."""
-        pose0, _ = state.best_pose(0)
-        if pose0 is None:
-            sc_msg.set_text(f"{label}: no pose for r0 — can't lock heading")
+        """Send the same room-frame target to every robot in the config.
+        Each robot's room frame is independent — its own calibration converts
+        (target_x_room, target_y_room) to that robot's mocap-frame goal, and
+        heading is locked to that robot's current mocap heading."""
+        targets = []
+        missing = []
+        for r in cfg["robots"]:
+            rid = r["id"]
+            pose_r, _ = state.best_pose(rid)
+            if pose_r is None:
+                missing.append(rid)
+                continue
+            locked_mocap_heading = float(pose_r[2])
+            mx, my, _ = _room_to_mocap(target_x_room, target_y_room, 0.0,
+                                       rid=rid)
+            targets.append((rid, mx, my, locked_mocap_heading))
+
+        if missing:
+            sc_msg.set_text(f"{label}: no pose for r{missing} — can't lock heading")
             sc_msg.set_color("red")
             sc_fig.canvas.draw_idle()
             return
-        locked_mocap_heading = float(pose0[2])
 
         # Clear any scenario or laps run so they don't fight us.
         _scenario["active"] = False
@@ -591,28 +610,23 @@ def main():
         _laps["active"]     = False
         _refresh_scenario_overlay()
 
-        # Convert the room-frame target position into raw mocap so the robot
-        # (which is unaware of calibration) can drive to it directly. Heading
-        # is left in mocap frame because we're locking to the robot's own
-        # current mocap heading.
-        mx, my, _ = _room_to_mocap(target_x_room, target_y_room, 0.0)
+        for rid, mx, my, locked in targets:
+            pub.send_multipart([
+                b"goal",
+                goal_msg(mx, my, locked, _goal["tol"], robot_id=rid),
+            ])
 
-        pub.send_multipart([
-            b"goal",
-            goal_msg(mx, my, locked_mocap_heading,
-                     _goal["tol"], robot_id=0),
-        ])
-
-        # Compute the room-frame version of the locked heading for display.
-        _, _, locked_room_heading = _mocap_to_room(0.0, 0.0, locked_mocap_heading)
-        sc_msg.set_text(f"{label}: → room ({target_x_room:.2f}, {target_y_room:.2f})  "
-                        f"θ locked at room {np.degrees(locked_room_heading):.1f}°")
+        sc_msg.set_text(f"{label}: → room ({target_x_room:.2f}, "
+                        f"{target_y_room:.2f}) sent to {len(targets)} robot(s)")
         sc_msg.set_color("black")
         sc_fig.canvas.draw_idle()
         fig.canvas.draw_idle()
-        print(f"[control_panel] {label}: room=({target_x_room:.2f},{target_y_room:.2f}) "
-              f"-> mocap=({mx:.3f},{my:.3f})  "
-              f"heading_lock={np.degrees(locked_room_heading):.1f}° (room)")
+        print(f"[control_panel] {label}: room=({target_x_room:.2f},"
+              f"{target_y_room:.2f})")
+        for rid, mx, my, locked in targets:
+            _, _, locked_room = _mocap_to_room(0.0, 0.0, locked, rid=rid)
+            print(f"  r{rid} -> mocap=({mx:.3f},{my:.3f})  "
+                  f"heading_lock={np.degrees(locked_room):.1f}° (its room)")
 
     def _go_to_start(_event=None):
         try:
@@ -637,39 +651,57 @@ def main():
         _go_to(ex, ey, "go")
 
     def _set_origin(_event=None):
-        # Snapshot robot 0's raw mocap pose. state.best_pose returns whatever
-        # _pose_listener stored, which is always raw mocap — the transform is
-        # applied at display time only.
-        pose0, _ = state.best_pose(0)
-        if pose0 is None:
-            sc_msg.set_text("set origin: no pose for r0 — is mocap running?")
+        # Snapshot every robot's raw mocap pose simultaneously. Each robot
+        # gets its own independent room frame anchored at its current pose
+        # with the nose along that frame's +Y. state.best_pose returns raw
+        # mocap — the per-robot transform is applied at display time.
+        snapshots = []
+        missing   = []
+        for r in cfg["robots"]:
+            rid = r["id"]
+            pose_r, _ = state.best_pose(rid)
+            if pose_r is None:
+                missing.append(rid)
+                continue
+            snapshots.append((rid,
+                              float(pose_r[0]),
+                              float(pose_r[1]),
+                              float(pose_r[2])))
+        if missing:
+            sc_msg.set_text(f"set origin: no pose for r{missing} — is mocap running?")
             sc_msg.set_color("red")
             sc_fig.canvas.draw_idle()
             return
-        mx0, my0, mth0 = float(pose0[0]), float(pose0[1]), float(pose0[2])
-        _calib["origin_x"]     = mx0
-        _calib["origin_y"]     = my0
-        _calib["origin_theta"] = mth0
-        _calib["alpha"]        = (np.pi / 2.0) - mth0   # nose along room +Y
-        _calib["set"]          = True
+
+        for rid, mx, my, mth in snapshots:
+            cal = _calib[rid]
+            cal["origin_x"]     = mx
+            cal["origin_y"]     = my
+            cal["origin_theta"] = mth
+            cal["alpha"]        = (np.pi / 2.0) - mth   # nose along room +Y
+            cal["set"]          = True
 
         # Reset trails — old samples were in raw mocap and would jump.
         for tx, ty in trails:
             tx.clear(); ty.clear()
 
-        calib_label.set_text(
-            f"frame: ROOM  origin@mocap=({mx0:+.2f}, {my0:+.2f}) "
-            f"nose mθ={np.degrees(mth0):+.1f}°"
+        summary = "  |  ".join(
+            f"r{rid}: m=({mx:+.2f},{my:+.2f}) mθ={np.degrees(mth):+.1f}°"
+            for rid, mx, my, mth in snapshots
         )
+        calib_label.set_text(f"frame: ROOM (per robot)  {summary}")
         calib_label.set_color("darkgreen")
         calib_label.get_bbox_patch().set_facecolor("honeydew")
-        sc_msg.set_text("origin set. robot is now at room (0, 0) facing room +Y.")
+        sc_msg.set_text(f"origin set for {len(snapshots)} robot(s). "
+                        "each at room (0, 0) facing its own +Y.")
         sc_msg.set_color("black")
         sc_fig.canvas.draw_idle()
         fig.canvas.draw_idle()
-        print(f"[control_panel] calibration set: "
-              f"origin_mocap=({mx0:.3f},{my0:.3f}) origin_theta={mth0:.3f}rad "
-              f"alpha={_calib['alpha']:.3f}rad ({np.degrees(_calib['alpha']):+.1f}°)")
+        for rid, mx, my, mth in snapshots:
+            alpha = (np.pi / 2.0) - mth
+            print(f"[control_panel] r{rid} calib: "
+                  f"origin_mocap=({mx:.3f},{my:.3f}) origin_theta={mth:.3f}rad "
+                  f"alpha={alpha:.3f}rad ({np.degrees(alpha):+.1f}°)")
 
     btn_go_start.on_clicked(_go_to_start)
     btn_go.on_clicked(_go_to_end)
@@ -772,8 +804,9 @@ def main():
             robot_arrows[i].set_visible(vis)
             robot_labels[i].set_visible(vis)
             if vis:
-                # state holds raw mocap; transform to room frame for display.
-                x, y, theta = _mocap_to_room(pose[0], pose[1], pose[2])
+                # state holds raw mocap; transform to each robot's own room
+                # frame so both appear at (0, 0) after Set Origin.
+                x, y, theta = _mocap_to_room(pose[0], pose[1], pose[2], rid=i)
                 robot_circles[i].center = (x, y)
                 robot_labels[i].set_position((x, y))
                 dx = np.cos(theta) * ARROW_LEN
