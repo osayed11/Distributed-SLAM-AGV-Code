@@ -30,13 +30,29 @@ from messages import pose_msg, goal_msg, unpack
 from ros1_bridge import ROS1Bridge
 
 
-KP_POS    = 0.7
+KP_POS    = 0.5
 V_MAX     = 0.40
 TOL_POS   = 0.2
-KP_TH     = 1.5
+KP_TH     = 0.8
 OMEGA_MAX = 0.6
 TOL_TH    = 0.1
-MOCAP_FRESH_SEC = 0.5  # halt control if no mocap pose within this window
+MOCAP_FRESH_SEC = 1.5  # halt control if no mocap pose within this window
+
+# Reject obviously-bad mocap poses. If a new sample disagrees with the last
+# accepted one by more than these per-second rates, it's almost certainly a
+# rigid-solve glitch (markers occluded, re-solved with wrong axis). The robot's
+# V_MAX is 0.40 m/s, so 2.0 m/s gives ~5x slack. Yaw cap is ~170 deg/s.
+MOCAP_MAX_POS_RATE = 2.0   # m/s
+MOCAP_MAX_TH_RATE  = 3.0   # rad/s
+
+# Heading fusion: use mocap absolute heading at goal lock-in, then integrate
+# odom delta-theta on top of it. /odom yaw is smoother short-term than a
+# poorly-tracked rigid; over a 2.5 m run odom drift is small.
+USE_ODOM_HEADING = True
+
+
+def _wrap_pi(a):
+    return (a + np.pi) % (2.0 * np.pi) - np.pi
 
 
 class DriveRunner:
@@ -66,6 +82,11 @@ class DriveRunner:
         self._mocap_pose = None       # (x, y, theta) — world frame from mocap
         self._mocap_ts   = 0.0
         self._mocap_warned = False    # rate-limit the "no mocap" warnings
+        self._mocap_rejected = 0      # count of pose samples filtered as glitches
+        # Heading-fusion snapshot: at each new goal, record (mocap_theta,
+        # odom_theta). During the run, fused_theta = mocap_theta_lock +
+        # (odom_theta - odom_theta_lock). Reset on each new goal.
+        self._heading_lock = None     # (mocap_theta, odom_theta) or None
 
         signal.signal(signal.SIGINT,  self._handle_sigint)
         signal.signal(signal.SIGTERM, self._handle_sigint)
@@ -102,6 +123,18 @@ class DriveRunner:
                 self._goal = np.array([d["x"], d["y"], d["theta"]])
                 self._goal_tol = float(d.get("tol", TOL_POS))
                 self._paused = False
+                # Snapshot heading-fusion reference: (mocap_theta at lock-in,
+                # odom_theta at lock-in). Requires a recent mocap pose.
+                if (USE_ODOM_HEADING and self._mocap_pose is not None
+                        and time.time() - self._mocap_ts < MOCAP_FRESH_SEC):
+                    odom = self._ros.get_odom()
+                    self._heading_lock = (float(self._mocap_pose[2]),
+                                          float(odom["theta"]))
+                    print(f"[drive {self._id}] heading lock: "
+                          f"mocap_θ={np.degrees(self._heading_lock[0]):+.1f}° "
+                          f"odom_θ={np.degrees(self._heading_lock[1]):+.1f}°")
+                else:
+                    self._heading_lock = None
                 print(f"[drive {self._id}] goal updated to "
                       f"({d['x']:.2f}, {d['y']:.2f}, {d['theta']:.2f} rad) "
                       f"tol={self._goal_tol:.2f} m")
@@ -111,8 +144,41 @@ class DriveRunner:
                     continue
                 if d.get("source", "mocap") != "mocap":
                     continue
-                self._mocap_pose = (float(d["x"]), float(d["y"]), float(d["theta"]))
+                new_pose = (float(d["x"]), float(d["y"]), float(d["theta"]))
+                # Reject impossible jumps (mocap rigid-solve glitches).
+                if self._mocap_pose is not None:
+                    now = time.time()
+                    dt = max(now - self._mocap_ts, 1e-3)
+                    if dt < 1.0:
+                        dx = new_pose[0] - self._mocap_pose[0]
+                        dy = new_pose[1] - self._mocap_pose[1]
+                        dth = abs(_wrap_pi(new_pose[2] - self._mocap_pose[2]))
+                        pos_rate = float(np.hypot(dx, dy)) / dt
+                        th_rate  = dth / dt
+                        if (pos_rate > MOCAP_MAX_POS_RATE
+                                or th_rate > MOCAP_MAX_TH_RATE):
+                            self._mocap_rejected += 1
+                            if self._mocap_rejected % 10 == 1:
+                                print(f"[drive {self._id}] rejected mocap "
+                                      f"jump #{self._mocap_rejected} "
+                                      f"(pos_rate={pos_rate:.1f} m/s, "
+                                      f"th_rate={np.degrees(th_rate):.0f}°/s)")
+                            continue
+                self._mocap_pose = new_pose
                 self._mocap_ts = time.time()
+
+    def _control_pose(self):
+        """Pose used by the controller: mocap (x, y), and either mocap θ or
+        odom-fused θ depending on USE_ODOM_HEADING + whether a heading lock
+        was captured at goal arrival."""
+        x, y, mocap_th = self._mocap_pose
+        if not USE_ODOM_HEADING or self._heading_lock is None:
+            return (x, y, mocap_th)
+        odom = self._ros.get_odom()
+        mocap_th_lock, odom_th_lock = self._heading_lock
+        fused_th = _wrap_pi(mocap_th_lock
+                            + _wrap_pi(odom["theta"] - odom_th_lock))
+        return (x, y, fused_th)
 
     def _compute_cmd(self, pose):
         """pose = (x, y, theta) in world frame. Returns
@@ -182,7 +248,8 @@ class DriveRunner:
                     if self._mocap_warned:
                         print(f"[drive {self._id}] mocap recovered — resuming")
                         self._mocap_warned = False
-                    vx_b, vy_b, omega, dist, th_err = self._compute_cmd(self._mocap_pose)
+                    ctrl_pose = self._control_pose()
+                    vx_b, vy_b, omega, dist, th_err = self._compute_cmd(ctrl_pose)
                     self._ros.send_cmd(vx_b, vy_b, omega)
 
                     if dist < self._goal_tol and abs(th_err) < TOL_TH:
