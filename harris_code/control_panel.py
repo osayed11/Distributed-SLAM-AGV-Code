@@ -228,7 +228,7 @@ def main():
     # can desync (e.g. one finishes a lap faster than the other).
     _laps = {
         "active":     False,
-        "total_laps": 2,
+        "total_laps": 4,
         "wait_sec":   1.0,
         "start_room": (0.0, 0.0),
         "end_room":   (0.0, 1.5),
@@ -410,7 +410,7 @@ def main():
     tb_start_y = TextBox(ax_start_y, "start Y (m)", initial="0.0")
     tb_end_x   = TextBox(ax_end_x,   "end X (m)",   initial="0.0")
     tb_end_y   = TextBox(ax_end_y,   "end Y (m)",   initial="2.5")
-    tb_laps    = TextBox(ax_laps,    "laps",        initial="2")
+    tb_laps    = TextBox(ax_laps,    "laps",        initial="4")
     tb_wait    = TextBox(ax_wait,    "wait (s)",    initial="1.0")
 
     btn_go_start = Button(ax_btn_start, "Go to Start",

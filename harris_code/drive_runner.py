@@ -31,7 +31,7 @@ from ros1_bridge import ROS1Bridge
 
 
 KP_POS    = 0.5
-V_MAX     = 0.20      # halved for precision; precision over speed
+V_MAX     = 0.10      # halved again for precision; precision over speed
 TOL_POS   = 0.10      # tightened for precise endpoint
 KP_TH     = 2.0
 OMEGA_MAX = 0.8
