@@ -45,10 +45,18 @@ MOCAP_FRESH_SEC = 1.5  # halt control if no mocap pose within this window
 MOCAP_MAX_POS_RATE = 2.0   # m/s
 MOCAP_MAX_TH_RATE  = 3.0   # rad/s
 
-# Heading fusion: use mocap absolute heading at goal lock-in, then integrate
-# odom delta-theta on top of it. /odom yaw is smoother short-term than a
-# poorly-tracked rigid; over a 2.5 m run odom drift is small.
-USE_ODOM_HEADING = True
+# Heading source:
+#   True  → use mocap absolute heading at goal lock-in, then integrate
+#           odom delta-theta on top of it. Smoother short-term, but blind
+#           to mecanum wheel slip (odom misses physical rotations that
+#           happen with wheel slip → fused θ diverges from real θ, robot
+#           drives off-course over a single run).
+#   False → use raw mocap θ directly. The pose-jump filter
+#           (MOCAP_MAX_TH_RATE) already discards bad solves, so this is
+#           safe as long as the rigid is healthy. Tracks real rotation
+#           faithfully regardless of wheel slip.
+# Flipped to False to fix robots curving off-course on long Go/laps runs.
+USE_ODOM_HEADING = False
 
 
 def _wrap_pi(a):
