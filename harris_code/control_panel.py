@@ -36,30 +36,38 @@ MOCAP_FRESH_SEC = 0.5  # use mocap pose if its timestamp is within this window
 
 
 class _PoseState:
-    def __init__(self, n: int):
+    """Pose state keyed by logical robot id (rid). Robots in network.yaml
+    can have arbitrary non-contiguous ids (e.g. just [2] or [0, 2, 5]) —
+    storing by rid avoids the bug where a fixed array sized by n drops
+    poses whose rid >= n."""
+    def __init__(self, rids):
         self.lock = threading.Lock()
-        self.mocap_pose = np.full((n, 3), np.nan)
-        self.mocap_ts   = np.zeros(n)
-        self.odom_pose  = np.full((n, 3), np.nan)
-        self.odom_ts    = np.zeros(n)
-        self.n = n
+        self.rids       = list(rids)
+        self.mocap_pose = {rid: None for rid in self.rids}
+        self.mocap_ts   = {rid: 0.0  for rid in self.rids}
+        self.odom_pose  = {rid: None for rid in self.rids}
+        self.odom_ts    = {rid: 0.0  for rid in self.rids}
 
-    def best_pose(self, i: int):
+    def best_pose(self, rid):
         """Return (pose, source) where source is 'mocap', 'odom', or None."""
         now = time.time()
         with self.lock:
-            if not np.isnan(self.mocap_pose[i, 0]) and now - self.mocap_ts[i] < MOCAP_FRESH_SEC:
-                return self.mocap_pose[i].copy(), "mocap"
-            if not np.isnan(self.odom_pose[i, 0]):
-                return self.odom_pose[i].copy(), "odom"
+            mp = self.mocap_pose.get(rid)
+            if mp is not None and now - self.mocap_ts.get(rid, 0.0) < MOCAP_FRESH_SEC:
+                return np.array(mp), "mocap"
+            op = self.odom_pose.get(rid)
+            if op is not None:
+                return np.array(op), "odom"
         return None, None
 
 
-def _pose_listener(state: _PoseState, cfg: dict, n: int):
+def _pose_listener(state: _PoseState, cfg: dict, rids):
+    valid = set(rids)
     ctx = zmq.Context.instance()
     sub = ctx.socket(zmq.SUB)
-    for r in cfg["robots"][:n]:
-        sub.connect(f"tcp://{r['ip']}:{r['pub_port']}")
+    for r in cfg["robots"]:
+        if r["id"] in valid:
+            sub.connect(f"tcp://{r['ip']}:{r['pub_port']}")
     sub.connect(f"tcp://{cfg['laptop']['ip']}:{cfg['laptop']['mocap_pub_port']}")
     sub.setsockopt_string(zmq.SUBSCRIBE, "pose")
     while True:
@@ -70,8 +78,8 @@ def _pose_listener(state: _PoseState, cfg: dict, n: int):
             continue
         if d.get("t") != "pose":
             continue
-        rid = d.get("id", 0)
-        if not (0 <= rid < n):
+        rid = d.get("id")
+        if rid not in valid:
             continue
         source = d.get("source", "mocap")
         now = time.time()
@@ -95,9 +103,14 @@ def main():
     with open(args.config) as f:
         cfg = yaml.safe_load(f)
 
-    n = args.n_robots if args.n_robots is not None else len(cfg["robots"])
-    state = _PoseState(n)
-    threading.Thread(target=_pose_listener, args=(state, cfg, n), daemon=True).start()
+    # rids: the logical ids actually present in the yaml (after optional --n-robots cap).
+    all_rids = [r["id"] for r in cfg["robots"]]
+    n = args.n_robots if args.n_robots is not None else len(all_rids)
+    rids = all_rids[:n]
+    # Slice cfg["robots"] to the active ones so downstream loops see only those.
+    cfg["robots"] = cfg["robots"][:n]
+    state = _PoseState(rids)
+    threading.Thread(target=_pose_listener, args=(state, cfg, rids), daemon=True).start()
 
     ctx = zmq.Context.instance()
     pub = ctx.socket(zmq.PUB)
@@ -140,13 +153,14 @@ def main():
     # Map artists
     # -------------------------------------------------------------------------
     robot_circles, robot_arrows, robot_labels = [], [], []
-    for i in range(n):
+    for i, r in enumerate(cfg["robots"]):
+        rid = r["id"]
         col = ROBOT_COLORS[i % len(ROBOT_COLORS)]
         circ = plt.Circle((0, 0), ROBOT_RADIUS, color=col, alpha=0.5, zorder=3)
         ax.add_patch(circ)
         arr = ax.annotate("", xy=(0, 0), xytext=(0, 0),
                           arrowprops=dict(arrowstyle="->", color=col, lw=2), zorder=4)
-        lbl = ax.text(0, 0, f"r{i}", fontsize=8, ha="center", va="center",
+        lbl = ax.text(0, 0, f"r{rid}", fontsize=8, ha="center", va="center",
                       color="white", fontweight="bold", zorder=5)
         robot_circles.append(circ)
         robot_arrows.append(arr)
@@ -868,8 +882,9 @@ def main():
         all_y = [_goal["y"]]
         active_sources = set()
 
-        for i in range(n):
-            pose, source = state.best_pose(i)
+        for i, r in enumerate(cfg["robots"]):
+            rid = r["id"]
+            pose, source = state.best_pose(rid)
             vis = pose is not None
             robot_circles[i].set_visible(vis)
             robot_arrows[i].set_visible(vis)
@@ -877,7 +892,7 @@ def main():
             if vis:
                 # state holds raw mocap; transform to each robot's own room
                 # frame so both appear at (0, 0) after Set Origin.
-                x, y, theta = _mocap_to_room(pose[0], pose[1], pose[2], rid=i)
+                x, y, theta = _mocap_to_room(pose[0], pose[1], pose[2], rid=rid)
                 robot_circles[i].center = (x, y)
                 robot_labels[i].set_position((x, y))
                 dx = np.cos(theta) * ARROW_LEN
@@ -902,7 +917,10 @@ def main():
         laps_status     = _laps_tick()
 
         # Status: laps > scenario > dist-to-goal.
-        pose0, _ = state.best_pose(0)
+        # Show distance-to-goal for the first robot in the yaml (display only).
+        first_rid = cfg["robots"][0]["id"] if cfg["robots"] else None
+        pose0, _ = (state.best_pose(first_rid)
+                    if first_rid is not None else (None, None))
         if laps_status:
             status_text.set_text(laps_status)
             status_text.get_bbox_patch().set_facecolor("lavender")
@@ -912,10 +930,11 @@ def main():
         elif pose0 is not None:
             # _goal is in room frame; transform pose to room frame for the
             # distance display so it matches what the user typed.
-            rx, ry, _ = _mocap_to_room(pose0[0], pose0[1], pose0[2])
+            rx, ry, _ = _mocap_to_room(pose0[0], pose0[1], pose0[2],
+                                       rid=first_rid)
             dist = float(np.hypot(rx - _goal["x"], ry - _goal["y"]))
             pending = "" if _goal["sent"] else "  [PENDING — click Send Goal]"
-            msg = f"r0 dist to goal: {dist*100:.1f} cm{pending}"
+            msg = f"r{first_rid} dist to goal: {dist*100:.1f} cm{pending}"
             reached = dist < _goal["tol"]
             if reached and _goal["sent"]:
                 msg += "  ✓ REACHED"
