@@ -1,13 +1,13 @@
 robots:
-  - id: 0
-    ip: "192.168.1.146"        # robot IP (myAGV)
-    pub_port: 5551            # robot publishes its /odom-derived pose here
-    mocap_rigid_id: 4     
+  # - id: 0
+  #   ip: "192.168.1.146"        # robot IP (myAGV)
+  #   pub_port: 5551            # robot publishes its /odom-derived pose here
+  #   mocap_rigid_id: 4     
     
-  - id: 1
-    ip: "192.168.1.127"        # robot IP (myAGV)
-    pub_port: 5551            # robot publishes its /odom-derived pose here
-    mocap_rigid_id: 2      
+  # - id: 1
+  #   ip: "192.168.1.127"        # robot IP (myAGV)
+  #   pub_port: 5551            # robot publishes its /odom-derived pose here
+  #   mocap_rigid_id: 2      
     
   - id: 2
     ip: "192.168.1.42"        # robot IP (myAGV)
