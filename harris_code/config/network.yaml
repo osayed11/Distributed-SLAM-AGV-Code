@@ -7,7 +7,7 @@ robots:
   - id: 0
     ip: "192.168.1.44"        # robot IP (myAGV)
     pub_port: 5551            # robot publishes its /odom-derived pose here
-    mocap_rigid_id: 2         # PhaseSpace rigid body ID (only used if mocap_pub runs)
+    mocap_rigid_id: 4         # PhaseSpace rigid body ID (only used if mocap_pub runs)
 
 laptop:
   ip: "192.168.1.142"         # laptop IP (the machine running this GUI)
