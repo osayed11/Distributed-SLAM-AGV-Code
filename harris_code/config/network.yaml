@@ -10,7 +10,7 @@ robots:
     mocap_rigid_id: 2      
     
   - id: 2
-    ip: "192.168.1.45"        # robot IP (myAGV)
+    ip: "192.168.1.42"        # robot IP (myAGV)
     pub_port: 5551            # robot publishes its /odom-derived pose here
     mocap_rigid_id: 1  
 
