@@ -204,6 +204,72 @@ bash scripts/logging/start_session.sh <robot_name> <scenario_name>
 
 It records with `rosbag --buffsize=2048 --lz4`, which was validated on the live robot for RGB-D + LiDAR recording without buffer overflow.
 
+## Ground Truth (OptiTrack + VRPN)
+
+The new lab uses OptiTrack motion capture streaming via a VRPN server on the Motive machine (`192.168.50.200:3883`). The `vrpn_client_ros` package bridges this into ROS1 and publishes live ground truth poses at 100 Hz.
+
+### Prerequisites
+
+Install the VRPN client package once per robot:
+
+```bash
+sudo apt install ros-noetic-vrpn-client-ros
+```
+
+### Starting the VRPN client
+
+Run this alongside (or after) `bringup.launch` in a separate terminal:
+
+```bash
+source /opt/ros/noetic/setup.bash
+source ~/slam_project/agv_ws/devel/setup.bash
+roslaunch vrpn_client_ros sample.launch server:=192.168.50.200
+```
+
+The node connects to Motive, discovers all rigid bodies, and publishes each one as:
+
+```text
+/optitrack/rigid_bodies/<rigid_body_name>   geometry_msgs/PoseStamped  (100 Hz)
+```
+
+For example, the robot named `orkar_agv1` in Motive publishes on:
+
+```text
+/optitrack/rigid_bodies/orkar_agv1
+```
+
+### Verifying the stream
+
+```bash
+rostopic echo /optitrack/rigid_bodies/orkar_agv1
+```
+
+You should see `geometry_msgs/PoseStamped` messages at ~100 Hz in the `world` frame. If the topic is silent, check that:
+1. The robot is within the OptiTrack camera capture volume
+2. The rigid body is actively tracked in Motive (green indicator)
+3. VRPN streaming is enabled in Motive under **View → Data Streaming**
+
+### Recording ground truth in a bag
+
+To include ground truth in a recording session, pass the mocap topic via the environment variable:
+
+```bash
+MOCAP_TOPIC=/optitrack/rigid_bodies/orkar_agv1 bash scripts/logging/start_session.sh agv1 <scenario>
+```
+
+### Rigid body naming convention
+
+| Robot | Motive rigid body name | ROS1 topic |
+|-------|----------------------|------------|
+| AGV1  | `orkar_agv1`         | `/optitrack/rigid_bodies/orkar_agv1` |
+| AGV2  | `orkar_agv2`         | `/optitrack/rigid_bodies/orkar_agv2` |
+| AGV3  | `orkar_agv3`         | `/optitrack/rigid_bodies/orkar_agv3` |
+| AGV4  | `orkar_agv4`         | `/optitrack/rigid_bodies/orkar_agv4` |
+
+> **Note:** The VRPN version mismatch warning (`vrpn: ver. 07.33` vs `07.34`) is benign and does not affect data quality.
+
+---
+
 ## Recorded Topics
 
 Default robot bag topics:
@@ -227,9 +293,8 @@ Default robot bag topics:
 Optional topics (recorded when detectors are enabled or ground truth is present):
 
 ```text
-/tag_detections                          AprilTag detections (ENABLE_APRILTAG=true)
-${MOCAP_TOPIC:-/phasespace/rigids}       Motion capture ground truth
-/mocap                                   Alternate ground truth topic
+/tag_detections                                        AprilTag detections (ENABLE_APRILTAG=true)
+${MOCAP_TOPIC:-/optitrack/rigid_bodies/orkar_agv1}     OptiTrack ground truth (set MOCAP_TOPIC per robot)
 ```
 
 > **Note:** The D455 camera IMU (`/camera/imu`, `/camera/accel/*`, `/camera/gyro/*`)

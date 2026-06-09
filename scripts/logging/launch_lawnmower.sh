@@ -2,7 +2,7 @@
 # Lawnmower/Shuttle Fleet Launch Script
 # 1:1 Logic Clone of the working launch_fleet.sh
 
-ROBOTS=("10.23.117.240" "10.23.31.157" "10.23.22.246" "10.23.74.155")
+ROBOTS=("10.23.22.246" "10.23.31.157") #"10.23.33.237" "10.23.37.117" "10.23.122.140" "10.23.31.157"
 BIASES=("0.0" "0.0" "0.0" "0.0")
 REV_BIASES=("0.0" "0.0" "0.0" "0.0")
 LINEAR="0.1"
