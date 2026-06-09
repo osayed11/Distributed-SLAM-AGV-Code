@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """Drive a continuous odom-feedback circle on /cmd_vel.
 
@@ -14,12 +14,14 @@ import math
 import signal
 import sys
 import time
+import threading
 
-import rospy
+import rclpy
 from geometry_msgs.msg import Twist
 from nav_msgs.msg import Odometry
 
 
+_node = None
 pose = None
 stop_requested = False
 
@@ -54,15 +56,13 @@ def clamp(value, low, high):
 def publish_zero(pub, seconds=0.8):
     msg = Twist()
     end = time.time() + seconds
-    rate = rospy.Rate(20)
+    rate = _node.create_rate(20)
     while time.time() < end:
         try:
             pub.publish(msg)
             rate.sleep()
-        except rospy.ROSException:
+        except Exception:
             break
-        except rospy.ROSInterruptException:
-            time.sleep(0.05)
 
 
 def wait_before_motion(pub, args):
@@ -79,9 +79,9 @@ def wait_before_motion(pub, args):
         return
 
     msg = Twist()
-    rate = rospy.Rate(10)
+    rate = _node.create_rate(10)
     last_report = 0.0
-    while not rospy.is_shutdown() and not stop_requested:
+    while rclpy.ok() and not stop_requested:
         remaining = target_epoch - time.time()
         if remaining <= 0.0:
             break
@@ -92,7 +92,7 @@ def wait_before_motion(pub, args):
             last_report = now
         try:
             rate.sleep()
-        except rospy.ROSInterruptException:
+        except Exception:
             time.sleep(0.05)
 
     if stop_requested:
@@ -105,10 +105,10 @@ def wait_before_motion(pub, args):
 
 def wait_for_odom(timeout):
     start = time.time()
-    while not rospy.is_shutdown() and pose is None:
+    while rclpy.ok() and pose is None:
         if time.time() - start > timeout:
             raise RuntimeError("Timed out waiting for /odom")
-        rospy.sleep(0.05)
+        time.sleep(0.05)
 
 
 def circle_center(start_pose, radius, turn_sign):
@@ -127,7 +127,7 @@ def drive_circle(pub, args):
     feedforward = args.turn_sign * args.linear / args.radius
     feedforward = clamp(feedforward, -args.max_angular, args.max_angular)
     msg = Twist()
-    rate = rospy.Rate(args.rate)
+    rate = _node.create_rate(args.rate)
     start_time = time.time()
     last_report = start_time
 
@@ -137,7 +137,7 @@ def drive_circle(pub, args):
     max_abs_radius_error = 0.0
     max_abs_heading_error = 0.0
 
-    while not rospy.is_shutdown() and not stop_requested:
+    while rclpy.ok() and not stop_requested:
         now = time.time()
         if args.duration > 0.0 and now - start_time >= args.duration:
             print("Duration reached; stopping circle.")
@@ -241,6 +241,8 @@ def parse_args(argv):
 
 
 def main(argv):
+    global _node
+
     args = parse_args(argv)
     args.radius = max(0.10, args.radius)
     args.linear = clamp(abs(args.linear), 0.0, 1.0)
@@ -260,9 +262,13 @@ def main(argv):
     signal.signal(signal.SIGINT, request_stop)
     signal.signal(signal.SIGTERM, request_stop)
 
-    rospy.init_node("agv_drive_circle")
-    rospy.Subscriber("/odom", Odometry, odom_cb, queue_size=20)
-    pub = rospy.Publisher("/cmd_vel", Twist, queue_size=10)
+    rclpy.init()
+    _node = rclpy.create_node("agv_drive_circle")
+    _node.create_subscription(Odometry, "/odom", odom_cb, 20)
+    pub = _node.create_publisher(Twist, "/cmd_vel", 10)
+
+    _spin_thread = threading.Thread(target=rclpy.spin, args=(_node,), daemon=True)
+    _spin_thread.start()
 
     wait_for_odom(timeout=10.0)
     publish_zero(pub)
@@ -296,6 +302,7 @@ def main(argv):
     finally:
         publish_zero(pub, seconds=1.0)
         print("Circle drive finished; zero velocity sent.")
+        rclpy.shutdown()
 
 
 if __name__ == "__main__":

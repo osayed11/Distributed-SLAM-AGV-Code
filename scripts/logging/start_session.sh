@@ -26,7 +26,7 @@ ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 ROBOT_NAME="${1:-agv_unknown}"
 SCENARIO="${2:-unknown_scenario}"
 DATESTAMP=$(date +%Y%m%d_%H%M%S)
-MOCAP_TOPIC="${MOCAP_TOPIC:-/phasespace/rigids}"
+MOCAP_TOPIC="${MOCAP_TOPIC:-/optitrack/rigid_bodies/orkar_agv1}"
 REQUIRE_GT="${REQUIRE_GT:-false}"
 REQUIRE_IMU="${REQUIRE_IMU:-false}"
 ENABLE_REALSENSE_SYNC="${ENABLE_REALSENSE_SYNC:-true}"
@@ -48,12 +48,29 @@ mkdir -p "${BAG_DIR}"
 # ---------------------------------------------------------------------------
 # Source ROS
 # ---------------------------------------------------------------------------
+# Detect ROS version available on this machine
+ROS_VERSION=$(command -v ros2 >/dev/null 2>&1 && echo 2 || echo 1)
+
+# Source ROS2 if available (preferred for agv2_ws robots)
+if [ -f /opt/ros/humble/setup.bash ]; then
+    source /opt/ros/humble/setup.bash
+elif [ -f /opt/ros/iron/setup.bash ]; then
+    source /opt/ros/iron/setup.bash
+fi
+
+# Source ROS1 as fallback for Melodic robots
 if [ -f /opt/ros/noetic/setup.bash ]; then
     source /opt/ros/noetic/setup.bash
 elif [ -f /opt/ros/melodic/setup.bash ]; then
     source /opt/ros/melodic/setup.bash
 fi
-source "${ROOT}/agv_ws/devel/setup.bash"
+
+# Source whichever workspace is built
+if [ -f "${ROOT}/agv2_ws/install/setup.bash" ]; then
+    source "${ROOT}/agv2_ws/install/setup.bash"
+elif [ -f "${ROOT}/agv_ws/devel/setup.bash" ]; then
+    source "${ROOT}/agv_ws/devel/setup.bash"
+fi
 
 # ---------------------------------------------------------------------------
 # Pre-flight checks
@@ -86,16 +103,42 @@ OPTIONAL_TOPICS="/imu"
 GROUND_TRUTH_TOPICS="${MOCAP_TOPIC} /mocap"
 ALL_OK=true
 
-if ! rostopic list > /dev/null 2>&1; then
-    echo "  [i] ROS master not running yet; logging.launch will start bringup."
+_topic_list_ok() {
+    if [ "${ROS_VERSION}" = "2" ]; then
+        timeout 3 ros2 topic list > /dev/null 2>&1
+    else
+        rostopic list > /dev/null 2>&1
+    fi
+}
+
+_topic_hz_ok() {
+    local topic="$1"
+    if [ "${ROS_VERSION}" = "2" ]; then
+        timeout 6 ros2 topic hz --window 10 "$topic" 2>/dev/null | grep -q "average rate"
+    else
+        timeout 6 rostopic hz "$topic" --window 10 2>/dev/null | grep -q "average rate"
+    fi
+}
+
+_topic_echo_ok() {
+    local topic="$1"
+    if [ "${ROS_VERSION}" = "2" ]; then
+        timeout 3 ros2 topic echo --once "$topic" > /dev/null 2>&1
+    else
+        timeout 3 rostopic echo "$topic" -n 1 > /dev/null 2>&1
+    fi
+}
+
+if ! _topic_list_ok; then
+    echo "  [i] ROS not running yet; logging.launch will start bringup."
     echo "      Skipping live topic probes before launch."
 else
     for topic in $REQUIRED_TOPICS; do
-        if timeout 6 rostopic hz "$topic" --window 10 2>/dev/null | grep -q "average rate"; then
+        if _topic_hz_ok "$topic"; then
             echo "  [OK] $topic publishing"
         else
             # Try simpler check
-            if timeout 3 rostopic echo "$topic" -n 1 > /dev/null 2>&1; then
+            if _topic_echo_ok "$topic"; then
                 echo "  [OK] $topic publishing"
             else
                 echo "  [!] $topic not detected - may not be running yet"
@@ -105,7 +148,7 @@ else
     done
 
     for topic in $OPTIONAL_TOPICS; do
-        if timeout 4 rostopic hz "$topic" --window 10 2>/dev/null | grep -q "average rate"; then
+        if _topic_hz_ok "$topic"; then
             echo "  [OK] optional $topic publishing"
         else
             echo "  [i] optional $topic not detected"
@@ -114,7 +157,7 @@ else
 
     GT_OK=false
     for topic in $GROUND_TRUTH_TOPICS; do
-        if timeout 3 rostopic echo "$topic" -n 1 > /dev/null 2>&1; then
+        if _topic_echo_ok "$topic"; then
             echo "  [OK] ground truth topic detected: $topic"
             GT_OK=true
             break
@@ -131,7 +174,7 @@ else
     fi
 
     if [ "$REQUIRE_IMU" = true ]; then
-        if ! timeout 4 rostopic hz /imu --window 10 2>/dev/null | grep -q "average rate"; then
+        if ! _topic_hz_ok /imu; then
             echo "ERROR: REQUIRE_IMU=true but base /imu is not publishing."
             exit 1
         fi
@@ -166,7 +209,7 @@ time_start: $(date +%H:%M:%S)
 time_end: ~
 operator: $(whoami)
 ros_distro: ${ROS_DISTRO_VAL}
-bag_file: ${SESSION_ID}.bag
+bag_dir: ${SESSION_ID}
 chrony_file: ${SESSION_ID}_chrony.txt
 bag_size_mb: ~
 duration_sec: ~
@@ -211,12 +254,23 @@ finalise_manifest() {
     END_EPOCH=$(date +%s)
     DURATION=$((END_EPOCH - START_EPOCH))
 
-    if [ -f "${BAG_FILE}" ]; then
-        BAG_SIZE_MB=$(du -m "${BAG_FILE}" 2>/dev/null | cut -f1)
+    if [ "${ROS_VERSION}" = "2" ]; then
+        # ROS2 bag is a directory
+        BAG_PATH="${BAG_DIR}/${SESSION_ID}"
+        if [ -d "${BAG_PATH}" ]; then
+            BAG_SIZE_MB=$(du -sm "${BAG_PATH}" 2>/dev/null | cut -f1)
+        else
+            BAG_SIZE_MB="~"
+        fi
     else
-        # rosbag appends .bag automatically but also sometimes names it differently
-        ACTUAL_BAG=$(ls "${BAG_DIR}/${SESSION_ID}"*.bag 2>/dev/null | head -1)
-        BAG_SIZE_MB=$(du -m "${ACTUAL_BAG}" 2>/dev/null | cut -f1 || echo "~")
+        # ROS1 bag is a .bag file
+        if [ -f "${BAG_FILE}" ]; then
+            BAG_SIZE_MB=$(du -m "${BAG_FILE}" 2>/dev/null | cut -f1)
+        else
+            # rosbag appends .bag automatically but also sometimes names it differently
+            ACTUAL_BAG=$(ls "${BAG_DIR}/${SESSION_ID}"*.bag 2>/dev/null | head -1)
+            BAG_SIZE_MB=$(du -m "${ACTUAL_BAG}" 2>/dev/null | cut -f1 || echo "~")
+        fi
     fi
 
     # Update manifest with final values
@@ -229,7 +283,11 @@ finalise_manifest() {
     echo "Manifest written: ${MANIFEST_FILE}"
     echo ""
     echo "Run quality check:"
-    echo "  python3 scripts/logging/validate_bag.py ${BAG_DIR}/${SESSION_ID}.bag"
+    if [ "${ROS_VERSION}" = "2" ]; then
+        echo "  python3 scripts/logging/validate_bag.py ${BAG_DIR}/${SESSION_ID}"
+    else
+        echo "  python3 scripts/logging/validate_bag.py ${BAG_DIR}/${SESSION_ID}.bag"
+    fi
 }
 
 cleanup() {
@@ -285,7 +343,7 @@ wait_for_topic_rate() {
     timeout_s="$2"
     end=$((SECONDS + timeout_s))
     while [ "$SECONDS" -lt "$end" ]; do
-        if timeout 6 rostopic hz "$topic" --window 10 2>/dev/null | grep -q "average rate"; then
+        if _topic_hz_ok "$topic"; then
             echo "  [OK] $topic publishing"
             return 0
         fi
@@ -297,15 +355,28 @@ wait_for_topic_rate() {
 
 BRINGUP_LOG="${BAG_DIR}/${SESSION_ID}_bringup.log"
 echo "Starting bringup first; log: ${BRINGUP_LOG}"
-roslaunch agv_bringup bringup.launch \
-    enable_realsense_sync:="${ENABLE_REALSENSE_SYNC}" \
-    color_width:="${CAMERA_COLOR_WIDTH}" \
-    color_height:="${CAMERA_COLOR_HEIGHT}" \
-    color_fps:="${CAMERA_COLOR_FPS}" \
-    depth_width:="${CAMERA_DEPTH_WIDTH}" \
-    depth_height:="${CAMERA_DEPTH_HEIGHT}" \
-    depth_fps:="${CAMERA_DEPTH_FPS}" \
-    > "${BRINGUP_LOG}" 2>&1 &
+if [ "${ROS_VERSION}" = "2" ]; then
+    ros2 launch agv_bringup bringup.launch.py \
+        serial_port:="/dev/ttyACM0" \
+        enable_realsense_sync:="${ENABLE_REALSENSE_SYNC}" \
+        color_width:="${CAMERA_COLOR_WIDTH}" \
+        color_height:="${CAMERA_COLOR_HEIGHT}" \
+        color_fps:="${CAMERA_COLOR_FPS}" \
+        depth_width:="${CAMERA_DEPTH_WIDTH}" \
+        depth_height:="${CAMERA_DEPTH_HEIGHT}" \
+        depth_fps:="${CAMERA_DEPTH_FPS}" \
+        > "${BRINGUP_LOG}" 2>&1 &
+else
+    roslaunch agv_bringup bringup.launch \
+        enable_realsense_sync:="${ENABLE_REALSENSE_SYNC}" \
+        color_width:="${CAMERA_COLOR_WIDTH}" \
+        color_height:="${CAMERA_COLOR_HEIGHT}" \
+        color_fps:="${CAMERA_COLOR_FPS}" \
+        depth_width:="${CAMERA_DEPTH_WIDTH}" \
+        depth_height:="${CAMERA_DEPTH_HEIGHT}" \
+        depth_fps:="${CAMERA_DEPTH_FPS}" \
+        > "${BRINGUP_LOG}" 2>&1 &
+fi
 BRINGUP_PID=$!
 
 echo "Waiting for required sensor streams before recording..."
@@ -317,7 +388,7 @@ check_topic_silent() {
     local timeout_s="$2"
     local end=$((SECONDS + timeout_s))
     while [ "$SECONDS" -lt "$end" ]; do
-        if timeout 5 rostopic hz "$topic" --window 5 2>/dev/null | grep -q "average rate"; then
+        if _topic_hz_ok "$topic"; then
             echo "  [OK] $topic is live."
             return 0
         fi
@@ -348,26 +419,48 @@ fi
 
 
 
-echo "Sensors are live; starting rosbag."
+echo "Sensors are live; starting bag recording."
 START_EPOCH=$(date +%s)
-rosbag record --buffsize=2048 --lz4 -O "${BAG_FILE}" \
-    /scan \
-    /odom \
-    /cmd_vel \
-    /tf \
-    /tf_static \
-    /camera/color/image_raw \
-    /camera/color/camera_info \
-    /camera/depth/camera_info \
-    /camera/aligned_depth_to_color/image_raw \
-    /camera/aligned_depth_to_color/camera_info \
-    /camera/extrinsics/depth_to_color \
-    /imu \
-    /diagnostics \
-
-    /tag_detections \
-    "${MOCAP_TOPIC}" \
-    /mocap &
+if [ "${ROS_VERSION}" = "2" ]; then
+    # ROS2: ros2 bag record writes to a directory; -o specifies the directory name
+    ros2 bag record \
+        -o "${BAG_DIR}/${SESSION_ID}" \
+        /scan \
+        /odom \
+        /cmd_vel \
+        /tf \
+        /tf_static \
+        /camera/color/image_raw \
+        /camera/color/camera_info \
+        /camera/depth/camera_info \
+        /camera/aligned_depth_to_color/image_raw \
+        /camera/aligned_depth_to_color/camera_info \
+        /camera/extrinsics/depth_to_color \
+        /imu \
+        /diagnostics \
+        /tag_detections \
+        "${MOCAP_TOPIC}" \
+        /mocap &
+else
+    # ROS1 fallback for Melodic/Noetic robots
+    rosbag record --buffsize=2048 --lz4 -O "${BAG_FILE}" \
+        /scan \
+        /odom \
+        /cmd_vel \
+        /tf \
+        /tf_static \
+        /camera/color/image_raw \
+        /camera/color/camera_info \
+        /camera/depth/camera_info \
+        /camera/aligned_depth_to_color/image_raw \
+        /camera/aligned_depth_to_color/camera_info \
+        /camera/extrinsics/depth_to_color \
+        /imu \
+        /diagnostics \
+        /tag_detections \
+        "${MOCAP_TOPIC}" \
+        /mocap &
+fi
 ROSBAG_PID=$!
 wait "${ROSBAG_PID}"
 ROSBAG_PID=""

@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """Drive a conservative square using /odom feedback and /cmd_vel commands.
 
@@ -13,12 +13,14 @@ import math
 import signal
 import sys
 import time
+import threading
 
-import rospy
+import rclpy
 from geometry_msgs.msg import Twist
 from nav_msgs.msg import Odometry
 
 
+_node = None
 pose = None
 stop_requested = False
 
@@ -63,24 +65,21 @@ def clamp_with_min(value, max_abs, min_abs):
 def publish_zero(pub, seconds=0.7):
     msg = Twist()
     end = time.time() + seconds
-    rate = rospy.Rate(20)
+    rate = _node.create_rate(20)
     while time.time() < end:
         try:
             pub.publish(msg)
             rate.sleep()
-        except rospy.ROSException:
+        except Exception:
             break
-        except rospy.ROSInterruptException:
-            # Keep trying to send zeros after Ctrl+C if the publisher is alive.
-            time.sleep(0.05)
 
 
 def wait_for_odom(timeout):
     start = time.time()
-    while not rospy.is_shutdown() and pose is None:
+    while rclpy.ok() and pose is None:
         if time.time() - start > timeout:
             raise RuntimeError("Timed out waiting for /odom")
-        rospy.sleep(0.05)
+        time.sleep(0.05)
 
 
 def drive_side(pub, side_m, max_linear, min_linear, linear_kp,
@@ -90,13 +89,13 @@ def drive_side(pub, side_m, max_linear, min_linear, linear_kp,
     forward_x = math.cos(target_yaw)
     forward_y = math.sin(target_yaw)
     msg = Twist()
-    rate = rospy.Rate(20)
+    rate = _node.create_rate(20)
     start = time.time()
     projected = 0.0
     cross_track = 0.0
     heading_error = 0.0
 
-    while not rospy.is_shutdown() and not stop_requested:
+    while rclpy.ok() and not stop_requested:
         x, y, yaw = pose
         dx = x - start_x
         dy = y - start_y
@@ -143,11 +142,11 @@ def turn(pub, turn_rad, max_angular, min_angular, turn_kp,
     _, _, start_yaw = pose
     target_yaw = start_yaw + turn_rad
     msg = Twist()
-    rate = rospy.Rate(20)
+    rate = _node.create_rate(20)
     start = time.time()
     error = turn_rad
 
-    while not rospy.is_shutdown() and not stop_requested:
+    while rclpy.ok() and not stop_requested:
         _, _, yaw = pose
         error = angle_delta(target_yaw, yaw)
         if abs(error) <= tolerance_rad:
@@ -211,6 +210,8 @@ def parse_args(argv):
 
 
 def main(argv):
+    global _node
+
     args = parse_args(argv)
     args.side = max(0.0, args.side)
     args.linear = clamp(abs(args.linear), 0.0, 1.0)
@@ -227,9 +228,13 @@ def main(argv):
     signal.signal(signal.SIGINT, request_stop)
     signal.signal(signal.SIGTERM, request_stop)
 
-    rospy.init_node("agv_drive_square")
-    rospy.Subscriber("/odom", Odometry, odom_cb, queue_size=20)
-    pub = rospy.Publisher("/cmd_vel", Twist, queue_size=10)
+    rclpy.init()
+    _node = rclpy.create_node("agv_drive_square")
+    _node.create_subscription(Odometry, "/odom", odom_cb, 20)
+    pub = _node.create_publisher(Twist, "/cmd_vel", 10)
+
+    _spin_thread = threading.Thread(target=rclpy.spin, args=(_node,), daemon=True)
+    _spin_thread.start()
 
     wait_for_odom(timeout=10.0)
     publish_zero(pub)
@@ -248,12 +253,12 @@ def main(argv):
 
     try:
         for cycle in range(args.cycles):
-            if rospy.is_shutdown() or stop_requested:
+            if not rclpy.ok() or stop_requested:
                 break
             print("Starting square %d/%d" % (cycle + 1, args.cycles))
             cycle_start_pose = pose
             for side_idx in range(4):
-                if rospy.is_shutdown() or stop_requested:
+                if not rclpy.ok() or stop_requested:
                     break
                 print("  side %d: forward" % (side_idx + 1))
                 drive_side(pub, args.side, args.linear, args.min_linear,
@@ -261,17 +266,17 @@ def main(argv):
                            args.max_heading_correction,
                            args.distance_tolerance, args.side_timeout,
                            args.verbose)
-                if rospy.is_shutdown() or stop_requested:
+                if not rclpy.ok() or stop_requested:
                     break
-                rospy.sleep(args.pause)
+                time.sleep(args.pause)
                 print("  corner %d: turn" % (side_idx + 1))
                 turn(pub, turn_rad, args.angular, args.min_angular,
                      args.turn_kp, yaw_tolerance, args.turn_timeout,
                      args.verbose)
-                if rospy.is_shutdown() or stop_requested:
+                if not rclpy.ok() or stop_requested:
                     break
-                rospy.sleep(args.pause)
-            if rospy.is_shutdown() or stop_requested:
+                time.sleep(args.pause)
+            if not rclpy.ok() or stop_requested:
                 break
             along, lateral, yaw_error = pose_delta_from(cycle_start_pose)
             print("Square %d odom closure: along=%.3fm lateral=%.3fm yaw_error=%.1fdeg" %
@@ -279,6 +284,7 @@ def main(argv):
     finally:
         publish_zero(pub, seconds=1.0)
         print("Square drive finished; zero velocity sent.")
+        rclpy.shutdown()
 
 
 if __name__ == "__main__":

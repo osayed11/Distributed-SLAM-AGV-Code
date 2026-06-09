@@ -2,7 +2,13 @@
 # Run on the robot. Tests RealSense IMU publication under a few launch modes.
 
 ROOT="${HOME}/slam_project"
-source /opt/ros/melodic/setup.bash
+if [ -f /opt/ros/noetic/setup.bash ]; then
+    source /opt/ros/noetic/setup.bash
+elif [ -f /opt/ros/melodic/setup.bash ]; then
+    source /opt/ros/melodic/setup.bash
+else
+    echo "ERROR: Neither ROS Noetic nor Melodic found." >&2; exit 1
+fi
 source "${ROOT}/agv_ws/devel/setup.bash"
 
 set -u

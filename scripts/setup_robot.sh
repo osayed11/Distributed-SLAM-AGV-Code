@@ -5,8 +5,9 @@
 #   bash scripts/setup_robot.sh
 #   bash scripts/setup_robot.sh --skip-system
 #
-# By default this installs expected OS/ROS packages, then builds the catkin
-# workspace. Use --skip-system only on an already provisioned/offline robot.
+# By default this installs expected OS/ROS packages, then builds whichever
+# workspace matches the ROS version on this robot (agv_ws for ROS1, agv2_ws
+# for ROS2). Use --skip-system only on an already provisioned/offline robot.
 
 set -euo pipefail
 
@@ -30,6 +31,34 @@ for arg in "$@"; do
             ;;
     esac
 done
+
+# ---------------------------------------------------------------------------
+# Detect which ROS versions are present on this machine
+# ---------------------------------------------------------------------------
+HAS_ROS1=false
+HAS_ROS2=false
+ROS1_DISTRO=""
+ROS2_DISTRO=""
+
+if   [ -f /opt/ros/noetic/setup.bash ];  then HAS_ROS1=true; ROS1_DISTRO=noetic
+elif [ -f /opt/ros/melodic/setup.bash ]; then HAS_ROS1=true; ROS1_DISTRO=melodic
+fi
+
+if   [ -f /opt/ros/humble/setup.bash ]; then HAS_ROS2=true; ROS2_DISTRO=humble
+elif [ -f /opt/ros/iron/setup.bash ];   then HAS_ROS2=true; ROS2_DISTRO=iron
+elif [ -f /opt/ros/jazzy/setup.bash ];  then HAS_ROS2=true; ROS2_DISTRO=jazzy
+fi
+
+echo "Detected ROS1: ${HAS_ROS1} (${ROS1_DISTRO:-none})"
+echo "Detected ROS2: ${HAS_ROS2} (${ROS2_DISTRO:-none})"
+
+if [ "$HAS_ROS1" = false ] && [ "$HAS_ROS2" = false ]; then
+    echo "ERROR: no supported ROS installation found under /opt/ros" >&2
+    exit 1
+fi
+
+# Detect Ubuntu codename for apt source selection
+UBUNTU_CODENAME=$(lsb_release -cs 2>/dev/null || echo "focal")
 
 section() {
     echo ""
@@ -92,16 +121,14 @@ ensure_catkin_workspace() {
 
 section "repo"
 echo "root: ${ROOT}"
-ensure_catkin_workspace "${ROOT}/agv_ws"
+if [ "$HAS_ROS1" = true ]; then
+    ensure_catkin_workspace "${ROOT}/agv_ws"
+fi
 
 ensure_swap
 
 if [ "$INSTALL_SYSTEM" = true ]; then
     section "system dependencies"
-
-    # Refresh ROS GPG key
-    echo "Refreshing ROS GPG Key..."
-    sudo apt-key adv --keyserver 'hkp://keyserver.ubuntu.com:80' --recv-key C1CF6E31E6BADE8868B172B4F42ED6FBAB17C654 || true
 
     sudo apt-get update
     sudo apt-get install -y \
@@ -110,21 +137,54 @@ if [ "$INSTALL_SYSTEM" = true ]; then
         cmake \
         git \
         gnupg2 \
+        lsb-release \
         pkg-config \
         python3-pip \
-        python3-yaml \
-        ros-noetic-apriltag-ros \
-        ros-noetic-cv-bridge \
-        ros-noetic-ddynamic-reconfigure \
-        ros-noetic-diagnostic-msgs \
-        ros-noetic-geometry-msgs \
-        ros-noetic-image-transport-plugins \
-        ros-noetic-nav-msgs \
-        ros-noetic-rosbag \
-        ros-noetic-sensor-msgs \
-        ros-noetic-std-msgs \
-        ros-noetic-tf \
-        ros-noetic-tf2-msgs
+        python3-yaml
+
+    # --- ROS1 packages ---
+    if [ "$HAS_ROS1" = true ]; then
+        echo "Installing ROS1 (${ROS1_DISTRO}) packages..."
+        # Refresh ROS1 GPG key
+        sudo apt-key adv --keyserver 'hkp://keyserver.ubuntu.com:80' \
+            --recv-key C1CF6E31E6BADE8868B172B4F42ED6FBAB17C654 || true
+
+        sudo apt-get install -y \
+            ros-${ROS1_DISTRO}-apriltag-ros \
+            ros-${ROS1_DISTRO}-cv-bridge \
+            ros-${ROS1_DISTRO}-ddynamic-reconfigure \
+            ros-${ROS1_DISTRO}-diagnostic-msgs \
+            ros-${ROS1_DISTRO}-geometry-msgs \
+            ros-${ROS1_DISTRO}-image-transport-plugins \
+            ros-${ROS1_DISTRO}-nav-msgs \
+            ros-${ROS1_DISTRO}-rosbag \
+            ros-${ROS1_DISTRO}-sensor-msgs \
+            ros-${ROS1_DISTRO}-std-msgs \
+            ros-${ROS1_DISTRO}-tf \
+            ros-${ROS1_DISTRO}-tf2-msgs
+    fi
+
+    # --- ROS2 packages ---
+    if [ "$HAS_ROS2" = true ]; then
+        echo "Installing ROS2 (${ROS2_DISTRO}) packages..."
+        sudo apt-get install -y \
+            ros-${ROS2_DISTRO}-rclcpp \
+            ros-${ROS2_DISTRO}-rclpy \
+            ros-${ROS2_DISTRO}-nav-msgs \
+            ros-${ROS2_DISTRO}-sensor-msgs \
+            ros-${ROS2_DISTRO}-geometry-msgs \
+            ros-${ROS2_DISTRO}-tf2-ros \
+            ros-${ROS2_DISTRO}-tf2-geometry-msgs \
+            ros-${ROS2_DISTRO}-launch-ros \
+            ros-${ROS2_DISTRO}-cv-bridge \
+            ros-${ROS2_DISTRO}-image-transport \
+            ros-${ROS2_DISTRO}-diagnostic-msgs \
+            ros-${ROS2_DISTRO}-apriltag-ros \
+            ros-${ROS2_DISTRO}-realsense2-camera \
+            ros-${ROS2_DISTRO}-ydlidar-ros2-driver \
+            python3-colcon-common-extensions \
+            python3-colcon-mixin
+    fi
 
     # --- Intel RealSense SDK ---
     RS_OK=true
@@ -141,16 +201,15 @@ if [ "$INSTALL_SYSTEM" = true ]; then
         sudo apt-key adv --keyserver keyserver.ubuntu.com --recv-key FB0B24895113F120 || \
         sudo apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv-key FB0B24895113F120
 
-        # Add Intel apt source for Ubuntu 20.04 (focal)
-        sudo add-apt-repository "deb https://librealsense.intel.com/Debian/apt-repo focal main" -u
+        # Use the correct apt repo for this Ubuntu version (focal=20.04, jammy=22.04)
+        sudo add-apt-repository "deb https://librealsense.intel.com/Debian/apt-repo ${UBUNTU_CODENAME} main" -u
 
-        # Install SDK
         sudo apt-get install -y librealsense2-utils librealsense2-dev librealsense2-dbg
     else
         echo "RealSense SDK already installed."
     fi
 
-    # --- YDLidar SDK ---
+    # --- YDLidar SDK (native C library, required by both ROS1 and ROS2 drivers) ---
     if ! command -v ydlidar_test >/dev/null 2>&1; then
         section "ydlidar sdk"
         echo "Building and installing YDLidar-SDK..."
@@ -168,7 +227,7 @@ if [ "$INSTALL_SYSTEM" = true ]; then
     echo "Ensuring user permissions for hardware..."
     sudo usermod -a -G dialout $USER || true
     sudo usermod -a -G video $USER || true
-    
+
     sudo systemctl enable --now chrony 2>/dev/null || sudo service chrony restart || true
 fi
 
@@ -199,17 +258,8 @@ echo 'KERNEL=="ttyAMA0", MODE:="0666"' | sudo tee /etc/udev/rules.d/99-ydlidar.r
 sudo udevadm control --reload-rules && sudo udevadm trigger
 
 # ---------------------------------------------------------------------------
-# Validate ROS and dependencies
+# Validate common dependencies
 # ---------------------------------------------------------------------------
-if [ -f /opt/ros/noetic/setup.bash ]; then
-    require_file "/opt/ros/noetic/setup.bash"
-elif [ -f /opt/ros/melodic/setup.bash ]; then
-    require_file "/opt/ros/melodic/setup.bash"
-else
-    echo "ERROR: no supported ROS setup found under /opt/ros" >&2
-    exit 1
-fi
-
 if ! command -v chronyc >/dev/null 2>&1; then
     echo "ERROR: chronyc not found; install chrony or rerun without --skip-system." >&2
     exit 1
@@ -226,34 +276,46 @@ mkdir -p "${HOME}/agv_data"
 echo "bags: ${HOME}/agv_data"
 
 # ---------------------------------------------------------------------------
-# Build workspace
+# Build ROS1 workspace (catkin_make)
 # ---------------------------------------------------------------------------
-section "build agv_ws"
-if [ -f /opt/ros/noetic/setup.bash ]; then
-    source /opt/ros/noetic/setup.bash
-elif [ -f /opt/ros/melodic/setup.bash ]; then
-    source /opt/ros/melodic/setup.bash
-fi
-cd "${ROOT}/agv_ws"
-catkin_make
+if [ "$HAS_ROS1" = true ]; then
+    section "build agv_ws (ROS1 / catkin)"
+    source "/opt/ros/${ROS1_DISTRO}/setup.bash"
+    cd "${ROOT}/agv_ws"
+    catkin_make
 
-section "workspace check"
-if [ -f /opt/ros/noetic/setup.bash ]; then
-    source /opt/ros/noetic/setup.bash
-elif [ -f /opt/ros/melodic/setup.bash ]; then
-    source /opt/ros/melodic/setup.bash
+    section "ROS1 workspace check"
+    source "${ROOT}/agv_ws/devel/setup.bash"
+    rospack find agv_bringup
+    rospack find realsense2_camera
+    rospack find ydlidar_ros_driver
+    rospack find myagv_odometry
 fi
-source "${ROOT}/agv_ws/devel/setup.bash"
-rospack find agv_bringup
-rospack find realsense2_camera
-rospack find ydlidar_ros_driver
-rospack find myagv_odometry
+
+# ---------------------------------------------------------------------------
+# Build ROS2 workspace (colcon)
+# ---------------------------------------------------------------------------
+if [ "$HAS_ROS2" = true ] && [ -d "${ROOT}/agv2_ws/src" ]; then
+    section "build agv2_ws (ROS2 / colcon)"
+    source "/opt/ros/${ROS2_DISTRO}/setup.bash"
+    cd "${ROOT}/agv2_ws"
+    colcon build --symlink-install
+
+    section "ROS2 workspace check"
+    source "${ROOT}/agv2_ws/install/setup.bash"
+    ros2 pkg list | grep -q agv_bringup    && echo "[OK] agv_bringup"
+    ros2 pkg list | grep -q myagv_odometry && echo "[OK] myagv_odometry"
+    ros2 pkg list | grep -q myagv_teleop   && echo "[OK] myagv_teleop"
+    ros2 pkg list | grep -q realsense2_camera   && echo "[OK] realsense2_camera"
+    ros2 pkg list | grep -q ydlidar_ros2_driver && echo "[OK] ydlidar_ros2_driver"
+fi
 
 section "script permissions"
 chmod +x \
     "${ROOT}/scripts/logging/start_session.sh" \
     "${ROOT}/scripts/logging/drive_straight.py" \
     "${ROOT}/scripts/logging/drive_square.py" \
+    "${ROOT}/scripts/logging/drive_circle.py" \
     "${ROOT}/scripts/logging/drive_forward_back.py" \
     "${ROOT}/scripts/logging/drive_odom_shuttle.py" \
     "${ROOT}/scripts/logging/launch_odom_shuttle_fleet.sh" \
@@ -262,8 +324,20 @@ chmod +x \
     "${ROOT}/scripts/diagnostics/"*.sh 2>/dev/null || true
 
 section "next commands"
-cat <<EOF
-source /opt/ros/noetic/setup.bash
+if [ "$HAS_ROS2" = true ]; then
+    cat <<EOF
+source /opt/ros/${ROS2_DISTRO}/setup.bash
+source ${ROOT}/agv2_ws/install/setup.bash
+
+# One-command data run:
+bash ${ROOT}/scripts/logging/start_session.sh agv1 square_manual
+
+# Optional manual teleop in another terminal:
+ros2 run myagv_teleop myagv_teleop
+EOF
+else
+    cat <<EOF
+source /opt/ros/${ROS1_DISTRO}/setup.bash
 source ${ROOT}/agv_ws/devel/setup.bash
 
 # One-command data run:
@@ -272,3 +346,4 @@ bash ${ROOT}/scripts/logging/start_session.sh agv1 square_manual
 # Optional manual teleop in another terminal:
 rosrun myagv_teleop myagv_teleop.py
 EOF
+fi

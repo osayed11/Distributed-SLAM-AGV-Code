@@ -96,8 +96,7 @@ class myAGVBase(object):
 		w_send = int(xyw[2]*100) + 128
 		ver = x_send + y_send + w_send
 
-		if ver>255:
-			ver -= 256
+		ver %= 256
 
 		command = bytearray()
 		command.append(self.header)
