@@ -109,27 +109,31 @@ def generate_launch_description():
         launch_arguments={
             'align_depth.enable':               'true',
             'pointcloud.enable':                'false',
-            'enable_sync':                      'true',
+            'enable_sync':                      'false',
             'rgb_camera.color_profile':         '640x480x15',
             'depth_module.depth_profile':       '640x480x15',
+            'depth_module.infra_profile':       '640x480x15',
             'enable_accel':                     'false',
             'enable_gyro':                      'false',
+            'enable_infra1':                    'false',
+            'enable_infra2':                    'false',
             'rgb_camera.enable_auto_exposure':  'true',
             'depth_module.enable_auto_exposure':'true',
+            'initial_reset':                    'true',
         }.items(),
     )
 
     # ydlidar_ros2_driver is a LifecycleNode — must be configured then activated
     # before it starts publishing /scan. Give it 5s to initialise then trigger.
     configure_lidar = TimerAction(
-        period=5.0,
+        period=12.0,
         actions=[ExecuteProcess(
             cmd=['ros2', 'lifecycle', 'set', '/ydlidar_ros2_driver_node', 'configure'],
             output='screen'
         )]
     )
     activate_lidar = TimerAction(
-        period=8.0,
+        period=16.0,
         actions=[ExecuteProcess(
             cmd=['ros2', 'lifecycle', 'set', '/ydlidar_ros2_driver_node', 'activate'],
             output='screen'
