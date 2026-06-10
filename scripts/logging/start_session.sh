@@ -365,34 +365,58 @@ if [ -n "${STALE_PIDS}" ]; then
     sleep 3
 fi
 
-# Reset the USB3 xhci host controller before every bringup.
-# The Pi 4's xhci controller gets stuck (bConfigurationValue empty, interfaces
-# absent) after repeated D455 connect/disconnect cycles. A full xhci unbind/bind
-# is the only reliable recovery without a full reboot.
-echo "Resetting USB3 xhci controller..."
-XHCI_PCI=$(ls /sys/bus/pci/drivers/xhci_hcd/ 2>/dev/null | grep -v uevent | head -1)
-if [ -n "${XHCI_PCI}" ]; then
-    echo "${XHCI_PCI}" | sudo tee /sys/bus/pci/drivers/xhci_hcd/unbind > /dev/null 2>&1 || true
-    sleep 3
-    echo "${XHCI_PCI}" | sudo tee /sys/bus/pci/drivers/xhci_hcd/bind   > /dev/null 2>&1 || true
-    sleep 3
-    echo "  xhci reset done (${XHCI_PCI})"
-else
-    echo "  xhci controller not found — skipping"
-fi
-
-# After xhci reset the D455 re-enumerates; disable autosuspend so the video
-# stream does not drop mid-run (Linux suspends the device after 2s idle).
-echo "Configuring D455 USB power..."
+# Recover the D455.  Two failure modes require different fixes:
+#   1. bConfigurationValue empty (xhci stuck) — full xhci unbind/bind needed.
+#      This resets ALL USB devices, so do it only when necessary.
+#   2. UVC state stale (normal case) — device-level authorized=0/1 is enough.
+echo "Preparing D455..."
 RS_SYSFS=$(for p in /sys/bus/usb/devices/*/idProduct; do
     [ "$(cat "$p" 2>/dev/null)" = "0b5c" ] && dirname "$p" && break
 done)
+RS_CFG=$(cat "${RS_SYSFS}/bConfigurationValue" 2>/dev/null)
+if [ -z "${RS_CFG}" ]; then
+    echo "  D455 stuck (bConfigurationValue empty) — resetting xhci controller..."
+    XHCI_PCI=$(ls /sys/bus/pci/drivers/xhci_hcd/ 2>/dev/null | grep -v uevent | head -1)
+    if [ -n "${XHCI_PCI}" ]; then
+        echo "${XHCI_PCI}" | sudo tee /sys/bus/pci/drivers/xhci_hcd/unbind > /dev/null 2>&1 || true
+        sleep 3
+        echo "${XHCI_PCI}" | sudo tee /sys/bus/pci/drivers/xhci_hcd/bind   > /dev/null 2>&1 || true
+        sleep 4
+        # Re-find D455 after xhci reset (device path unchanged but takes time)
+        RS_SYSFS=$(for p in /sys/bus/usb/devices/*/idProduct; do
+            [ "$(cat "$p" 2>/dev/null)" = "0b5c" ] && dirname "$p" && break
+        done)
+        echo "  xhci reset done"
+    fi
+else
+    echo "  D455 enumerated OK (bConfigurationValue=${RS_CFG}) — soft reset only"
+    echo 0 | sudo tee "${RS_SYSFS}/authorized" > /dev/null 2>&1 || true
+    sleep 2
+    echo 1 | sudo tee "${RS_SYSFS}/authorized" > /dev/null 2>&1 || true
+    sleep 2
+fi
+
+# Disable autosuspend so the video stream does not drop mid-run.
 if [ -n "${RS_SYSFS}" ]; then
     echo on | sudo tee "${RS_SYSFS}/power/control"     > /dev/null 2>&1 || true
     echo -1 | sudo tee "${RS_SYSFS}/power/autosuspend" > /dev/null 2>&1 || true
-    echo "  D455 autosuspend disabled (${RS_SYSFS})"
+    echo "  D455 ready, autosuspend disabled (${RS_SYSFS})"
 else
-    echo "  D455 not found after xhci reset — camera may not work"
+    echo "  [WARN] D455 not found — camera may not work"
+fi
+
+# Wait for the base MCU (/dev/ttyACM0).  If an xhci reset just ran, the MCU
+# (also on USB) needs time to re-enumerate.
+echo "Waiting for base MCU (/dev/ttyACM0)..."
+_ACM_WAIT=0
+until [ -e /dev/ttyACM0 ] || [ "${_ACM_WAIT}" -ge 30 ]; do
+    sleep 1
+    _ACM_WAIT=$((_ACM_WAIT + 1))
+done
+if [ -e /dev/ttyACM0 ]; then
+    echo "  /dev/ttyACM0 ready (${_ACM_WAIT}s)"
+else
+    echo "  [WARN] /dev/ttyACM0 still missing after 30s — odom will not work"
 fi
 
 echo "Starting bringup; log: ${BRINGUP_LOG}"
