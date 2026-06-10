@@ -365,25 +365,34 @@ if [ -n "${STALE_PIDS}" ]; then
     sleep 3
 fi
 
-# USB reset the D455 before every bringup. The camera gets stuck in a stale
-# UVC state after repeated connect/disconnect cycles and needs a hard reset so
-# the initial_reset in bringup.launch.py can talk to it cleanly.
-echo "Resetting D455 USB device..."
+# Reset the USB3 xhci host controller before every bringup.
+# The Pi 4's xhci controller gets stuck (bConfigurationValue empty, interfaces
+# absent) after repeated D455 connect/disconnect cycles. A full xhci unbind/bind
+# is the only reliable recovery without a full reboot.
+echo "Resetting USB3 xhci controller..."
+XHCI_PCI=$(ls /sys/bus/pci/drivers/xhci_hcd/ 2>/dev/null | grep -v uevent | head -1)
+if [ -n "${XHCI_PCI}" ]; then
+    echo "${XHCI_PCI}" | sudo tee /sys/bus/pci/drivers/xhci_hcd/unbind > /dev/null 2>&1 || true
+    sleep 3
+    echo "${XHCI_PCI}" | sudo tee /sys/bus/pci/drivers/xhci_hcd/bind   > /dev/null 2>&1 || true
+    sleep 3
+    echo "  xhci reset done (${XHCI_PCI})"
+else
+    echo "  xhci controller not found — skipping"
+fi
+
+# After xhci reset the D455 re-enumerates; disable autosuspend so the video
+# stream does not drop mid-run (Linux suspends the device after 2s idle).
+echo "Configuring D455 USB power..."
 RS_SYSFS=$(for p in /sys/bus/usb/devices/*/idProduct; do
     [ "$(cat "$p" 2>/dev/null)" = "0b5c" ] && dirname "$p" && break
 done)
 if [ -n "${RS_SYSFS}" ]; then
-    echo 0 | sudo tee "${RS_SYSFS}/authorized" > /dev/null 2>&1 || true
-    sleep 2
-    echo 1 | sudo tee "${RS_SYSFS}/authorized" > /dev/null 2>&1 || true
-    sleep 2
-    # Disable autosuspend — Linux suspends the D455 after 2s idle by default,
-    # causing xioctl(UVCIOC_CTRL_QUERY) timeouts that drop the video stream mid-run.
-    echo on  | sudo tee "${RS_SYSFS}/power/control"     > /dev/null 2>&1 || true
-    echo -1  | sudo tee "${RS_SYSFS}/power/autosuspend" > /dev/null 2>&1 || true
-    echo "  D455 reset done, autosuspend disabled (${RS_SYSFS})"
+    echo on | sudo tee "${RS_SYSFS}/power/control"     > /dev/null 2>&1 || true
+    echo -1 | sudo tee "${RS_SYSFS}/power/autosuspend" > /dev/null 2>&1 || true
+    echo "  D455 autosuspend disabled (${RS_SYSFS})"
 else
-    echo "  D455 not found in sysfs — skipping USB reset"
+    echo "  D455 not found after xhci reset — camera may not work"
 fi
 
 echo "Starting bringup; log: ${BRINGUP_LOG}"
