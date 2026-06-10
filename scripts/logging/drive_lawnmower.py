@@ -29,14 +29,13 @@ def request_stop(signum=None, frame=None):
 
 def publish_zero(pub, seconds=1.0):
     msg = Twist()
-    rate = _node.create_rate(20)
     end = time.time() + seconds
-    while time.time() < end and rclpy.ok():
-        pub.publish(msg)
+    while time.time() < end:
         try:
-            rate.sleep()
+            pub.publish(msg)
         except Exception:
-            break
+            pass
+        time.sleep(0.05)
 
 
 def drive_segment(pub, args, direction, segment_index, current_bias):

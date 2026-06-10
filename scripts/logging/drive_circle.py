@@ -56,13 +56,12 @@ def clamp(value, low, high):
 def publish_zero(pub, seconds=0.8):
     msg = Twist()
     end = time.time() + seconds
-    rate = _node.create_rate(20)
     while time.time() < end:
         try:
             pub.publish(msg)
-            rate.sleep()
         except Exception:
-            break
+            pass
+        time.sleep(0.05)
 
 
 def wait_before_motion(pub, args):
