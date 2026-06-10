@@ -129,9 +129,8 @@ _topic_echo_ok() {
     fi
 }
 
-if ! _topic_list_ok; then
-    echo "  [i] ROS not running yet; logging.launch will start bringup."
-    echo "      Skipping live topic probes before launch."
+if [ "${ROS_VERSION}" = "2" ] || ! _topic_list_ok; then
+    echo "  [i] Skipping pre-flight topic probes; sensor gate runs after bringup."
 else
     for topic in $REQUIRED_TOPICS; do
         if _topic_hz_ok "$topic"; then
