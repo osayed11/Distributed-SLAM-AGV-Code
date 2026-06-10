@@ -149,10 +149,10 @@ def _get_ros2_bag_info(bag_path):
 
 
 def _ros2_db_files(bag_path):
-    files = glob.glob(os.path.join(bag_path, "*.db3"))
     import re
+    files = glob.glob(os.path.join(bag_path, "*.db3"))
     def _num(f):
-        m = re.search(r'(\d+)\.db3$', f)
+        m = re.search(r"(\d+)\.db3$", os.path.basename(f))
         return int(m.group(1)) if m else 0
     return sorted(files, key=_num)
 
