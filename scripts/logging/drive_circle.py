@@ -120,7 +120,8 @@ def drive_circle(pub, args):
     start_pose = pose
     center_x, center_y = circle_center(start_pose, args.radius, args.turn_sign)
     feedforward = args.turn_sign * args.linear / args.radius
-    feedforward = clamp(feedforward, -args.max_angular, args.max_angular)
+    max_actual_angular = args.max_angular * args.mcu_angular_scale
+    feedforward = clamp(feedforward, -max_actual_angular, max_actual_angular)
     msg = Twist()
     _dt = 1.0 / args.rate
     start_time = time.time()
@@ -165,7 +166,7 @@ def drive_circle(pub, args):
 
         msg.linear.x = args.linear
         msg.angular.z = clamp(
-            feedforward + args.heading_kp * heading_error,
+            (feedforward + args.heading_kp * heading_error) / args.mcu_angular_scale,
             -args.max_angular,
             args.max_angular,
         )
@@ -232,6 +233,8 @@ def parse_args(argv):
                         help="Start immediately without pressing Enter")
     parser.add_argument("--verbose", action="store_true",
                         help="Print periodic odom feedback")
+    parser.add_argument("--mcu-angular-scale", type=float, default=2.0,
+                        help="MCU angular scaling factor (measured 2.0 for agv37)")
     return parser.parse_args(argv)
 
 
@@ -252,6 +255,7 @@ def main(argv):
     args.start_at_epoch = max(0.0, args.start_at_epoch)
     args.rate = max(5.0, args.rate)
     args.report_period = max(1.0, args.report_period)
+    args.mcu_angular_scale = max(0.1, args.mcu_angular_scale)
     args.turn_sign = 1.0 if args.counter_clockwise else -1.0
 
     signal.signal(signal.SIGINT, request_stop)
