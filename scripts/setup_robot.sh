@@ -279,12 +279,16 @@ echo "bags: ${HOME}/agv_data"
 # ---------------------------------------------------------------------------
 if [ "$HAS_ROS1" = true ]; then
     section "build agv_ws (ROS1 / catkin)"
+    set +u
     source "/opt/ros/${ROS1_DISTRO}/setup.bash"
+    set -u
     cd "${ROOT}/agv_ws"
     catkin_make
 
     section "ROS1 workspace check"
+    set +u
     source "${ROOT}/agv_ws/devel/setup.bash"
+    set -u
     rospack find agv_bringup
     rospack find realsense2_camera
     rospack find ydlidar_ros_driver
@@ -296,12 +300,16 @@ fi
 # ---------------------------------------------------------------------------
 if [ "$HAS_ROS2" = true ] && [ -d "${ROOT}/agv2_ws/src" ]; then
     section "build agv2_ws (ROS2 / colcon)"
+    set +u
     source "/opt/ros/${ROS2_DISTRO}/setup.bash"
+    set -u
     cd "${ROOT}/agv2_ws"
     colcon build --symlink-install
 
     section "ROS2 workspace check"
+    set +u
     source "${ROOT}/agv2_ws/install/setup.bash"
+    set -u
     ros2 pkg list | grep -q agv_bringup    && echo "[OK] agv_bringup"
     ros2 pkg list | grep -q myagv_odometry && echo "[OK] myagv_odometry"
     ros2 pkg list | grep -q myagv_teleop   && echo "[OK] myagv_teleop"
