@@ -14,8 +14,7 @@
   <depend>tf2_ros</depend>
   <depend>tf2</depend>
   <depend>tf2_geometry_msgs</depend>
-  <build_depend>boost</build_depend>
-  <ament_cmake_auto>true</ament_cmake_auto>
+  <build_depend>libboost-dev</build_depend>
   <export>
     <build_type>ament_cmake</build_type>
   </export>

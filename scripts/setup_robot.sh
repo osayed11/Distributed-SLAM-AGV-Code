@@ -137,6 +137,8 @@ if [ "$INSTALL_SYSTEM" = true ]; then
         cmake \
         git \
         gnupg2 \
+        libboost-dev \
+        libboost-system-dev \
         lsb-release \
         pkg-config \
         python3-pip \
