@@ -123,7 +123,11 @@ def circle_center(start_pose, radius, turn_sign):
 def drive_circle(pub, args):
     start_pose = pose
     center_x, center_y = circle_center(start_pose, args.radius, args.turn_sign)
-    feedforward = args.turn_sign * args.linear / args.radius
+    # The myagv_odometry_node scales linear by 0.08 and angular by 0.6 before
+    # sending to the MCU, so actual_v = 0.08*cmd_v and actual_w = 0.6*cmd_w.
+    # For a circle: actual_w = actual_v / R  =>  cmd_w = cmd_v * (0.08/0.6) / R
+    _SCALE_RATIO = 0.08 / 0.6  # linear_scale / angular_scale from execute()
+    feedforward = args.turn_sign * args.linear * _SCALE_RATIO / args.radius
     feedforward = clamp(feedforward, -args.max_angular, args.max_angular)
     msg = Twist()
     rate = _node.create_rate(args.rate)
