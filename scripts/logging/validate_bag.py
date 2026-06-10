@@ -691,6 +691,135 @@ def _ros1_get_topic_timestamps(bag_path, topic):
         return []
 
 
+def check_imu_data(bag_path, bag_topics):
+    """
+    Check that /camera/imu has real accel and gyro data — not all zeros.
+
+    Two checks:
+      1. Accel magnitude ≈ gravity (8–12 m/s²) — confirms accel is alive.
+      2. Gyro has non-zero variance across the sample — confirms gyro is alive.
+
+    CDR offsets for sensor_msgs/msg/Imu with frame_id='camera_imu_optical_frame':
+      orient_off  = off_after_hdr + 8   (8-byte float64 alignment padding)
+      gyr_off     = orient_off + 104    (orientation 32B + orient_cov 72B)
+      acc_off     = gyr_off   + 96     (angular_velocity 24B + angvel_cov 72B)
+    Determined empirically from a live D455 message (340 bytes total).
+    """
+    print("\n--- Camera IMU data validity ---")
+
+    if "/camera/imu" not in bag_topics:
+        record(WARN, "camera_imu_data", "/camera/imu not recorded — skipping data check")
+        return
+
+    count = bag_topics["/camera/imu"].get("messages", 0)
+    if count == 0:
+        record(FAIL, "camera_imu_data", "/camera/imu present but contains no messages")
+        return
+
+    SAMPLE = 50  # messages to inspect
+
+    if _is_ros2_bag(bag_path):
+        gyros = []
+        accels = []
+        for db_file in _ros2_db_files(bag_path):
+            try:
+                conn = sqlite3.connect(db_file)
+                tid = conn.execute(
+                    "SELECT id FROM topics WHERE name='/camera/imu'"
+                ).fetchone()
+                if not tid:
+                    conn.close()
+                    continue
+                # Spread sample across the full recording
+                total = conn.execute(
+                    "SELECT COUNT(*) FROM messages WHERE topic_id=?", (tid[0],)
+                ).fetchone()[0]
+                step = max(1, total // SAMPLE)
+                rows = conn.execute(
+                    "SELECT data FROM messages WHERE topic_id=? ORDER BY timestamp",
+                    (tid[0],)
+                ).fetchall()
+                conn.close()
+                for i, (raw,) in enumerate(rows):
+                    if i % step != 0:
+                        continue
+                    try:
+                        d = bytes(raw)
+                        le = (d[1] == 1)
+                        e = "<" if le else ">"
+                        # Compute off_after_hdr using the same cdr_read_string logic
+                        fl = struct.unpack_from(e+"I", d, 12)[0]
+                        off = 12 + 4 + fl + (4 - (fl % 4)) % 4
+                        orient_off = off + 8   # float64 alignment padding
+                        gyr_off = orient_off + 104
+                        acc_off = gyr_off + 96
+                        gx, gy, gz = struct.unpack_from(e+"ddd", d, gyr_off)
+                        ax, ay, az = struct.unpack_from(e+"ddd", d, acc_off)
+                        gyros.append((gx, gy, gz))
+                        accels.append((ax, ay, az))
+                    except Exception:
+                        continue
+            except Exception:
+                pass
+
+    else:
+        # ROS1: use subprocess
+        gyros = []
+        accels = []
+        try:
+            cmd = [
+                _rosbag_python(), "-c",
+                "import rosbag,sys\nb=rosbag.Bag(sys.argv[1])\n"
+                "for _,m,_ in b.read_messages(topics=['/camera/imu']):\n"
+                "  print(m.angular_velocity.x,m.angular_velocity.y,m.angular_velocity.z,"
+                "m.linear_acceleration.x,m.linear_acceleration.y,m.linear_acceleration.z)\n"
+                "b.close()",
+                bag_path
+            ]
+            out = subprocess.check_output(cmd, stderr=subprocess.DEVNULL,
+                                          timeout=60, env=_ros1_env())
+            for line in out.decode().strip().splitlines():
+                parts = [float(x) for x in line.split()]
+                if len(parts) == 6:
+                    gyros.append((parts[0], parts[1], parts[2]))
+                    accels.append((parts[3], parts[4], parts[5]))
+        except Exception:
+            pass
+
+    if not gyros:
+        record(WARN, "camera_imu_data", "Could not parse IMU messages for data check")
+        return
+
+    # --- Accel magnitude check ---
+    accel_mags = [math.sqrt(ax**2 + ay**2 + az**2) for ax, ay, az in accels]
+    mean_mag = sum(accel_mags) / len(accel_mags)
+    if 8.0 <= mean_mag <= 12.0:
+        record(PASS, "camera_imu_accel",
+               "Accel alive — mean |a|={:.3f} m/s² (expected ~9.8, sample={})".format(
+                   mean_mag, len(accels)))
+    else:
+        record(FAIL, "camera_imu_accel",
+               "Accel magnitude {:.3f} m/s² is outside 8–12 m/s² — "
+               "sensor may be zeroed or gravity not present".format(mean_mag))
+
+    # --- Gyro zero-stuck check ---
+    # Check each axis independently: if std < 1e-5 across the whole sample it's stuck
+    for axis, vals in zip(("x", "y", "z"),
+                          zip(*gyros)):  # transpose to per-axis lists
+        vals = list(vals)
+        mean_v = sum(vals) / len(vals)
+        variance = sum((v - mean_v)**2 for v in vals) / len(vals)
+        std_v = math.sqrt(variance)
+        if std_v < 1e-5:
+            record(FAIL, "camera_imu_gyro_{}".format(axis),
+                   "Gyro {} axis stuck — std={:.2e} over {} samples (all zeros?)".format(
+                       axis, std_v, len(vals)))
+        else:
+            record(PASS, "camera_imu_gyro_{}".format(axis),
+                   "Gyro {} alive — std={:.5f} rad/s, mean={:.5f} rad/s".format(
+                       axis, std_v, mean_v))
+
+
 def print_summary(bag_path, duration, bag_topics, strict):
     print("\n" + "=" * 60)
     print("VALIDATION SUMMARY: {}".format(os.path.basename(bag_path.rstrip("/"))))
@@ -775,6 +904,7 @@ def main():
     check_tf_tree(bag_path, bag_topics)
     check_frame_drops(bag_path, bag_topics, duration)
     check_colour_depth_sync(bag_path, bag_topics)
+    check_imu_data(bag_path, bag_topics)
 
     exit_code = print_summary(bag_path, duration, bag_topics, args.strict)
     sys.exit(exit_code)
