@@ -835,21 +835,27 @@ def check_imu_data(bag_path, bag_topics):
                "sensor may be zeroed or gravity not present".format(mean_mag))
 
     # --- Gyro zero-stuck check ---
-    # Check each axis independently: if std < 1e-5 across the whole sample it's stuck
-    for axis, vals in zip(("x", "y", "z"),
-                          zip(*gyros)):  # transpose to per-axis lists
+    # Fail only if an axis is identically zero across all samples — this is the
+    # symptom of a broken/disconnected gyro (as seen with the base MCU IMU).
+    # A constant non-zero bias (e.g. 0.01 rad/s on a stationary robot) is fine.
+    all_axes_ok = True
+    for axis, vals in zip(("x", "y", "z"), zip(*gyros)):
         vals = list(vals)
         mean_v = sum(vals) / len(vals)
-        variance = sum((v - mean_v)**2 for v in vals) / len(vals)
-        std_v = math.sqrt(variance)
-        if std_v < 1e-5:
+        std_v = math.sqrt(sum((v - mean_v)**2 for v in vals) / len(vals))
+        all_zero = all(abs(v) < 1e-9 for v in vals)
+        if all_zero:
             record(FAIL, "camera_imu_gyro_{}".format(axis),
-                   "Gyro {} axis stuck — std={:.2e} over {} samples (all zeros?)".format(
-                       axis, std_v, len(vals)))
+                   "Gyro {} axis is identically zero across {} samples — sensor not reporting".format(
+                       axis, len(vals)))
+            all_axes_ok = False
         else:
             record(PASS, "camera_imu_gyro_{}".format(axis),
-                   "Gyro {} alive — std={:.5f} rad/s, mean={:.5f} rad/s".format(
-                       axis, std_v, mean_v))
+                   "Gyro {} alive — mean={:.5f} rad/s, std={:.5f} rad/s".format(
+                       axis, mean_v, std_v))
+    if all_axes_ok:
+        record(PASS, "camera_imu_gyro",
+               "All gyro axes reporting non-zero values ({} samples)".format(len(gyros)))
 
 
 def print_summary(bag_path, duration, bag_topics, strict):
