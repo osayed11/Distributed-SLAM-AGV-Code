@@ -82,7 +82,13 @@ def record(level, check, msg):
 # ---------------------------------------------------------------------------
 
 def _is_ros2_bag(path):
-    return os.path.isdir(path) and os.path.exists(os.path.join(path, "metadata.yaml"))
+    if not os.path.isdir(path):
+        return False
+    if os.path.exists(os.path.join(path, "metadata.yaml")):
+        return True
+    # Also accept bags where metadata.yaml is missing (e.g. killed mid-record)
+    # as long as there are .db3 files present.
+    return len(glob.glob(os.path.join(path, "*.db3"))) > 0
 
 
 def _is_ros1_bag(path):
@@ -94,26 +100,52 @@ def _is_ros1_bag(path):
 # ---------------------------------------------------------------------------
 
 def _get_ros2_bag_info(bag_path):
-    with open(os.path.join(bag_path, "metadata.yaml")) as f:
-        meta = yaml.safe_load(f)
-    info = meta.get("rosbag2_bagfile_information", {})
-    duration_ns = info.get("duration", {}).get("nanoseconds", 0)
-    topics_raw = info.get("topics_with_message_count", [])
-    topics = []
-    for t in topics_raw:
-        tm = t.get("topic_metadata", {})
-        ros2_type = tm.get("type", "")
-        # Normalise to ROS1-style for display (sensor_msgs/msg/LaserScan → sensor_msgs/LaserScan)
-        display_type = ros2_type.replace("/msg/", "/") if "/msg/" in ros2_type else ros2_type
-        topics.append({
-            "topic": tm.get("name", ""),
-            "type": display_type,
-            "messages": t.get("message_count", 0),
-        })
-    return {
-        "duration": duration_ns / 1e9,
-        "topics": topics,
-    }
+    meta_path = os.path.join(bag_path, "metadata.yaml")
+    if os.path.exists(meta_path):
+        with open(meta_path) as f:
+            meta = yaml.safe_load(f)
+        info = meta.get("rosbag2_bagfile_information", {})
+        duration_ns = info.get("duration", {}).get("nanoseconds", 0)
+        topics_raw = info.get("topics_with_message_count", [])
+        topics = []
+        for t in topics_raw:
+            tm = t.get("topic_metadata", {})
+            ros2_type = tm.get("type", "")
+            display_type = ros2_type.replace("/msg/", "/") if "/msg/" in ros2_type else ros2_type
+            topics.append({
+                "topic": tm.get("name", ""),
+                "type": display_type,
+                "messages": t.get("message_count", 0),
+            })
+        return {"duration": duration_ns / 1e9, "topics": topics}
+
+    # metadata.yaml missing (bag killed mid-record) — derive directly from db3 files
+    counts = {}
+    topic_types = {}
+    min_ts = max_ts = None
+    for db_file in _ros2_db_files(bag_path):
+        try:
+            conn = sqlite3.connect(db_file)
+            id_to_name = {}
+            for tid, name, typ in conn.execute("SELECT id, name, type FROM topics"):
+                id_to_name[tid] = name
+                topic_types[name] = typ.replace("/msg/", "/") if "/msg/" in typ else typ
+                counts.setdefault(name, 0)
+            for tid, ts in conn.execute("SELECT topic_id, timestamp FROM messages"):
+                name = id_to_name.get(tid)
+                if name:
+                    counts[name] = counts.get(name, 0) + 1
+                if min_ts is None or ts < min_ts:
+                    min_ts = ts
+                if max_ts is None or ts > max_ts:
+                    max_ts = ts
+            conn.close()
+        except Exception:
+            pass
+    duration = (max_ts - min_ts) / 1e9 if min_ts and max_ts else 0.0
+    topics = [{"topic": n, "type": topic_types.get(n, ""), "messages": c}
+              for n, c in counts.items()]
+    return {"duration": duration, "topics": topics}
 
 
 def _ros2_db_files(bag_path):
