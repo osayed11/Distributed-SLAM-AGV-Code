@@ -732,15 +732,12 @@ def check_imu_data(bag_path, bag_topics):
     """
     Check that /camera/imu has real accel and gyro data — not all zeros.
 
-    Two checks:
-      1. Accel magnitude ≈ gravity (8–12 m/s²) — confirms accel is alive.
-      2. Gyro has non-zero variance across the sample — confirms gyro is alive.
+    Reads every message in the bag for accurate statistics.
 
-    CDR offsets for sensor_msgs/msg/Imu with frame_id='camera_imu_optical_frame':
-      orient_off  = off_after_hdr + 8   (8-byte float64 alignment padding)
-      gyr_off     = orient_off + 104    (orientation 32B + orient_cov 72B)
-      acc_off     = gyr_off   + 96     (angular_velocity 24B + angvel_cov 72B)
-    Determined empirically from a live D455 message (340 bytes total).
+    CDR offsets for sensor_msgs/msg/Imu (340 bytes, frame_id len=25):
+      off       = 12 + 4 + fl + (4 - fl%4)%4   (4-byte aligned end of header)
+      gyr_off   = off + 32 + 72                  (skip orientation 32B + orient_cov 72B)
+      acc_off   = gyr_off + 24 + 72              (skip angular_velocity 24B + angvel_cov 72B)
     """
     print("\n--- Camera IMU data validity ---")
 
@@ -753,14 +750,10 @@ def check_imu_data(bag_path, bag_topics):
         record(FAIL, "camera_imu_data", "/camera/imu present but contains no messages")
         return
 
-    SAMPLE = 50  # messages to inspect
-
     if _is_ros2_bag(bag_path):
         gyros = []
         accels = []
         for db_file in _ros2_db_files(bag_path):
-            if len(gyros) >= SAMPLE:
-                break
             try:
                 conn = sqlite3.connect(db_file)
                 row = conn.execute(
@@ -769,29 +762,28 @@ def check_imu_data(bag_path, bag_topics):
                 if not row:
                     conn.close()
                     continue
-                msgs = conn.execute(
-                    "SELECT data FROM messages WHERE topic_id=? LIMIT 30",
-                    (row[0],)
-                ).fetchall()
+                cursor = conn.execute(
+                    "SELECT data FROM messages WHERE topic_id=?", (row[0],)
+                )
+                for (raw,) in cursor:
+                    try:
+                        d = bytes(raw)
+                        e = "<" if d[1] == 1 else ">"
+                        fl = struct.unpack_from(e+"I", d, 12)[0]
+                        off = 12 + 4 + fl + (4 - (fl % 4)) % 4
+                        gyr_off = off + 104
+                        acc_off = gyr_off + 96
+                        gx, gy, gz = struct.unpack_from(e+"ddd", d, gyr_off)
+                        ax, ay, az = struct.unpack_from(e+"ddd", d, acc_off)
+                        gyros.append((gx, gy, gz))
+                        accels.append((ax, ay, az))
+                    except Exception:
+                        continue
                 conn.close()
-                for (raw,) in msgs:
-                    d = bytes(raw)
-                    le = (d[1] == 1)
-                    e = "<" if le else ">"
-                    fl = struct.unpack_from(e+"I", d, 12)[0]
-                    off = 12 + 4 + fl + (4 - (fl % 4)) % 4
-                    orient_off = off + 8
-                    gyr_off = orient_off + 104
-                    acc_off = gyr_off + 96
-                    gx, gy, gz = struct.unpack_from(e+"ddd", d, gyr_off)
-                    ax, ay, az = struct.unpack_from(e+"ddd", d, acc_off)
-                    gyros.append((gx, gy, gz))
-                    accels.append((ax, ay, az))
             except Exception:
                 continue
 
     else:
-        # ROS1: use subprocess
         gyros = []
         accels = []
         try:
@@ -805,7 +797,7 @@ def check_imu_data(bag_path, bag_topics):
                 bag_path
             ]
             out = subprocess.check_output(cmd, stderr=subprocess.DEVNULL,
-                                          timeout=60, env=_ros1_env())
+                                          timeout=120, env=_ros1_env())
             for line in out.decode().strip().splitlines():
                 parts = [float(x) for x in line.split()]
                 if len(parts) == 6:
@@ -818,40 +810,37 @@ def check_imu_data(bag_path, bag_topics):
         record(WARN, "camera_imu_data", "Could not parse IMU messages for data check")
         return
 
+    n = len(gyros)
+
     # --- Accel magnitude check ---
     accel_mags = [math.sqrt(ax**2 + ay**2 + az**2) for ax, ay, az in accels]
-    mean_mag = sum(accel_mags) / len(accel_mags)
+    mean_mag = sum(accel_mags) / n
     if 8.0 <= mean_mag <= 12.0:
         record(PASS, "camera_imu_accel",
-               "Accel alive — mean |a|={:.3f} m/s² (expected ~9.8, sample={})".format(
-                   mean_mag, len(accels)))
+               "Accel alive — mean |a|={:.3f} m/s² (expected ~9.8, n={})".format(mean_mag, n))
     else:
         record(FAIL, "camera_imu_accel",
                "Accel magnitude {:.3f} m/s² is outside 8–12 m/s² — "
                "sensor may be zeroed or gravity not present".format(mean_mag))
 
-    # --- Gyro zero-stuck check ---
-    # Fail only if an axis is identically zero across all samples — this is the
-    # symptom of a broken/disconnected gyro (as seen with the base MCU IMU).
-    # A constant non-zero bias (e.g. 0.01 rad/s on a stationary robot) is fine.
+    # --- Gyro check ---
     all_axes_ok = True
     for axis, vals in zip(("x", "y", "z"), zip(*gyros)):
         vals = list(vals)
         mean_v = sum(vals) / len(vals)
         std_v = math.sqrt(sum((v - mean_v)**2 for v in vals) / len(vals))
-        all_zero = all(abs(v) < 1e-9 for v in vals)
-        if all_zero:
+        if all(abs(v) < 1e-9 for v in vals):
             record(FAIL, "camera_imu_gyro_{}".format(axis),
-                   "Gyro {} axis is identically zero across {} samples — sensor not reporting".format(
-                       axis, len(vals)))
+                   "Gyro {} identically zero across all {} msgs — sensor not reporting".format(
+                       axis, n))
             all_axes_ok = False
         else:
             record(PASS, "camera_imu_gyro_{}".format(axis),
-                   "Gyro {} alive — mean={:.5f} rad/s, std={:.5f} rad/s".format(
-                       axis, mean_v, std_v))
+                   "Gyro {} alive — mean={:.5f} rad/s, std={:.5f} rad/s (n={})".format(
+                       axis, mean_v, std_v, n))
     if all_axes_ok:
         record(PASS, "camera_imu_gyro",
-               "All gyro axes reporting non-zero values ({} samples)".format(len(gyros)))
+               "All gyro axes reporting non-zero values ({} msgs)".format(n))
 
 
 def print_summary(bag_path, duration, bag_topics, strict):
