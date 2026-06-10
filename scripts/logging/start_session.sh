@@ -353,7 +353,19 @@ wait_for_topic_rate() {
 }
 
 BRINGUP_LOG="${BAG_DIR}/${SESSION_ID}_bringup.log"
-echo "Starting bringup first; log: ${BRINGUP_LOG}"
+
+# Kill any stale bringup from a previous session before starting a new one.
+# Without this, two myagv_odometry_node instances share /dev/ttyACM0 and each
+# only gets half the serial packets, halving the odom/tf publish rate.
+echo "Checking for stale bringup processes..."
+STALE_PIDS=$(pgrep -f 'myagv_odometry_node|ydlidar_ros2_driver_node|realsense2_camera_node' 2>/dev/null | tr '\n' ' ')
+if [ -n "${STALE_PIDS}" ]; then
+    echo "  Found stale bringup pids: ${STALE_PIDS}— killing before starting fresh."
+    kill ${STALE_PIDS} 2>/dev/null || true
+    sleep 3
+fi
+
+echo "Starting bringup; log: ${BRINGUP_LOG}"
 if [ "${ROS_VERSION}" = "2" ]; then
     COLOR_PROFILE="${CAMERA_COLOR_WIDTH}x${CAMERA_COLOR_HEIGHT}x${CAMERA_COLOR_FPS}"
     DEPTH_PROFILE="${CAMERA_DEPTH_WIDTH}x${CAMERA_DEPTH_HEIGHT}x${CAMERA_DEPTH_FPS}"
