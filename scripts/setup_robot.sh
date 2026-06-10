@@ -309,17 +309,18 @@ if [ "$HAS_ROS2" = true ] && [ -d "${ROOT}/agv2_ws/src" ]; then
     colcon build --symlink-install
 
     section "ROS2 workspace check"
-    set +u
-    source "/opt/ros/${ROS2_DISTRO}/setup.bash"
-    source "${ROOT}/agv2_ws/install/setup.bash"
-    set -u
-    for pkg in agv_bringup myagv_odometry myagv_teleop realsense2_camera ydlidar_ros2_driver; do
-        if ros2 pkg list 2>/dev/null | grep -q "^${pkg}$"; then
+    for pkg in agv_bringup myagv_odometry myagv_teleop ydlidar_ros2_driver; do
+        if [ -d "${ROOT}/agv2_ws/install/${pkg}" ]; then
             echo "[OK] ${pkg}"
         else
             echo "[MISSING] ${pkg}"
         fi
     done
+    if [ -f "/opt/ros/${ROS2_DISTRO}/share/realsense2_camera/package.xml" ]; then
+        echo "[OK] realsense2_camera"
+    else
+        echo "[MISSING] realsense2_camera (install with: sudo apt install ros-${ROS2_DISTRO}-realsense2-camera)"
+    fi
 fi
 
 section "script permissions"
