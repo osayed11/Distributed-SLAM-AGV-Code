@@ -1,2 +1,0 @@
-Invoking command in '/home/ubuntu/slam_project/agv2_ws/build/myagv_odometry': /usr/bin/cmake /home/ubuntu/slam_project/agv2_ws/src/myagv_odometry -DCMAKE_INSTALL_PREFIX=/home/ubuntu/slam_project/agv2_ws/install/myagv_odometry
-Invoked command in '/home/ubuntu/slam_project/agv2_ws/build/myagv_odometry' returned '1': /usr/bin/cmake /home/ubuntu/slam_project/agv2_ws/src/myagv_odometry -DCMAKE_INSTALL_PREFIX=/home/ubuntu/slam_project/agv2_ws/install/myagv_odometry
