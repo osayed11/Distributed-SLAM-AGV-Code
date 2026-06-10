@@ -105,6 +105,8 @@ def generate_launch_description():
             ])
         ]),
         launch_arguments={
+            'camera_namespace':                 'camera',
+            'camera_name':                      '',
             'align_depth.enable':               'true',
             'pointcloud.enable':                'false',
             'enable_sync':                      LaunchConfiguration('enable_sync'),
