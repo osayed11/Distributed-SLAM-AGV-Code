@@ -181,7 +181,6 @@ if [ "$INSTALL_SYSTEM" = true ]; then
             ros-${ROS2_DISTRO}-diagnostic-msgs \
             ros-${ROS2_DISTRO}-apriltag-ros \
             ros-${ROS2_DISTRO}-realsense2-camera \
-            ros-${ROS2_DISTRO}-ydlidar-ros2-driver \
             python3-colcon-common-extensions \
             python3-colcon-mixin
     fi
