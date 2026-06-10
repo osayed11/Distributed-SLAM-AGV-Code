@@ -377,7 +377,11 @@ if [ -n "${RS_SYSFS}" ]; then
     sleep 2
     echo 1 | sudo tee "${RS_SYSFS}/authorized" > /dev/null 2>&1 || true
     sleep 2
-    echo "  D455 reset done (${RS_SYSFS})"
+    # Disable autosuspend — Linux suspends the D455 after 2s idle by default,
+    # causing xioctl(UVCIOC_CTRL_QUERY) timeouts that drop the video stream mid-run.
+    echo on  | sudo tee "${RS_SYSFS}/power/control"     > /dev/null 2>&1 || true
+    echo -1  | sudo tee "${RS_SYSFS}/power/autosuspend" > /dev/null 2>&1 || true
+    echo "  D455 reset done, autosuspend disabled (${RS_SYSFS})"
 else
     echo "  D455 not found in sysfs — skipping USB reset"
 fi
