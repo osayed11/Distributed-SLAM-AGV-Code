@@ -652,7 +652,7 @@ def check_colour_depth_sync(bag_path, bag_topics):
     elif mean_ms < 33 and pct_over_33ms < 5.0:
         record(WARN, "colour_depth_sync",
                "Mean {:.1f}ms, max {:.1f}ms, {:.1f}% frames >33ms — "
-               "USB 2 mode, sync adequate for LiDAR-primary SLAM.".format(
+               "adequate for LiDAR-primary SLAM, marginal for RGB-D SLAM.".format(
                    mean_ms, max_ms, pct_over_33ms))
     else:
         record(FAIL, "colour_depth_sync",

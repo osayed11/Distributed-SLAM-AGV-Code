@@ -387,7 +387,7 @@ try:
 except Exception as e:
     print('  USB reset failed:', e, file=sys.stderr)
 "
-    sleep 3
+    sleep 6
     # Disable autosuspend after re-enumeration
     echo on | sudo tee "${RS_SYSFS}/power/control"     > /dev/null 2>&1 || true
     echo -1 | sudo tee "${RS_SYSFS}/power/autosuspend" > /dev/null 2>&1 || true
