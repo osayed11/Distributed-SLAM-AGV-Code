@@ -312,11 +312,13 @@ if [ "$HAS_ROS2" = true ] && [ -d "${ROOT}/agv2_ws/src" ]; then
     set +u
     source "${ROOT}/agv2_ws/install/setup.bash"
     set -u
-    ros2 pkg list | grep -q agv_bringup    && echo "[OK] agv_bringup"
-    ros2 pkg list | grep -q myagv_odometry && echo "[OK] myagv_odometry"
-    ros2 pkg list | grep -q myagv_teleop   && echo "[OK] myagv_teleop"
-    ros2 pkg list | grep -q realsense2_camera   && echo "[OK] realsense2_camera"
-    ros2 pkg list | grep -q ydlidar_ros2_driver && echo "[OK] ydlidar_ros2_driver"
+    for pkg in agv_bringup myagv_odometry myagv_teleop realsense2_camera ydlidar_ros2_driver; do
+        if ros2 pkg list 2>/dev/null | grep -q "^${pkg}$"; then
+            echo "[OK] ${pkg}"
+        else
+            echo "[MISSING] ${pkg}"
+        fi
+    done
 fi
 
 section "script permissions"
