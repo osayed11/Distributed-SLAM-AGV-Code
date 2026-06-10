@@ -355,15 +355,13 @@ wait_for_topic_rate() {
 BRINGUP_LOG="${BAG_DIR}/${SESSION_ID}_bringup.log"
 echo "Starting bringup first; log: ${BRINGUP_LOG}"
 if [ "${ROS_VERSION}" = "2" ]; then
+    COLOR_PROFILE="${CAMERA_COLOR_WIDTH}x${CAMERA_COLOR_HEIGHT}x${CAMERA_COLOR_FPS}"
+    DEPTH_PROFILE="${CAMERA_DEPTH_WIDTH}x${CAMERA_DEPTH_HEIGHT}x${CAMERA_DEPTH_FPS}"
     ros2 launch agv_bringup bringup.launch.py \
         serial_port:="/dev/ttyACM0" \
-        enable_realsense_sync:="${ENABLE_REALSENSE_SYNC}" \
-        color_width:="${CAMERA_COLOR_WIDTH}" \
-        color_height:="${CAMERA_COLOR_HEIGHT}" \
-        color_fps:="${CAMERA_COLOR_FPS}" \
-        depth_width:="${CAMERA_DEPTH_WIDTH}" \
-        depth_height:="${CAMERA_DEPTH_HEIGHT}" \
-        depth_fps:="${CAMERA_DEPTH_FPS}" \
+        color_profile:="${COLOR_PROFILE}" \
+        depth_profile:="${DEPTH_PROFILE}" \
+        enable_sync:="${ENABLE_REALSENSE_SYNC}" \
         > "${BRINGUP_LOG}" 2>&1 &
 else
     roslaunch agv_bringup bringup.launch \
@@ -399,8 +397,8 @@ check_topic_silent() {
 
 check_topic_silent /scan 30 || FAILED_TOPICS+=("/scan")
 check_topic_silent /odom 20 || FAILED_TOPICS+=("/odom")
-check_topic_silent /camera/color/image_raw 30 || FAILED_TOPICS+=("/camera/color/image_raw")
-check_topic_silent /camera/aligned_depth_to_color/image_raw 10 || FAILED_TOPICS+=("/camera/aligned_depth_to_color/image_raw")
+check_topic_silent /camera/color/image_raw 45 || FAILED_TOPICS+=("/camera/color/image_raw")
+check_topic_silent /camera/aligned_depth_to_color/image_raw 25 || FAILED_TOPICS+=("/camera/aligned_depth_to_color/image_raw")
 
 if [ "$REQUIRE_IMU" = true ]; then
     check_topic_silent /imu 15 || FAILED_TOPICS+=("/imu")

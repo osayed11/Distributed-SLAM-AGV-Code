@@ -14,6 +14,21 @@ def generate_launch_description():
         default_value='/dev/ttyACM0',
         description='Serial port for the AGV base')
 
+    color_profile_arg = DeclareLaunchArgument(
+        'color_profile',
+        default_value='640x480x15',
+        description='RealSense color stream profile (WIDTHxHEIGHTxFPS)')
+
+    depth_profile_arg = DeclareLaunchArgument(
+        'depth_profile',
+        default_value='640x480x15',
+        description='RealSense depth stream profile (WIDTHxHEIGHTxFPS)')
+
+    enable_sync_arg = DeclareLaunchArgument(
+        'enable_sync',
+        default_value='false',
+        description='Enable RealSense hardware frame sync')
+
     base_ros2_yaml = PathJoinSubstitution([
         FindPackageShare('agv_bringup'), 'config', 'base_ros2.yaml'])
 
@@ -92,22 +107,25 @@ def generate_launch_description():
         launch_arguments={
             'align_depth.enable':               'true',
             'pointcloud.enable':                'false',
-            'enable_sync':                      'false',
-            'rgb_camera.color_profile':         '640x480x15',
-            'depth_module.depth_profile':       '640x480x15',
-            'depth_module.infra_profile':       '640x480x15',
+            'enable_sync':                      LaunchConfiguration('enable_sync'),
+            'rgb_camera.color_profile':         LaunchConfiguration('color_profile'),
+            'depth_module.depth_profile':       LaunchConfiguration('depth_profile'),
+            'depth_module.infra_profile':       LaunchConfiguration('depth_profile'),
             'enable_accel':                     'false',
             'enable_gyro':                      'false',
             'enable_infra1':                    'false',
             'enable_infra2':                    'false',
             'rgb_camera.enable_auto_exposure':  'true',
             'depth_module.enable_auto_exposure':'true',
-            'initial_reset':                    'false',
+            'initial_reset':                    'true',
         }.items(),
     )
 
     return LaunchDescription([
         serial_port_arg,
+        color_profile_arg,
+        depth_profile_arg,
+        enable_sync_arg,
         odometry_node,
         static_tf_camera,
         static_tf_base,
