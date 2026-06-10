@@ -433,8 +433,8 @@ def main():
             hard_fail = True
         print("  {} {:48s} count={:<6d} hz={:6.2f} max_recv_gap={:6.3f}s max_stamp_gap={:6.3f}s".format(
             status, topic, count, rate,
-            max_gap(recv_times[topic]),
-            max_gap(header_times[topic])))
+            max_gap(recv_times.get(topic, [])),
+            max_gap(header_times.get(topic, []))))
 
     color_stamps = header_times.get("/camera/color/image_raw", [])
     depth_stamps = header_times.get("/camera/aligned_depth_to_color/image_raw", [])
@@ -471,8 +471,8 @@ def main():
         if count:
             print("  {:48s} count={:<6d} hz={:6.2f} max_recv_gap={:6.3f}s max_stamp_gap={:6.3f}s".format(
                 topic, count, rate,
-                max_gap(recv_times[topic]),
-                max_gap(header_times[topic])))
+                max_gap(recv_times.get(topic, [])),
+                max_gap(header_times.get(topic, []))))
         else:
             print("  {:48s} count=0".format(topic))
 
