@@ -365,6 +365,23 @@ if [ -n "${STALE_PIDS}" ]; then
     sleep 3
 fi
 
+# USB reset the D455 before every bringup. The camera gets stuck in a stale
+# UVC state after repeated connect/disconnect cycles and needs a hard reset so
+# the initial_reset in bringup.launch.py can talk to it cleanly.
+echo "Resetting D455 USB device..."
+RS_SYSFS=$(for p in /sys/bus/usb/devices/*/idProduct; do
+    [ "$(cat "$p" 2>/dev/null)" = "0b5c" ] && dirname "$p" && break
+done)
+if [ -n "${RS_SYSFS}" ]; then
+    echo 0 | sudo tee "${RS_SYSFS}/authorized" > /dev/null 2>&1 || true
+    sleep 2
+    echo 1 | sudo tee "${RS_SYSFS}/authorized" > /dev/null 2>&1 || true
+    sleep 2
+    echo "  D455 reset done (${RS_SYSFS})"
+else
+    echo "  D455 not found in sysfs — skipping USB reset"
+fi
+
 echo "Starting bringup; log: ${BRINGUP_LOG}"
 if [ "${ROS_VERSION}" = "2" ]; then
     COLOR_PROFILE="${CAMERA_COLOR_WIDTH}x${CAMERA_COLOR_HEIGHT}x${CAMERA_COLOR_FPS}"
