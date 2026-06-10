@@ -1,0 +1,24 @@
+[0.106s] Invoking command in '/home/ubuntu/slam_project/agv2_ws/build/myagv_odometry': CMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH}:/home/ubuntu/slam_project/agv2_ws/install/myagv_teleop:/opt/ros/humble /usr/bin/cmake --build /home/ubuntu/slam_project/agv2_ws/build/myagv_odometry -- -j4 -l4
+[1.202s] [100%] Built target myagv_odometry_node
+[1.247s] Invoked command in '/home/ubuntu/slam_project/agv2_ws/build/myagv_odometry' returned '0': CMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH}:/home/ubuntu/slam_project/agv2_ws/install/myagv_teleop:/opt/ros/humble /usr/bin/cmake --build /home/ubuntu/slam_project/agv2_ws/build/myagv_odometry -- -j4 -l4
+[1.257s] Invoking command in '/home/ubuntu/slam_project/agv2_ws/build/myagv_odometry': CMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH}:/home/ubuntu/slam_project/agv2_ws/install/myagv_teleop:/opt/ros/humble /usr/bin/cmake --install /home/ubuntu/slam_project/agv2_ws/build/myagv_odometry
+[1.310s] -- Install configuration: ""
+[1.333s] -- Execute custom install script
+[1.334s] -- Up-to-date symlink: /home/ubuntu/slam_project/agv2_ws/install/myagv_odometry/lib/myagv_odometry/myagv_odometry_node
+[1.335s] -- Up-to-date symlink: /home/ubuntu/slam_project/agv2_ws/install/myagv_odometry/include/myagv_odometry/myAGV.hpp
+[1.335s] -- Up-to-date symlink: /home/ubuntu/slam_project/agv2_ws/install/myagv_odometry/share/ament_index/resource_index/package_run_dependencies/myagv_odometry
+[1.336s] -- Up-to-date symlink: /home/ubuntu/slam_project/agv2_ws/install/myagv_odometry/share/ament_index/resource_index/parent_prefix_path/myagv_odometry
+[1.337s] -- Up-to-date symlink: /home/ubuntu/slam_project/agv2_ws/install/myagv_odometry/share/myagv_odometry/environment/ament_prefix_path.sh
+[1.337s] -- Up-to-date symlink: /home/ubuntu/slam_project/agv2_ws/install/myagv_odometry/share/myagv_odometry/environment/ament_prefix_path.dsv
+[1.349s] -- Up-to-date symlink: /home/ubuntu/slam_project/agv2_ws/install/myagv_odometry/share/myagv_odometry/environment/path.sh
+[1.350s] -- Up-to-date symlink: /home/ubuntu/slam_project/agv2_ws/install/myagv_odometry/share/myagv_odometry/environment/path.dsv
+[1.352s] -- Up-to-date symlink: /home/ubuntu/slam_project/agv2_ws/install/myagv_odometry/share/myagv_odometry/local_setup.bash
+[1.353s] -- Up-to-date symlink: /home/ubuntu/slam_project/agv2_ws/install/myagv_odometry/share/myagv_odometry/local_setup.sh
+[1.354s] -- Up-to-date symlink: /home/ubuntu/slam_project/agv2_ws/install/myagv_odometry/share/myagv_odometry/local_setup.zsh
+[1.355s] -- Up-to-date symlink: /home/ubuntu/slam_project/agv2_ws/install/myagv_odometry/share/myagv_odometry/local_setup.dsv
+[1.355s] -- Symlinking: /home/ubuntu/slam_project/agv2_ws/install/myagv_odometry/share/myagv_odometry/package.dsv
+[1.400s] -- Up-to-date symlink: /home/ubuntu/slam_project/agv2_ws/install/myagv_odometry/share/ament_index/resource_index/packages/myagv_odometry
+[1.401s] -- Up-to-date symlink: /home/ubuntu/slam_project/agv2_ws/install/myagv_odometry/share/myagv_odometry/cmake/myagv_odometryConfig.cmake
+[1.401s] -- Up-to-date symlink: /home/ubuntu/slam_project/agv2_ws/install/myagv_odometry/share/myagv_odometry/cmake/myagv_odometryConfig-version.cmake
+[1.402s] -- Up-to-date symlink: /home/ubuntu/slam_project/agv2_ws/install/myagv_odometry/share/myagv_odometry/package.xml
+[1.498s] Invoked command in '/home/ubuntu/slam_project/agv2_ws/build/myagv_odometry' returned '0': CMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH}:/home/ubuntu/slam_project/agv2_ws/install/myagv_teleop:/opt/ros/humble /usr/bin/cmake --install /home/ubuntu/slam_project/agv2_ws/build/myagv_odometry

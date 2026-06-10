@@ -1,0 +1,50 @@
+[0.109s] Invoking command in '/home/ubuntu/slam_project/agv2_ws/build/myagv_odometry': /usr/bin/cmake /home/ubuntu/slam_project/agv2_ws/src/myagv_odometry -DCMAKE_INSTALL_PREFIX=/home/ubuntu/slam_project/agv2_ws/install/myagv_odometry
+[1.732s] -- The C compiler identification is GNU 11.4.0
+[1.733s] -- The CXX compiler identification is GNU 11.4.0
+[1.733s] -- Detecting C compiler ABI info
+[1.734s] -- Detecting C compiler ABI info - done
+[1.735s] -- Check for working C compiler: /usr/bin/cc - skipped
+[1.735s] -- Detecting C compile features
+[1.736s] -- Detecting C compile features - done
+[1.737s] -- Detecting CXX compiler ABI info
+[1.738s] -- Detecting CXX compiler ABI info - done
+[1.738s] -- Check for working CXX compiler: /usr/bin/c++ - skipped
+[1.739s] -- Detecting CXX compile features
+[1.739s] -- Detecting CXX compile features - done
+[1.740s] -- Found ament_cmake: 1.3.14 (/opt/ros/humble/share/ament_cmake/cmake)
+[2.745s] -- Found Python3: /usr/bin/python3 (found version "3.10.12") found components: Interpreter 
+[3.482s] -- Found rclcpp: 16.0.19 (/opt/ros/humble/share/rclcpp/cmake)
+[3.932s] -- Found rosidl_generator_c: 3.1.8 (/opt/ros/humble/share/rosidl_generator_c/cmake)
+[4.000s] -- Found rosidl_adapter: 3.1.8 (/opt/ros/humble/share/rosidl_adapter/cmake)
+[4.084s] -- Found rosidl_generator_cpp: 3.1.8 (/opt/ros/humble/share/rosidl_generator_cpp/cmake)
+[4.213s] -- Using all available rosidl_typesupport_c: rosidl_typesupport_fastrtps_c;rosidl_typesupport_introspection_c
+[4.374s] -- Using all available rosidl_typesupport_cpp: rosidl_typesupport_fastrtps_cpp;rosidl_typesupport_introspection_cpp
+[4.861s] -- Found rmw_implementation_cmake: 6.1.2 (/opt/ros/humble/share/rmw_implementation_cmake/cmake)
+[4.897s] -- Found rmw_fastrtps_cpp: 6.2.10 (/opt/ros/humble/share/rmw_fastrtps_cpp/cmake)
+[5.770s] -- Found OpenSSL: /usr/lib/aarch64-linux-gnu/libcrypto.so (found version "3.0.2")  
+[5.946s] -- Found FastRTPS: /opt/ros/humble/include  
+[6.230s] -- Using RMW implementation 'rmw_fastrtps_cpp' as default
+[6.299s] -- Looking for pthread.h
+[6.659s] -- Looking for pthread.h - found
+[6.661s] -- Performing Test CMAKE_HAVE_LIBC_PTHREAD
+[7.015s] -- Performing Test CMAKE_HAVE_LIBC_PTHREAD - Success
+[7.019s] -- Found Threads: TRUE  
+[7.389s] -- Found geometry_msgs: 4.9.1 (/opt/ros/humble/share/geometry_msgs/cmake)
+[7.492s] -- Found nav_msgs: 4.9.1 (/opt/ros/humble/share/nav_msgs/cmake)
+[7.611s] -- Found sensor_msgs: 4.9.1 (/opt/ros/humble/share/sensor_msgs/cmake)
+[7.734s] -- Found tf2_ros: 0.25.20 (/opt/ros/humble/share/tf2_ros/cmake)
+[8.461s] -- Found tf2_geometry_msgs: 0.25.20 (/opt/ros/humble/share/tf2_geometry_msgs/cmake)
+[8.587s] -- Found eigen3_cmake_module: 0.1.1 (/opt/ros/humble/share/eigen3_cmake_module/cmake)
+[8.594s] -- Found Eigen3: TRUE (found version "3.4.0") 
+[8.595s] -- Ensuring Eigen3 include directory is part of orocos-kdl CMake target
+[8.965s] [31mCMake Error at /usr/share/cmake-3.22/Modules/FindPackageHandleStandardArgs.cmake:230 (message):
+[8.965s]   Could NOT find Boost (missing: Boost_INCLUDE_DIR system)
+[8.966s] Call Stack (most recent call first):
+[8.966s]   /usr/share/cmake-3.22/Modules/FindPackageHandleStandardArgs.cmake:594 (_FPHSA_FAILURE_MESSAGE)
+[8.967s]   /usr/share/cmake-3.22/Modules/FindBoost.cmake:2360 (find_package_handle_standard_args)
+[8.968s]   CMakeLists.txt:16 (find_package)
+[8.969s] 
+[8.970s] [0m
+[8.971s] -- Configuring incomplete, errors occurred!
+[8.972s] See also "/home/ubuntu/slam_project/agv2_ws/build/myagv_odometry/CMakeFiles/CMakeOutput.log".
+[9.010s] Invoked command in '/home/ubuntu/slam_project/agv2_ws/build/myagv_odometry' returned '1': /usr/bin/cmake /home/ubuntu/slam_project/agv2_ws/src/myagv_odometry -DCMAKE_INSTALL_PREFIX=/home/ubuntu/slam_project/agv2_ws/install/myagv_odometry

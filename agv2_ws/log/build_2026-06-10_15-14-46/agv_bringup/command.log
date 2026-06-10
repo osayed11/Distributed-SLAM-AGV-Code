@@ -1,0 +1,4 @@
+Invoking command in '/home/ubuntu/slam_project/agv2_ws/build/agv_bringup': CMAKE_PREFIX_PATH=/opt/ros/humble /usr/bin/cmake --build /home/ubuntu/slam_project/agv2_ws/build/agv_bringup -- -j4 -l4
+Invoked command in '/home/ubuntu/slam_project/agv2_ws/build/agv_bringup' returned '0': CMAKE_PREFIX_PATH=/opt/ros/humble /usr/bin/cmake --build /home/ubuntu/slam_project/agv2_ws/build/agv_bringup -- -j4 -l4
+Invoking command in '/home/ubuntu/slam_project/agv2_ws/build/agv_bringup': CMAKE_PREFIX_PATH=/opt/ros/humble /usr/bin/cmake --install /home/ubuntu/slam_project/agv2_ws/build/agv_bringup
+Invoked command in '/home/ubuntu/slam_project/agv2_ws/build/agv_bringup' returned '0': CMAKE_PREFIX_PATH=/opt/ros/humble /usr/bin/cmake --install /home/ubuntu/slam_project/agv2_ws/build/agv_bringup

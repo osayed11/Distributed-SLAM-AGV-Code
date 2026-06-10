@@ -1,0 +1,1 @@
+/home/ubuntu/slam_project/agv2_ws/build/myagv_odometry/ament_cmake_environment_hooks/local_setup.zsh

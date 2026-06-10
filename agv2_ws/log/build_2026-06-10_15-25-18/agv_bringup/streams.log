@@ -1,0 +1,34 @@
+[0.111s] Invoking command in '/home/ubuntu/slam_project/agv2_ws/build/agv_bringup': CMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH}:/home/ubuntu/slam_project/agv2_ws/install/myagv_teleop:/opt/ros/humble /usr/bin/cmake --build /home/ubuntu/slam_project/agv2_ws/build/agv_bringup -- -j4 -l4
+[1.222s] Invoked command in '/home/ubuntu/slam_project/agv2_ws/build/agv_bringup' returned '0': CMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH}:/home/ubuntu/slam_project/agv2_ws/install/myagv_teleop:/opt/ros/humble /usr/bin/cmake --build /home/ubuntu/slam_project/agv2_ws/build/agv_bringup -- -j4 -l4
+[1.262s] Invoking command in '/home/ubuntu/slam_project/agv2_ws/build/agv_bringup': CMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH}:/home/ubuntu/slam_project/agv2_ws/install/myagv_teleop:/opt/ros/humble /usr/bin/cmake --install /home/ubuntu/slam_project/agv2_ws/build/agv_bringup
+[1.311s] -- Install configuration: ""
+[1.312s] -- Execute custom install script
+[1.312s] -- Up-to-date symlink: /home/ubuntu/slam_project/agv2_ws/install/agv_bringup/share/agv_bringup/launch/apriltag.launch.py
+[1.313s] -- Up-to-date symlink: /home/ubuntu/slam_project/agv2_ws/install/agv_bringup/share/agv_bringup/launch/bringup.launch.py
+[1.313s] -- Up-to-date symlink: /home/ubuntu/slam_project/agv2_ws/install/agv_bringup/share/agv_bringup/config/base.yaml
+[1.314s] -- Up-to-date symlink: /home/ubuntu/slam_project/agv2_ws/install/agv_bringup/share/agv_bringup/config/imu.yaml
+[1.315s] -- Up-to-date symlink: /home/ubuntu/slam_project/agv2_ws/install/agv_bringup/share/agv_bringup/config/lidar.yaml
+[1.321s] -- Up-to-date symlink: /home/ubuntu/slam_project/agv2_ws/install/agv_bringup/share/agv_bringup/config/settings.yaml
+[1.321s] -- Up-to-date symlink: /home/ubuntu/slam_project/agv2_ws/install/agv_bringup/share/agv_bringup/config/tags.yaml
+[1.329s] -- Up-to-date symlink: /home/ubuntu/slam_project/agv2_ws/install/agv_bringup/share/agv_bringup/config/tags_tag36h11_id0_80mm.yaml
+[1.329s] -- Up-to-date symlink: /home/ubuntu/slam_project/agv2_ws/install/agv_bringup/share/agv_bringup/calibration/calibration_date.txt
+[1.330s] -- Up-to-date symlink: /home/ubuntu/slam_project/agv2_ws/install/agv_bringup/share/agv_bringup/calibration/camera_intrinsics.yaml
+[1.331s] -- Up-to-date symlink: /home/ubuntu/slam_project/agv2_ws/install/agv_bringup/share/agv_bringup/calibration/extrinsics.yaml
+[1.332s] -- Up-to-date symlink: /home/ubuntu/slam_project/agv2_ws/install/agv_bringup/share/agv_bringup/calibration/imu_intrinsics.yaml
+[1.333s] -- Up-to-date symlink: /home/ubuntu/slam_project/agv2_ws/install/agv_bringup/share/agv_bringup/calibration/mocap_to_base.yaml
+[1.333s] -- Up-to-date symlink: /home/ubuntu/slam_project/agv2_ws/install/agv_bringup/share/ament_index/resource_index/package_run_dependencies/agv_bringup
+[1.339s] -- Up-to-date symlink: /home/ubuntu/slam_project/agv2_ws/install/agv_bringup/share/ament_index/resource_index/parent_prefix_path/agv_bringup
+[1.339s] -- Up-to-date symlink: /home/ubuntu/slam_project/agv2_ws/install/agv_bringup/share/agv_bringup/environment/ament_prefix_path.sh
+[1.340s] -- Up-to-date symlink: /home/ubuntu/slam_project/agv2_ws/install/agv_bringup/share/agv_bringup/environment/ament_prefix_path.dsv
+[1.341s] -- Up-to-date symlink: /home/ubuntu/slam_project/agv2_ws/install/agv_bringup/share/agv_bringup/environment/path.sh
+[1.353s] -- Up-to-date symlink: /home/ubuntu/slam_project/agv2_ws/install/agv_bringup/share/agv_bringup/environment/path.dsv
+[1.354s] -- Up-to-date symlink: /home/ubuntu/slam_project/agv2_ws/install/agv_bringup/share/agv_bringup/local_setup.bash
+[1.355s] -- Up-to-date symlink: /home/ubuntu/slam_project/agv2_ws/install/agv_bringup/share/agv_bringup/local_setup.sh
+[1.356s] -- Up-to-date symlink: /home/ubuntu/slam_project/agv2_ws/install/agv_bringup/share/agv_bringup/local_setup.zsh
+[1.356s] -- Up-to-date symlink: /home/ubuntu/slam_project/agv2_ws/install/agv_bringup/share/agv_bringup/local_setup.dsv
+[1.357s] -- Symlinking: /home/ubuntu/slam_project/agv2_ws/install/agv_bringup/share/agv_bringup/package.dsv
+[1.391s] -- Up-to-date symlink: /home/ubuntu/slam_project/agv2_ws/install/agv_bringup/share/ament_index/resource_index/packages/agv_bringup
+[1.392s] -- Up-to-date symlink: /home/ubuntu/slam_project/agv2_ws/install/agv_bringup/share/agv_bringup/cmake/agv_bringupConfig.cmake
+[1.392s] -- Up-to-date symlink: /home/ubuntu/slam_project/agv2_ws/install/agv_bringup/share/agv_bringup/cmake/agv_bringupConfig-version.cmake
+[1.393s] -- Up-to-date symlink: /home/ubuntu/slam_project/agv2_ws/install/agv_bringup/share/agv_bringup/package.xml
+[1.507s] Invoked command in '/home/ubuntu/slam_project/agv2_ws/build/agv_bringup' returned '0': CMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH}:/home/ubuntu/slam_project/agv2_ws/install/myagv_teleop:/opt/ros/humble /usr/bin/cmake --install /home/ubuntu/slam_project/agv2_ws/build/agv_bringup

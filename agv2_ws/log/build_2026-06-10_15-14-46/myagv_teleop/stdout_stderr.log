@@ -1,0 +1,15 @@
+running develop
+running egg_info
+writing myagv_teleop.egg-info/PKG-INFO
+writing dependency_links to myagv_teleop.egg-info/dependency_links.txt
+writing entry points to myagv_teleop.egg-info/entry_points.txt
+writing requirements to myagv_teleop.egg-info/requires.txt
+writing top-level names to myagv_teleop.egg-info/top_level.txt
+reading manifest file 'myagv_teleop.egg-info/SOURCES.txt'
+writing manifest file 'myagv_teleop.egg-info/SOURCES.txt'
+running build_ext
+Creating /home/ubuntu/slam_project/agv2_ws/install/myagv_teleop/lib/python3.10/site-packages/myagv-teleop.egg-link (link to .)
+Installing myagv_teleop script to /home/ubuntu/slam_project/agv2_ws/install/myagv_teleop/lib/myagv_teleop
+
+Installed /home/ubuntu/slam_project/agv2_ws/build/myagv_teleop
+running symlink_data

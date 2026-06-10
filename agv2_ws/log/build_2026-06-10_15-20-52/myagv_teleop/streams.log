@@ -1,0 +1,17 @@
+[2.888s] Invoking command in '/home/ubuntu/slam_project/agv2_ws/build/myagv_teleop': PYTHONPATH=/home/ubuntu/slam_project/agv2_ws/build/myagv_teleop/prefix_override:/usr/lib/python3/dist-packages/colcon_core/task/python/colcon_distutils_commands:/home/ubuntu/slam_project/agv2_ws/install/myagv_teleop/lib/python3.10/site-packages:${PYTHONPATH} /usr/bin/python3 -W ignore:setup.py install is deprecated -W ignore:easy_install command is deprecated setup.py develop --editable --build-directory /home/ubuntu/slam_project/agv2_ws/build/myagv_teleop/build --no-deps symlink_data
+[4.147s] running develop
+[5.026s] running egg_info
+[5.027s] writing myagv_teleop.egg-info/PKG-INFO
+[5.029s] writing dependency_links to myagv_teleop.egg-info/dependency_links.txt
+[5.030s] writing entry points to myagv_teleop.egg-info/entry_points.txt
+[5.031s] writing requirements to myagv_teleop.egg-info/requires.txt
+[5.032s] writing top-level names to myagv_teleop.egg-info/top_level.txt
+[5.042s] reading manifest file 'myagv_teleop.egg-info/SOURCES.txt'
+[5.046s] writing manifest file 'myagv_teleop.egg-info/SOURCES.txt'
+[5.053s] running build_ext
+[5.054s] Creating /home/ubuntu/slam_project/agv2_ws/install/myagv_teleop/lib/python3.10/site-packages/myagv-teleop.egg-link (link to .)
+[5.058s] Installing myagv_teleop script to /home/ubuntu/slam_project/agv2_ws/install/myagv_teleop/lib/myagv_teleop
+[5.060s] 
+[5.061s] Installed /home/ubuntu/slam_project/agv2_ws/build/myagv_teleop
+[5.061s] running symlink_data
+[5.219s] Invoked command in '/home/ubuntu/slam_project/agv2_ws/build/myagv_teleop' returned '0': PYTHONPATH=/home/ubuntu/slam_project/agv2_ws/build/myagv_teleop/prefix_override:/usr/lib/python3/dist-packages/colcon_core/task/python/colcon_distutils_commands:/home/ubuntu/slam_project/agv2_ws/install/myagv_teleop/lib/python3.10/site-packages:${PYTHONPATH} /usr/bin/python3 -W ignore:setup.py install is deprecated -W ignore:easy_install command is deprecated setup.py develop --editable --build-directory /home/ubuntu/slam_project/agv2_ws/build/myagv_teleop/build --no-deps symlink_data

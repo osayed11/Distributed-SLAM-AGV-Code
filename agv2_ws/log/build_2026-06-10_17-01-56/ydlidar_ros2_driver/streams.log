@@ -1,0 +1,68 @@
+[0.045s] Invoking command in '/home/ubuntu/slam_project/agv2_ws/build/ydlidar_ros2_driver': CMAKE_PREFIX_PATH=/opt/ros/humble /usr/bin/cmake --build /home/ubuntu/slam_project/agv2_ws/build/ydlidar_ros2_driver -- -j4 -l4
+[0.308s] [ 25%] Building CXX object CMakeFiles/ydlidar_ros2_driver_node.dir/src/ydlidar_ros2_driver_node.cpp.o
+[0.309s] [ 75%] Built target ydlidar_ros2_driver_client
+[12.419s] /home/ubuntu/slam_project/agv2_ws/src/ydlidar_ros2_driver/src/ydlidar_ros2_driver_node.cpp: In lambda function:
+[12.419s] /home/ubuntu/slam_project/agv2_ws/src/ydlidar_ros2_driver/src/ydlidar_ros2_driver_node.cpp:187:54: warning: unused parameter ‘request_header’ [-Wunused-parameter]
+[12.420s]   187 |     [&laser](const std::shared_ptr<rmw_request_id_t> request_header,
+[12.420s]       |              ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^~~~~~~~~~~~~~
+[12.420s] /home/ubuntu/slam_project/agv2_ws/src/ydlidar_ros2_driver/src/ydlidar_ros2_driver_node.cpp:188:56: warning: unused parameter ‘req’ [-Wunused-parameter]
+[12.421s]   188 |   const std::shared_ptr<std_srvs::srv::Empty::Request> req,
+[12.422s]       |   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^~~
+[12.424s] /home/ubuntu/slam_project/agv2_ws/src/ydlidar_ros2_driver/src/ydlidar_ros2_driver_node.cpp:189:51: warning: unused parameter ‘response’ [-Wunused-parameter]
+[12.424s]   189 |   std::shared_ptr<std_srvs::srv::Empty::Response> response) -> bool
+[12.427s]       |   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^~~~~~~~
+[12.488s] /home/ubuntu/slam_project/agv2_ws/src/ydlidar_ros2_driver/src/ydlidar_ros2_driver_node.cpp: In lambda function:
+[12.489s] /home/ubuntu/slam_project/agv2_ws/src/ydlidar_ros2_driver/src/ydlidar_ros2_driver_node.cpp:197:54: warning: unused parameter ‘request_header’ [-Wunused-parameter]
+[12.491s]   197 |     [&laser](const std::shared_ptr<rmw_request_id_t> request_header,
+[12.491s]       |              ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^~~~~~~~~~~~~~
+[12.493s] /home/ubuntu/slam_project/agv2_ws/src/ydlidar_ros2_driver/src/ydlidar_ros2_driver_node.cpp:198:56: warning: unused parameter ‘req’ [-Wunused-parameter]
+[12.496s]   198 |   const std::shared_ptr<std_srvs::srv::Empty::Request> req,
+[12.497s]       |   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^~~
+[12.498s] /home/ubuntu/slam_project/agv2_ws/src/ydlidar_ros2_driver/src/ydlidar_ros2_driver_node.cpp:199:51: warning: unused parameter ‘response’ [-Wunused-parameter]
+[12.498s]   199 |   std::shared_ptr<std_srvs::srv::Empty::Response> response) -> bool
+[12.499s]       |   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^~~~~~~~
+[26.399s] [100%] Linking CXX executable ydlidar_ros2_driver_node
+[28.108s] [100%] Built target ydlidar_ros2_driver_node
+[28.146s] Invoked command in '/home/ubuntu/slam_project/agv2_ws/build/ydlidar_ros2_driver' returned '0': CMAKE_PREFIX_PATH=/opt/ros/humble /usr/bin/cmake --build /home/ubuntu/slam_project/agv2_ws/build/ydlidar_ros2_driver -- -j4 -l4
+[28.186s] Invoking command in '/home/ubuntu/slam_project/agv2_ws/build/ydlidar_ros2_driver': CMAKE_PREFIX_PATH=/opt/ros/humble /usr/bin/cmake --install /home/ubuntu/slam_project/agv2_ws/build/ydlidar_ros2_driver
+[28.213s] -- Install configuration: ""
+[28.215s] -- Execute custom install script
+[28.217s] -- Up-to-date symlink: /home/ubuntu/slam_project/agv2_ws/install/ydlidar_ros2_driver/lib/ydlidar_ros2_driver/ydlidar_ros2_driver_node
+[28.218s] -- Up-to-date symlink: /home/ubuntu/slam_project/agv2_ws/install/ydlidar_ros2_driver/lib/ydlidar_ros2_driver/ydlidar_ros2_driver_client
+[28.220s] -- Up-to-date symlink: /home/ubuntu/slam_project/agv2_ws/install/ydlidar_ros2_driver/share/ydlidar_ros2_driver/launch/ydlidar.py
+[28.220s] -- Up-to-date symlink: /home/ubuntu/slam_project/agv2_ws/install/ydlidar_ros2_driver/share/ydlidar_ros2_driver/launch/ydlidar_launch.py
+[28.221s] -- Up-to-date symlink: /home/ubuntu/slam_project/agv2_ws/install/ydlidar_ros2_driver/share/ydlidar_ros2_driver/launch/ydlidar_launch_view.py
+[28.224s] -- Up-to-date symlink: /home/ubuntu/slam_project/agv2_ws/install/ydlidar_ros2_driver/share/ydlidar_ros2_driver/params/G1.yaml
+[28.225s] -- Up-to-date symlink: /home/ubuntu/slam_project/agv2_ws/install/ydlidar_ros2_driver/share/ydlidar_ros2_driver/params/G2.yaml
+[28.226s] -- Up-to-date symlink: /home/ubuntu/slam_project/agv2_ws/install/ydlidar_ros2_driver/share/ydlidar_ros2_driver/params/G4.yaml
+[28.227s] -- Up-to-date symlink: /home/ubuntu/slam_project/agv2_ws/install/ydlidar_ros2_driver/share/ydlidar_ros2_driver/params/G6.yaml
+[28.228s] -- Up-to-date symlink: /home/ubuntu/slam_project/agv2_ws/install/ydlidar_ros2_driver/share/ydlidar_ros2_driver/params/GS2.yaml
+[28.229s] -- Up-to-date symlink: /home/ubuntu/slam_project/agv2_ws/install/ydlidar_ros2_driver/share/ydlidar_ros2_driver/params/GS5.yaml
+[28.230s] -- Up-to-date symlink: /home/ubuntu/slam_project/agv2_ws/install/ydlidar_ros2_driver/share/ydlidar_ros2_driver/params/TEA.yaml
+[28.231s] -- Up-to-date symlink: /home/ubuntu/slam_project/agv2_ws/install/ydlidar_ros2_driver/share/ydlidar_ros2_driver/params/TG.yaml
+[28.232s] -- Up-to-date symlink: /home/ubuntu/slam_project/agv2_ws/install/ydlidar_ros2_driver/share/ydlidar_ros2_driver/params/Tmini-Plus-SH.yaml
+[28.232s] -- Up-to-date symlink: /home/ubuntu/slam_project/agv2_ws/install/ydlidar_ros2_driver/share/ydlidar_ros2_driver/params/Tmini.yaml
+[28.233s] -- Up-to-date symlink: /home/ubuntu/slam_project/agv2_ws/install/ydlidar_ros2_driver/share/ydlidar_ros2_driver/params/X2.yaml
+[28.234s] -- Up-to-date symlink: /home/ubuntu/slam_project/agv2_ws/install/ydlidar_ros2_driver/share/ydlidar_ros2_driver/params/X3.yaml
+[28.235s] -- Up-to-date symlink: /home/ubuntu/slam_project/agv2_ws/install/ydlidar_ros2_driver/share/ydlidar_ros2_driver/params/X4-Pro.yaml
+[28.238s] -- Up-to-date symlink: /home/ubuntu/slam_project/agv2_ws/install/ydlidar_ros2_driver/share/ydlidar_ros2_driver/params/X4.yaml
+[28.241s] -- Up-to-date symlink: /home/ubuntu/slam_project/agv2_ws/install/ydlidar_ros2_driver/share/ydlidar_ros2_driver/params/sdm15.yaml
+[28.244s] -- Up-to-date symlink: /home/ubuntu/slam_project/agv2_ws/install/ydlidar_ros2_driver/share/ydlidar_ros2_driver/params/ydlidar.yaml
+[28.245s] -- Up-to-date symlink: /home/ubuntu/slam_project/agv2_ws/install/ydlidar_ros2_driver/share/ydlidar_ros2_driver/startup/initenv.sh
+[28.246s] -- Up-to-date symlink: /home/ubuntu/slam_project/agv2_ws/install/ydlidar_ros2_driver/share/ydlidar_ros2_driver/config/ydlidar.rviz
+[28.247s] -- Up-to-date symlink: /home/ubuntu/slam_project/agv2_ws/install/ydlidar_ros2_driver/share/ament_index/resource_index/package_run_dependencies/ydlidar_ros2_driver
+[28.252s] -- Up-to-date symlink: /home/ubuntu/slam_project/agv2_ws/install/ydlidar_ros2_driver/share/ament_index/resource_index/parent_prefix_path/ydlidar_ros2_driver
+[28.252s] -- Up-to-date symlink: /home/ubuntu/slam_project/agv2_ws/install/ydlidar_ros2_driver/share/ydlidar_ros2_driver/environment/ament_prefix_path.sh
+[28.253s] -- Up-to-date symlink: /home/ubuntu/slam_project/agv2_ws/install/ydlidar_ros2_driver/share/ydlidar_ros2_driver/environment/ament_prefix_path.dsv
+[28.253s] -- Up-to-date symlink: /home/ubuntu/slam_project/agv2_ws/install/ydlidar_ros2_driver/share/ydlidar_ros2_driver/environment/path.sh
+[28.254s] -- Up-to-date symlink: /home/ubuntu/slam_project/agv2_ws/install/ydlidar_ros2_driver/share/ydlidar_ros2_driver/environment/path.dsv
+[28.254s] -- Up-to-date symlink: /home/ubuntu/slam_project/agv2_ws/install/ydlidar_ros2_driver/share/ydlidar_ros2_driver/local_setup.bash
+[28.255s] -- Up-to-date symlink: /home/ubuntu/slam_project/agv2_ws/install/ydlidar_ros2_driver/share/ydlidar_ros2_driver/local_setup.sh
+[28.256s] -- Up-to-date symlink: /home/ubuntu/slam_project/agv2_ws/install/ydlidar_ros2_driver/share/ydlidar_ros2_driver/local_setup.zsh
+[28.257s] -- Up-to-date symlink: /home/ubuntu/slam_project/agv2_ws/install/ydlidar_ros2_driver/share/ydlidar_ros2_driver/local_setup.dsv
+[28.258s] -- Symlinking: /home/ubuntu/slam_project/agv2_ws/install/ydlidar_ros2_driver/share/ydlidar_ros2_driver/package.dsv
+[28.289s] -- Up-to-date symlink: /home/ubuntu/slam_project/agv2_ws/install/ydlidar_ros2_driver/share/ament_index/resource_index/packages/ydlidar_ros2_driver
+[28.290s] -- Up-to-date symlink: /home/ubuntu/slam_project/agv2_ws/install/ydlidar_ros2_driver/share/ydlidar_ros2_driver/cmake/ydlidar_ros2_driverConfig.cmake
+[28.292s] -- Up-to-date symlink: /home/ubuntu/slam_project/agv2_ws/install/ydlidar_ros2_driver/share/ydlidar_ros2_driver/cmake/ydlidar_ros2_driverConfig-version.cmake
+[28.293s] -- Up-to-date symlink: /home/ubuntu/slam_project/agv2_ws/install/ydlidar_ros2_driver/share/ydlidar_ros2_driver/package.xml
+[28.300s] Invoked command in '/home/ubuntu/slam_project/agv2_ws/build/ydlidar_ros2_driver' returned '0': CMAKE_PREFIX_PATH=/opt/ros/humble /usr/bin/cmake --install /home/ubuntu/slam_project/agv2_ws/build/ydlidar_ros2_driver

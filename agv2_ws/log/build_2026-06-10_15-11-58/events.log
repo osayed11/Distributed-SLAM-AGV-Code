@@ -1,0 +1,290 @@
+[0.000000] (-) TimerEvent: {}
+[0.001744] (agv_bringup) JobQueued: {'identifier': 'agv_bringup', 'dependencies': OrderedDict()}
+[0.002279] (myagv_odometry) JobQueued: {'identifier': 'myagv_odometry', 'dependencies': OrderedDict()}
+[0.002463] (myagv_teleop) JobQueued: {'identifier': 'myagv_teleop', 'dependencies': OrderedDict()}
+[0.002545] (ydlidar_ros2_driver) JobQueued: {'identifier': 'ydlidar_ros2_driver', 'dependencies': OrderedDict()}
+[0.002626] (agv_bringup) JobStarted: {'identifier': 'agv_bringup'}
+[0.034183] (myagv_odometry) JobStarted: {'identifier': 'myagv_odometry'}
+[0.048841] (myagv_teleop) JobStarted: {'identifier': 'myagv_teleop'}
+[0.075004] (ydlidar_ros2_driver) JobStarted: {'identifier': 'ydlidar_ros2_driver'}
+[0.098990] (-) TimerEvent: {}
+[0.113058] (agv_bringup) JobProgress: {'identifier': 'agv_bringup', 'progress': 'cmake'}
+[0.115008] (agv_bringup) Command: {'cmd': ['/usr/bin/cmake', '/home/ubuntu/slam_project/agv2_ws/src/agv_bringup', '-DAMENT_CMAKE_SYMLINK_INSTALL=1', '-DCMAKE_INSTALL_PREFIX=/home/ubuntu/slam_project/agv2_ws/install/agv_bringup'], 'cwd': '/home/ubuntu/slam_project/agv2_ws/build/agv_bringup', 'env': OrderedDict([('LESSOPEN', '| /usr/bin/lesspipe %s'), ('USER', 'ubuntu'), ('SSH_CLIENT', '192.168.1.200 50387 22'), ('XDG_SESSION_TYPE', 'tty'), ('SHLVL', '2'), ('LD_LIBRARY_PATH', '/opt/ros/humble/lib/aarch64-linux-gnu:/opt/ros/humble/lib'), ('MOTD_SHOWN', 'pam'), ('HOME', '/home/ubuntu'), ('OLDPWD', '/home/ubuntu/slam_project'), ('SSH_TTY', '/dev/pts/0'), ('ROS_PYTHON_VERSION', '3'), ('LC_CTYPE', 'C.UTF-8'), ('DBUS_SESSION_BUS_ADDRESS', 'unix:path=/run/user/1000/bus'), ('ROS_DISTRO', 'humble'), ('LOGNAME', 'ubuntu'), ('_', '/usr/bin/colcon'), ('ROS_VERSION', '2'), ('XDG_SESSION_CLASS', 'user'), ('TERM', 'xterm-256color'), ('XDG_SESSION_ID', '3'), ('ROS_LOCALHOST_ONLY', '0'), ('PATH', '/opt/ros/humble/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bin'), ('XDG_RUNTIME_DIR', '/run/user/1000'), ('LANG', 'C.UTF-8'), ('LS_COLORS', 'rs=0:di=01;34:ln=01;36:mh=00:pi=40;33:so=01;35:do=01;35:bd=40;33;01:cd=40;33;01:or=40;31;01:mi=00:su=37;41:sg=30;43:ca=30;41:tw=30;42:ow=34;42:st=37;44:ex=01;32:*.tar=01;31:*.tgz=01;31:*.arc=01;31:*.arj=01;31:*.taz=01;31:*.lha=01;31:*.lz4=01;31:*.lzh=01;31:*.lzma=01;31:*.tlz=01;31:*.txz=01;31:*.tzo=01;31:*.t7z=01;31:*.zip=01;31:*.z=01;31:*.dz=01;31:*.gz=01;31:*.lrz=01;31:*.lz=01;31:*.lzo=01;31:*.xz=01;31:*.zst=01;31:*.tzst=01;31:*.bz2=01;31:*.bz=01;31:*.tbz=01;31:*.tbz2=01;31:*.tz=01;31:*.deb=01;31:*.rpm=01;31:*.jar=01;31:*.war=01;31:*.ear=01;31:*.sar=01;31:*.rar=01;31:*.alz=01;31:*.ace=01;31:*.zoo=01;31:*.cpio=01;31:*.7z=01;31:*.rz=01;31:*.cab=01;31:*.wim=01;31:*.swm=01;31:*.dwm=01;31:*.esd=01;31:*.jpg=01;35:*.jpeg=01;35:*.mjpg=01;35:*.mjpeg=01;35:*.gif=01;35:*.bmp=01;35:*.pbm=01;35:*.pgm=01;35:*.ppm=01;35:*.tga=01;35:*.xbm=01;35:*.xpm=01;35:*.tif=01;35:*.tiff=01;35:*.png=01;35:*.svg=01;35:*.svgz=01;35:*.mng=01;35:*.pcx=01;35:*.mov=01;35:*.mpg=01;35:*.mpeg=01;35:*.m2v=01;35:*.mkv=01;35:*.webm=01;35:*.webp=01;35:*.ogm=01;35:*.mp4=01;35:*.m4v=01;35:*.mp4v=01;35:*.vob=01;35:*.qt=01;35:*.nuv=01;35:*.wmv=01;35:*.asf=01;35:*.rm=01;35:*.rmvb=01;35:*.flc=01;35:*.avi=01;35:*.fli=01;35:*.flv=01;35:*.gl=01;35:*.dl=01;35:*.xcf=01;35:*.xwd=01;35:*.yuv=01;35:*.cgm=01;35:*.emf=01;35:*.ogv=01;35:*.ogx=01;35:*.aac=00;36:*.au=00;36:*.flac=00;36:*.m4a=00;36:*.mid=00;36:*.midi=00;36:*.mka=00;36:*.mp3=00;36:*.mpc=00;36:*.ogg=00;36:*.ra=00;36:*.wav=00;36:*.oga=00;36:*.opus=00;36:*.spx=00;36:*.xspf=00;36:'), ('AMENT_PREFIX_PATH', '/opt/ros/humble'), ('SHELL', '/bin/bash'), ('LESSCLOSE', '/usr/bin/lesspipe %s %s'), ('PWD', '/home/ubuntu/slam_project/agv2_ws/build/agv_bringup'), ('SSH_CONNECTION', '192.168.1.200 50387 192.168.1.205 22'), ('XDG_DATA_DIRS', '/usr/local/share:/usr/share:/var/lib/snapd/desktop'), ('PYTHONPATH', '/opt/ros/humble/lib/python3.10/site-packages:/opt/ros/humble/local/lib/python3.10/dist-packages'), ('COLCON', '1'), ('CMAKE_PREFIX_PATH', '/opt/ros/humble')]), 'shell': False}
+[0.129246] (myagv_odometry) JobProgress: {'identifier': 'myagv_odometry', 'progress': 'cmake'}
+[0.134300] (myagv_odometry) Command: {'cmd': ['/usr/bin/cmake', '/home/ubuntu/slam_project/agv2_ws/src/myagv_odometry', '-DCMAKE_INSTALL_PREFIX=/home/ubuntu/slam_project/agv2_ws/install/myagv_odometry'], 'cwd': '/home/ubuntu/slam_project/agv2_ws/build/myagv_odometry', 'env': OrderedDict([('LESSOPEN', '| /usr/bin/lesspipe %s'), ('USER', 'ubuntu'), ('SSH_CLIENT', '192.168.1.200 50387 22'), ('XDG_SESSION_TYPE', 'tty'), ('SHLVL', '2'), ('LD_LIBRARY_PATH', '/opt/ros/humble/lib/aarch64-linux-gnu:/opt/ros/humble/lib'), ('MOTD_SHOWN', 'pam'), ('HOME', '/home/ubuntu'), ('OLDPWD', '/home/ubuntu/slam_project'), ('SSH_TTY', '/dev/pts/0'), ('ROS_PYTHON_VERSION', '3'), ('LC_CTYPE', 'C.UTF-8'), ('DBUS_SESSION_BUS_ADDRESS', 'unix:path=/run/user/1000/bus'), ('ROS_DISTRO', 'humble'), ('LOGNAME', 'ubuntu'), ('_', '/usr/bin/colcon'), ('ROS_VERSION', '2'), ('XDG_SESSION_CLASS', 'user'), ('TERM', 'xterm-256color'), ('XDG_SESSION_ID', '3'), ('ROS_LOCALHOST_ONLY', '0'), ('PATH', '/opt/ros/humble/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bin'), ('XDG_RUNTIME_DIR', '/run/user/1000'), ('LANG', 'C.UTF-8'), ('LS_COLORS', 'rs=0:di=01;34:ln=01;36:mh=00:pi=40;33:so=01;35:do=01;35:bd=40;33;01:cd=40;33;01:or=40;31;01:mi=00:su=37;41:sg=30;43:ca=30;41:tw=30;42:ow=34;42:st=37;44:ex=01;32:*.tar=01;31:*.tgz=01;31:*.arc=01;31:*.arj=01;31:*.taz=01;31:*.lha=01;31:*.lz4=01;31:*.lzh=01;31:*.lzma=01;31:*.tlz=01;31:*.txz=01;31:*.tzo=01;31:*.t7z=01;31:*.zip=01;31:*.z=01;31:*.dz=01;31:*.gz=01;31:*.lrz=01;31:*.lz=01;31:*.lzo=01;31:*.xz=01;31:*.zst=01;31:*.tzst=01;31:*.bz2=01;31:*.bz=01;31:*.tbz=01;31:*.tbz2=01;31:*.tz=01;31:*.deb=01;31:*.rpm=01;31:*.jar=01;31:*.war=01;31:*.ear=01;31:*.sar=01;31:*.rar=01;31:*.alz=01;31:*.ace=01;31:*.zoo=01;31:*.cpio=01;31:*.7z=01;31:*.rz=01;31:*.cab=01;31:*.wim=01;31:*.swm=01;31:*.dwm=01;31:*.esd=01;31:*.jpg=01;35:*.jpeg=01;35:*.mjpg=01;35:*.mjpeg=01;35:*.gif=01;35:*.bmp=01;35:*.pbm=01;35:*.pgm=01;35:*.ppm=01;35:*.tga=01;35:*.xbm=01;35:*.xpm=01;35:*.tif=01;35:*.tiff=01;35:*.png=01;35:*.svg=01;35:*.svgz=01;35:*.mng=01;35:*.pcx=01;35:*.mov=01;35:*.mpg=01;35:*.mpeg=01;35:*.m2v=01;35:*.mkv=01;35:*.webm=01;35:*.webp=01;35:*.ogm=01;35:*.mp4=01;35:*.m4v=01;35:*.mp4v=01;35:*.vob=01;35:*.qt=01;35:*.nuv=01;35:*.wmv=01;35:*.asf=01;35:*.rm=01;35:*.rmvb=01;35:*.flc=01;35:*.avi=01;35:*.fli=01;35:*.flv=01;35:*.gl=01;35:*.dl=01;35:*.xcf=01;35:*.xwd=01;35:*.yuv=01;35:*.cgm=01;35:*.emf=01;35:*.ogv=01;35:*.ogx=01;35:*.aac=00;36:*.au=00;36:*.flac=00;36:*.m4a=00;36:*.mid=00;36:*.midi=00;36:*.mka=00;36:*.mp3=00;36:*.mpc=00;36:*.ogg=00;36:*.ra=00;36:*.wav=00;36:*.oga=00;36:*.opus=00;36:*.spx=00;36:*.xspf=00;36:'), ('AMENT_PREFIX_PATH', '/opt/ros/humble'), ('SHELL', '/bin/bash'), ('LESSCLOSE', '/usr/bin/lesspipe %s %s'), ('PWD', '/home/ubuntu/slam_project/agv2_ws/build/myagv_odometry'), ('SSH_CONNECTION', '192.168.1.200 50387 192.168.1.205 22'), ('XDG_DATA_DIRS', '/usr/local/share:/usr/share:/var/lib/snapd/desktop'), ('PYTHONPATH', '/opt/ros/humble/lib/python3.10/site-packages:/opt/ros/humble/local/lib/python3.10/dist-packages'), ('COLCON', '1')]), 'shell': False}
+[0.199284] (-) TimerEvent: {}
+[0.300220] (-) TimerEvent: {}
+[0.401923] (-) TimerEvent: {}
+[0.502829] (-) TimerEvent: {}
+[0.604115] (-) TimerEvent: {}
+[0.705980] (-) TimerEvent: {}
+[0.818416] (-) TimerEvent: {}
+[0.919689] (-) TimerEvent: {}
+[1.020862] (-) TimerEvent: {}
+[1.123539] (-) TimerEvent: {}
+[1.225655] (-) TimerEvent: {}
+[1.326510] (-) TimerEvent: {}
+[1.428416] (-) TimerEvent: {}
+[1.530646] (-) TimerEvent: {}
+[1.631778] (-) TimerEvent: {}
+[1.735750] (ydlidar_ros2_driver) JobProgress: {'identifier': 'ydlidar_ros2_driver', 'progress': 'cmake'}
+[1.735966] (-) TimerEvent: {}
+[1.737187] (ydlidar_ros2_driver) Command: {'cmd': ['/usr/bin/cmake', '/home/ubuntu/slam_project/agv2_ws/src/ydlidar_ros2_driver', '-DAMENT_CMAKE_SYMLINK_INSTALL=1', '-DCMAKE_INSTALL_PREFIX=/home/ubuntu/slam_project/agv2_ws/install/ydlidar_ros2_driver'], 'cwd': '/home/ubuntu/slam_project/agv2_ws/build/ydlidar_ros2_driver', 'env': OrderedDict([('LESSOPEN', '| /usr/bin/lesspipe %s'), ('USER', 'ubuntu'), ('SSH_CLIENT', '192.168.1.200 50387 22'), ('XDG_SESSION_TYPE', 'tty'), ('SHLVL', '2'), ('LD_LIBRARY_PATH', '/opt/ros/humble/lib/aarch64-linux-gnu:/opt/ros/humble/lib'), ('MOTD_SHOWN', 'pam'), ('HOME', '/home/ubuntu'), ('OLDPWD', '/home/ubuntu/slam_project'), ('SSH_TTY', '/dev/pts/0'), ('ROS_PYTHON_VERSION', '3'), ('LC_CTYPE', 'C.UTF-8'), ('DBUS_SESSION_BUS_ADDRESS', 'unix:path=/run/user/1000/bus'), ('ROS_DISTRO', 'humble'), ('LOGNAME', 'ubuntu'), ('_', '/usr/bin/colcon'), ('ROS_VERSION', '2'), ('XDG_SESSION_CLASS', 'user'), ('TERM', 'xterm-256color'), ('XDG_SESSION_ID', '3'), ('ROS_LOCALHOST_ONLY', '0'), ('PATH', '/opt/ros/humble/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bin'), ('XDG_RUNTIME_DIR', '/run/user/1000'), ('LANG', 'C.UTF-8'), ('LS_COLORS', 'rs=0:di=01;34:ln=01;36:mh=00:pi=40;33:so=01;35:do=01;35:bd=40;33;01:cd=40;33;01:or=40;31;01:mi=00:su=37;41:sg=30;43:ca=30;41:tw=30;42:ow=34;42:st=37;44:ex=01;32:*.tar=01;31:*.tgz=01;31:*.arc=01;31:*.arj=01;31:*.taz=01;31:*.lha=01;31:*.lz4=01;31:*.lzh=01;31:*.lzma=01;31:*.tlz=01;31:*.txz=01;31:*.tzo=01;31:*.t7z=01;31:*.zip=01;31:*.z=01;31:*.dz=01;31:*.gz=01;31:*.lrz=01;31:*.lz=01;31:*.lzo=01;31:*.xz=01;31:*.zst=01;31:*.tzst=01;31:*.bz2=01;31:*.bz=01;31:*.tbz=01;31:*.tbz2=01;31:*.tz=01;31:*.deb=01;31:*.rpm=01;31:*.jar=01;31:*.war=01;31:*.ear=01;31:*.sar=01;31:*.rar=01;31:*.alz=01;31:*.ace=01;31:*.zoo=01;31:*.cpio=01;31:*.7z=01;31:*.rz=01;31:*.cab=01;31:*.wim=01;31:*.swm=01;31:*.dwm=01;31:*.esd=01;31:*.jpg=01;35:*.jpeg=01;35:*.mjpg=01;35:*.mjpeg=01;35:*.gif=01;35:*.bmp=01;35:*.pbm=01;35:*.pgm=01;35:*.ppm=01;35:*.tga=01;35:*.xbm=01;35:*.xpm=01;35:*.tif=01;35:*.tiff=01;35:*.png=01;35:*.svg=01;35:*.svgz=01;35:*.mng=01;35:*.pcx=01;35:*.mov=01;35:*.mpg=01;35:*.mpeg=01;35:*.m2v=01;35:*.mkv=01;35:*.webm=01;35:*.webp=01;35:*.ogm=01;35:*.mp4=01;35:*.m4v=01;35:*.mp4v=01;35:*.vob=01;35:*.qt=01;35:*.nuv=01;35:*.wmv=01;35:*.asf=01;35:*.rm=01;35:*.rmvb=01;35:*.flc=01;35:*.avi=01;35:*.fli=01;35:*.flv=01;35:*.gl=01;35:*.dl=01;35:*.xcf=01;35:*.xwd=01;35:*.yuv=01;35:*.cgm=01;35:*.emf=01;35:*.ogv=01;35:*.ogx=01;35:*.aac=00;36:*.au=00;36:*.flac=00;36:*.m4a=00;36:*.mid=00;36:*.midi=00;36:*.mka=00;36:*.mp3=00;36:*.mpc=00;36:*.ogg=00;36:*.ra=00;36:*.wav=00;36:*.oga=00;36:*.opus=00;36:*.spx=00;36:*.xspf=00;36:'), ('AMENT_PREFIX_PATH', '/opt/ros/humble'), ('SHELL', '/bin/bash'), ('LESSCLOSE', '/usr/bin/lesspipe %s %s'), ('PWD', '/home/ubuntu/slam_project/agv2_ws/build/ydlidar_ros2_driver'), ('SSH_CONNECTION', '192.168.1.200 50387 192.168.1.205 22'), ('XDG_DATA_DIRS', '/usr/local/share:/usr/share:/var/lib/snapd/desktop'), ('PYTHONPATH', '/opt/ros/humble/lib/python3.10/site-packages:/opt/ros/humble/local/lib/python3.10/dist-packages'), ('COLCON', '1'), ('CMAKE_PREFIX_PATH', '/opt/ros/humble')]), 'shell': False}
+[1.747042] (agv_bringup) StdoutLine: {'line': b'-- The C compiler identification is GNU 11.4.0\n'}
+[1.748446] (agv_bringup) StdoutLine: {'line': b'-- The CXX compiler identification is GNU 11.4.0\n'}
+[1.749085] (agv_bringup) StdoutLine: {'line': b'-- Detecting C compiler ABI info\n'}
+[1.749681] (agv_bringup) StdoutLine: {'line': b'-- Detecting C compiler ABI info - done\n'}
+[1.750494] (agv_bringup) StdoutLine: {'line': b'-- Check for working C compiler: /usr/bin/cc - skipped\n'}
+[1.751181] (agv_bringup) StdoutLine: {'line': b'-- Detecting C compile features\n'}
+[1.751830] (agv_bringup) StdoutLine: {'line': b'-- Detecting C compile features - done\n'}
+[1.752493] (agv_bringup) StdoutLine: {'line': b'-- Detecting CXX compiler ABI info\n'}
+[1.753213] (agv_bringup) StdoutLine: {'line': b'-- Detecting CXX compiler ABI info - done\n'}
+[1.754019] (agv_bringup) StdoutLine: {'line': b'-- Check for working CXX compiler: /usr/bin/c++ - skipped\n'}
+[1.754857] (agv_bringup) StdoutLine: {'line': b'-- Detecting CXX compile features\n'}
+[1.755748] (agv_bringup) StdoutLine: {'line': b'-- Detecting CXX compile features - done\n'}
+[1.756551] (agv_bringup) StdoutLine: {'line': b'-- Found ament_cmake: 1.3.14 (/opt/ros/humble/share/ament_cmake/cmake)\n'}
+[1.767039] (myagv_odometry) StdoutLine: {'line': b'-- The C compiler identification is GNU 11.4.0\n'}
+[1.767977] (myagv_odometry) StdoutLine: {'line': b'-- The CXX compiler identification is GNU 11.4.0\n'}
+[1.768501] (myagv_odometry) StdoutLine: {'line': b'-- Detecting C compiler ABI info\n'}
+[1.768957] (myagv_odometry) StdoutLine: {'line': b'-- Detecting C compiler ABI info - done\n'}
+[1.769582] (myagv_odometry) StdoutLine: {'line': b'-- Check for working C compiler: /usr/bin/cc - skipped\n'}
+[1.770525] (myagv_odometry) StdoutLine: {'line': b'-- Detecting C compile features\n'}
+[1.771180] (myagv_odometry) StdoutLine: {'line': b'-- Detecting C compile features - done\n'}
+[1.771981] (myagv_odometry) StdoutLine: {'line': b'-- Detecting CXX compiler ABI info\n'}
+[1.772665] (myagv_odometry) StdoutLine: {'line': b'-- Detecting CXX compiler ABI info - done\n'}
+[1.773364] (myagv_odometry) StdoutLine: {'line': b'-- Check for working CXX compiler: /usr/bin/c++ - skipped\n'}
+[1.774002] (myagv_odometry) StdoutLine: {'line': b'-- Detecting CXX compile features\n'}
+[1.774508] (myagv_odometry) StdoutLine: {'line': b'-- Detecting CXX compile features - done\n'}
+[1.775071] (myagv_odometry) StdoutLine: {'line': b'-- Found ament_cmake: 1.3.14 (/opt/ros/humble/share/ament_cmake/cmake)\n'}
+[1.836212] (-) TimerEvent: {}
+[1.937180] (-) TimerEvent: {}
+[2.038498] (-) TimerEvent: {}
+[2.146043] (-) TimerEvent: {}
+[2.149300] (ydlidar_ros2_driver) StdoutLine: {'line': b'-- The C compiler identification is GNU 11.4.0\n'}
+[2.246217] (-) TimerEvent: {}
+[2.347825] (-) TimerEvent: {}
+[2.448789] (-) TimerEvent: {}
+[2.533209] (ydlidar_ros2_driver) StdoutLine: {'line': b'-- The CXX compiler identification is GNU 11.4.0\n'}
+[2.548997] (-) TimerEvent: {}
+[2.593330] (ydlidar_ros2_driver) StdoutLine: {'line': b'-- Detecting C compiler ABI info\n'}
+[2.649192] (-) TimerEvent: {}
+[2.739974] (agv_bringup) StdoutLine: {'line': b'-- Found Python3: /usr/bin/python3 (found version "3.10.12") found components: Interpreter \n'}
+[2.749409] (-) TimerEvent: {}
+[2.780292] (myagv_odometry) StdoutLine: {'line': b'-- Found Python3: /usr/bin/python3 (found version "3.10.12") found components: Interpreter \n'}
+[2.849667] (-) TimerEvent: {}
+[2.950903] (-) TimerEvent: {}
+[3.052195] (-) TimerEvent: {}
+[3.062161] (ydlidar_ros2_driver) StdoutLine: {'line': b'-- Detecting C compiler ABI info - done\n'}
+[3.093399] (ydlidar_ros2_driver) StdoutLine: {'line': b'-- Check for working C compiler: /usr/bin/cc - skipped\n'}
+[3.096410] (ydlidar_ros2_driver) StdoutLine: {'line': b'-- Detecting C compile features\n'}
+[3.099658] (ydlidar_ros2_driver) StdoutLine: {'line': b'-- Detecting C compile features - done\n'}
+[3.119361] (ydlidar_ros2_driver) StdoutLine: {'line': b'-- Detecting CXX compiler ABI info\n'}
+[3.152704] (-) TimerEvent: {}
+[3.228978] (agv_bringup) StdoutLine: {'line': b'-- Override CMake install command with custom implementation using symlinks instead of copying resources\n'}
+[3.252809] (-) TimerEvent: {}
+[3.354554] (-) TimerEvent: {}
+[3.455363] (-) TimerEvent: {}
+[3.516631] (myagv_odometry) StdoutLine: {'line': b'-- Found rclcpp: 16.0.19 (/opt/ros/humble/share/rclcpp/cmake)\n'}
+[3.555604] (-) TimerEvent: {}
+[3.576306] (ydlidar_ros2_driver) StdoutLine: {'line': b'-- Detecting CXX compiler ABI info - done\n'}
+[3.613949] (ydlidar_ros2_driver) StdoutLine: {'line': b'-- Check for working CXX compiler: /usr/bin/c++ - skipped\n'}
+[3.617010] (ydlidar_ros2_driver) StdoutLine: {'line': b'-- Detecting CXX compile features\n'}
+[3.620474] (ydlidar_ros2_driver) StdoutLine: {'line': b'-- Detecting CXX compile features - done\n'}
+[3.648318] (ydlidar_ros2_driver) StdoutLine: {'line': b'-- Found ament_cmake: 1.3.14 (/opt/ros/humble/share/ament_cmake/cmake)\n'}
+[3.655826] (-) TimerEvent: {}
+[3.757574] (-) TimerEvent: {}
+[3.859230] (-) TimerEvent: {}
+[3.930393] (agv_bringup) StdoutLine: {'line': b'-- Configuring done\n'}
+[3.955291] (agv_bringup) StdoutLine: {'line': b'-- Generating done\n'}
+[3.959454] (-) TimerEvent: {}
+[3.967436] (myagv_odometry) StdoutLine: {'line': b'-- Found rosidl_generator_c: 3.1.8 (/opt/ros/humble/share/rosidl_generator_c/cmake)\n'}
+[3.969449] (agv_bringup) StdoutLine: {'line': b'-- Build files have been written to: /home/ubuntu/slam_project/agv2_ws/build/agv_bringup\n'}
+[4.005805] (agv_bringup) CommandEnded: {'returncode': 0}
+[4.008544] (agv_bringup) JobProgress: {'identifier': 'agv_bringup', 'progress': 'build'}
+[4.008882] (agv_bringup) Command: {'cmd': ['/usr/bin/cmake', '--build', '/home/ubuntu/slam_project/agv2_ws/build/agv_bringup', '--', '-j4', '-l4'], 'cwd': '/home/ubuntu/slam_project/agv2_ws/build/agv_bringup', 'env': OrderedDict([('LESSOPEN', '| /usr/bin/lesspipe %s'), ('USER', 'ubuntu'), ('SSH_CLIENT', '192.168.1.200 50387 22'), ('XDG_SESSION_TYPE', 'tty'), ('SHLVL', '2'), ('LD_LIBRARY_PATH', '/opt/ros/humble/lib/aarch64-linux-gnu:/opt/ros/humble/lib'), ('MOTD_SHOWN', 'pam'), ('HOME', '/home/ubuntu'), ('OLDPWD', '/home/ubuntu/slam_project'), ('SSH_TTY', '/dev/pts/0'), ('ROS_PYTHON_VERSION', '3'), ('LC_CTYPE', 'C.UTF-8'), ('DBUS_SESSION_BUS_ADDRESS', 'unix:path=/run/user/1000/bus'), ('ROS_DISTRO', 'humble'), ('LOGNAME', 'ubuntu'), ('_', '/usr/bin/colcon'), ('ROS_VERSION', '2'), ('XDG_SESSION_CLASS', 'user'), ('TERM', 'xterm-256color'), ('XDG_SESSION_ID', '3'), ('ROS_LOCALHOST_ONLY', '0'), ('PATH', '/opt/ros/humble/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bin'), ('XDG_RUNTIME_DIR', '/run/user/1000'), ('LANG', 'C.UTF-8'), ('LS_COLORS', 'rs=0:di=01;34:ln=01;36:mh=00:pi=40;33:so=01;35:do=01;35:bd=40;33;01:cd=40;33;01:or=40;31;01:mi=00:su=37;41:sg=30;43:ca=30;41:tw=30;42:ow=34;42:st=37;44:ex=01;32:*.tar=01;31:*.tgz=01;31:*.arc=01;31:*.arj=01;31:*.taz=01;31:*.lha=01;31:*.lz4=01;31:*.lzh=01;31:*.lzma=01;31:*.tlz=01;31:*.txz=01;31:*.tzo=01;31:*.t7z=01;31:*.zip=01;31:*.z=01;31:*.dz=01;31:*.gz=01;31:*.lrz=01;31:*.lz=01;31:*.lzo=01;31:*.xz=01;31:*.zst=01;31:*.tzst=01;31:*.bz2=01;31:*.bz=01;31:*.tbz=01;31:*.tbz2=01;31:*.tz=01;31:*.deb=01;31:*.rpm=01;31:*.jar=01;31:*.war=01;31:*.ear=01;31:*.sar=01;31:*.rar=01;31:*.alz=01;31:*.ace=01;31:*.zoo=01;31:*.cpio=01;31:*.7z=01;31:*.rz=01;31:*.cab=01;31:*.wim=01;31:*.swm=01;31:*.dwm=01;31:*.esd=01;31:*.jpg=01;35:*.jpeg=01;35:*.mjpg=01;35:*.mjpeg=01;35:*.gif=01;35:*.bmp=01;35:*.pbm=01;35:*.pgm=01;35:*.ppm=01;35:*.tga=01;35:*.xbm=01;35:*.xpm=01;35:*.tif=01;35:*.tiff=01;35:*.png=01;35:*.svg=01;35:*.svgz=01;35:*.mng=01;35:*.pcx=01;35:*.mov=01;35:*.mpg=01;35:*.mpeg=01;35:*.m2v=01;35:*.mkv=01;35:*.webm=01;35:*.webp=01;35:*.ogm=01;35:*.mp4=01;35:*.m4v=01;35:*.mp4v=01;35:*.vob=01;35:*.qt=01;35:*.nuv=01;35:*.wmv=01;35:*.asf=01;35:*.rm=01;35:*.rmvb=01;35:*.flc=01;35:*.avi=01;35:*.fli=01;35:*.flv=01;35:*.gl=01;35:*.dl=01;35:*.xcf=01;35:*.xwd=01;35:*.yuv=01;35:*.cgm=01;35:*.emf=01;35:*.ogv=01;35:*.ogx=01;35:*.aac=00;36:*.au=00;36:*.flac=00;36:*.m4a=00;36:*.mid=00;36:*.midi=00;36:*.mka=00;36:*.mp3=00;36:*.mpc=00;36:*.ogg=00;36:*.ra=00;36:*.wav=00;36:*.oga=00;36:*.opus=00;36:*.spx=00;36:*.xspf=00;36:'), ('AMENT_PREFIX_PATH', '/opt/ros/humble'), ('SHELL', '/bin/bash'), ('LESSCLOSE', '/usr/bin/lesspipe %s %s'), ('PWD', '/home/ubuntu/slam_project/agv2_ws/build/agv_bringup'), ('SSH_CONNECTION', '192.168.1.200 50387 192.168.1.205 22'), ('XDG_DATA_DIRS', '/usr/local/share:/usr/share:/var/lib/snapd/desktop'), ('PYTHONPATH', '/opt/ros/humble/lib/python3.10/site-packages:/opt/ros/humble/local/lib/python3.10/dist-packages'), ('COLCON', '1'), ('CMAKE_PREFIX_PATH', '/opt/ros/humble')]), 'shell': False}
+[4.034667] (myagv_odometry) StdoutLine: {'line': b'-- Found rosidl_adapter: 3.1.8 (/opt/ros/humble/share/rosidl_adapter/cmake)\n'}
+[4.059757] (-) TimerEvent: {}
+[4.119412] (myagv_odometry) StdoutLine: {'line': b'-- Found rosidl_generator_cpp: 3.1.8 (/opt/ros/humble/share/rosidl_generator_cpp/cmake)\n'}
+[4.160047] (-) TimerEvent: {}
+[4.228009] (agv_bringup) CommandEnded: {'returncode': 0}
+[4.229740] (agv_bringup) JobProgress: {'identifier': 'agv_bringup', 'progress': 'install'}
+[4.247834] (myagv_odometry) StdoutLine: {'line': b'-- Using all available rosidl_typesupport_c: rosidl_typesupport_fastrtps_c;rosidl_typesupport_introspection_c\n'}
+[4.267412] (agv_bringup) Command: {'cmd': ['/usr/bin/cmake', '--install', '/home/ubuntu/slam_project/agv2_ws/build/agv_bringup'], 'cwd': '/home/ubuntu/slam_project/agv2_ws/build/agv_bringup', 'env': OrderedDict([('LESSOPEN', '| /usr/bin/lesspipe %s'), ('USER', 'ubuntu'), ('SSH_CLIENT', '192.168.1.200 50387 22'), ('XDG_SESSION_TYPE', 'tty'), ('SHLVL', '2'), ('LD_LIBRARY_PATH', '/opt/ros/humble/lib/aarch64-linux-gnu:/opt/ros/humble/lib'), ('MOTD_SHOWN', 'pam'), ('HOME', '/home/ubuntu'), ('OLDPWD', '/home/ubuntu/slam_project'), ('SSH_TTY', '/dev/pts/0'), ('ROS_PYTHON_VERSION', '3'), ('LC_CTYPE', 'C.UTF-8'), ('DBUS_SESSION_BUS_ADDRESS', 'unix:path=/run/user/1000/bus'), ('ROS_DISTRO', 'humble'), ('LOGNAME', 'ubuntu'), ('_', '/usr/bin/colcon'), ('ROS_VERSION', '2'), ('XDG_SESSION_CLASS', 'user'), ('TERM', 'xterm-256color'), ('XDG_SESSION_ID', '3'), ('ROS_LOCALHOST_ONLY', '0'), ('PATH', '/opt/ros/humble/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bin'), ('XDG_RUNTIME_DIR', '/run/user/1000'), ('LANG', 'C.UTF-8'), ('LS_COLORS', 'rs=0:di=01;34:ln=01;36:mh=00:pi=40;33:so=01;35:do=01;35:bd=40;33;01:cd=40;33;01:or=40;31;01:mi=00:su=37;41:sg=30;43:ca=30;41:tw=30;42:ow=34;42:st=37;44:ex=01;32:*.tar=01;31:*.tgz=01;31:*.arc=01;31:*.arj=01;31:*.taz=01;31:*.lha=01;31:*.lz4=01;31:*.lzh=01;31:*.lzma=01;31:*.tlz=01;31:*.txz=01;31:*.tzo=01;31:*.t7z=01;31:*.zip=01;31:*.z=01;31:*.dz=01;31:*.gz=01;31:*.lrz=01;31:*.lz=01;31:*.lzo=01;31:*.xz=01;31:*.zst=01;31:*.tzst=01;31:*.bz2=01;31:*.bz=01;31:*.tbz=01;31:*.tbz2=01;31:*.tz=01;31:*.deb=01;31:*.rpm=01;31:*.jar=01;31:*.war=01;31:*.ear=01;31:*.sar=01;31:*.rar=01;31:*.alz=01;31:*.ace=01;31:*.zoo=01;31:*.cpio=01;31:*.7z=01;31:*.rz=01;31:*.cab=01;31:*.wim=01;31:*.swm=01;31:*.dwm=01;31:*.esd=01;31:*.jpg=01;35:*.jpeg=01;35:*.mjpg=01;35:*.mjpeg=01;35:*.gif=01;35:*.bmp=01;35:*.pbm=01;35:*.pgm=01;35:*.ppm=01;35:*.tga=01;35:*.xbm=01;35:*.xpm=01;35:*.tif=01;35:*.tiff=01;35:*.png=01;35:*.svg=01;35:*.svgz=01;35:*.mng=01;35:*.pcx=01;35:*.mov=01;35:*.mpg=01;35:*.mpeg=01;35:*.m2v=01;35:*.mkv=01;35:*.webm=01;35:*.webp=01;35:*.ogm=01;35:*.mp4=01;35:*.m4v=01;35:*.mp4v=01;35:*.vob=01;35:*.qt=01;35:*.nuv=01;35:*.wmv=01;35:*.asf=01;35:*.rm=01;35:*.rmvb=01;35:*.flc=01;35:*.avi=01;35:*.fli=01;35:*.flv=01;35:*.gl=01;35:*.dl=01;35:*.xcf=01;35:*.xwd=01;35:*.yuv=01;35:*.cgm=01;35:*.emf=01;35:*.ogv=01;35:*.ogx=01;35:*.aac=00;36:*.au=00;36:*.flac=00;36:*.m4a=00;36:*.mid=00;36:*.midi=00;36:*.mka=00;36:*.mp3=00;36:*.mpc=00;36:*.ogg=00;36:*.ra=00;36:*.wav=00;36:*.oga=00;36:*.opus=00;36:*.spx=00;36:*.xspf=00;36:'), ('AMENT_PREFIX_PATH', '/opt/ros/humble'), ('SHELL', '/bin/bash'), ('LESSCLOSE', '/usr/bin/lesspipe %s %s'), ('PWD', '/home/ubuntu/slam_project/agv2_ws/build/agv_bringup'), ('SSH_CONNECTION', '192.168.1.200 50387 192.168.1.205 22'), ('XDG_DATA_DIRS', '/usr/local/share:/usr/share:/var/lib/snapd/desktop'), ('PYTHONPATH', '/opt/ros/humble/lib/python3.10/site-packages:/opt/ros/humble/local/lib/python3.10/dist-packages'), ('COLCON', '1'), ('CMAKE_PREFIX_PATH', '/opt/ros/humble')]), 'shell': False}
+[4.271200] (-) TimerEvent: {}
+[4.307472] (agv_bringup) StdoutLine: {'line': b'-- Install configuration: ""\n'}
+[4.312861] (agv_bringup) StdoutLine: {'line': b'-- Execute custom install script\n'}
+[4.317229] (agv_bringup) StdoutLine: {'line': b'-- Symlinking: /home/ubuntu/slam_project/agv2_ws/install/agv_bringup/share/agv_bringup/launch/apriltag.launch.py\n'}
+[4.353168] (agv_bringup) StdoutLine: {'line': b'-- Symlinking: /home/ubuntu/slam_project/agv2_ws/install/agv_bringup/share/agv_bringup/launch/bringup.launch.py\n'}
+[4.371467] (-) TimerEvent: {}
+[4.409277] (myagv_odometry) StdoutLine: {'line': b'-- Using all available rosidl_typesupport_cpp: rosidl_typesupport_fastrtps_cpp;rosidl_typesupport_introspection_cpp\n'}
+[4.425253] (agv_bringup) StdoutLine: {'line': b'-- Symlinking: /home/ubuntu/slam_project/agv2_ws/install/agv_bringup/share/agv_bringup/config/base.yaml\n'}
+[4.469623] (agv_bringup) StdoutLine: {'line': b'-- Symlinking: /home/ubuntu/slam_project/agv2_ws/install/agv_bringup/share/agv_bringup/config/imu.yaml\n'}
+[4.471691] (-) TimerEvent: {}
+[4.507959] (agv_bringup) StdoutLine: {'line': b'-- Symlinking: /home/ubuntu/slam_project/agv2_ws/install/agv_bringup/share/agv_bringup/config/lidar.yaml\n'}
+[4.544034] (agv_bringup) StdoutLine: {'line': b'-- Symlinking: /home/ubuntu/slam_project/agv2_ws/install/agv_bringup/share/agv_bringup/config/settings.yaml\n'}
+[4.571930] (-) TimerEvent: {}
+[4.592857] (agv_bringup) StdoutLine: {'line': b'-- Symlinking: /home/ubuntu/slam_project/agv2_ws/install/agv_bringup/share/agv_bringup/config/tags.yaml\n'}
+[4.637731] (agv_bringup) StdoutLine: {'line': b'-- Symlinking: /home/ubuntu/slam_project/agv2_ws/install/agv_bringup/share/agv_bringup/config/tags_tag36h11_id0_80mm.yaml\n'}
+[4.648270] (ydlidar_ros2_driver) StdoutLine: {'line': b'-- Found Python3: /usr/bin/python3 (found version "3.10.12") found components: Interpreter \n'}
+[4.672181] (-) TimerEvent: {}
+[4.678211] (agv_bringup) StdoutLine: {'line': b'-- Symlinking: /home/ubuntu/slam_project/agv2_ws/install/agv_bringup/share/agv_bringup/calibration/calibration_date.txt\n'}
+[4.716370] (agv_bringup) StdoutLine: {'line': b'-- Symlinking: /home/ubuntu/slam_project/agv2_ws/install/agv_bringup/share/agv_bringup/calibration/camera_intrinsics.yaml\n'}
+[4.754619] (agv_bringup) StdoutLine: {'line': b'-- Symlinking: /home/ubuntu/slam_project/agv2_ws/install/agv_bringup/share/agv_bringup/calibration/extrinsics.yaml\n'}
+[4.772341] (-) TimerEvent: {}
+[4.792180] (agv_bringup) StdoutLine: {'line': b'-- Symlinking: /home/ubuntu/slam_project/agv2_ws/install/agv_bringup/share/agv_bringup/calibration/imu_intrinsics.yaml\n'}
+[4.872596] (-) TimerEvent: {}
+[4.876972] (agv_bringup) StdoutLine: {'line': b'-- Symlinking: /home/ubuntu/slam_project/agv2_ws/install/agv_bringup/share/agv_bringup/calibration/mocap_to_base.yaml\n'}
+[4.896229] (myagv_odometry) StdoutLine: {'line': b'-- Found rmw_implementation_cmake: 6.1.2 (/opt/ros/humble/share/rmw_implementation_cmake/cmake)\n'}
+[4.924537] (agv_bringup) StdoutLine: {'line': b'-- Symlinking: /home/ubuntu/slam_project/agv2_ws/install/agv_bringup/share/ament_index/resource_index/package_run_dependencies/agv_bringup\n'}
+[4.931885] (myagv_odometry) StdoutLine: {'line': b'-- Found rmw_fastrtps_cpp: 6.2.10 (/opt/ros/humble/share/rmw_fastrtps_cpp/cmake)\n'}
+[4.972813] (-) TimerEvent: {}
+[4.975323] (agv_bringup) StdoutLine: {'line': b'-- Symlinking: /home/ubuntu/slam_project/agv2_ws/install/agv_bringup/share/ament_index/resource_index/parent_prefix_path/agv_bringup\n'}
+[5.022419] (ydlidar_ros2_driver) StdoutLine: {'line': b'-- Override CMake install command with custom implementation using symlinks instead of copying resources\n'}
+[5.027912] (agv_bringup) StdoutLine: {'line': b'-- Symlinking: /home/ubuntu/slam_project/agv2_ws/install/agv_bringup/share/agv_bringup/environment/ament_prefix_path.sh\n'}
+[5.058014] (agv_bringup) StdoutLine: {'line': b'-- Symlinking: /home/ubuntu/slam_project/agv2_ws/install/agv_bringup/share/agv_bringup/environment/ament_prefix_path.dsv\n'}
+[5.073013] (-) TimerEvent: {}
+[5.088700] (agv_bringup) StdoutLine: {'line': b'-- Symlinking: /home/ubuntu/slam_project/agv2_ws/install/agv_bringup/share/agv_bringup/environment/path.sh\n'}
+[5.131641] (agv_bringup) StdoutLine: {'line': b'-- Symlinking: /home/ubuntu/slam_project/agv2_ws/install/agv_bringup/share/agv_bringup/environment/path.dsv\n'}
+[5.161502] (agv_bringup) StdoutLine: {'line': b'-- Symlinking: /home/ubuntu/slam_project/agv2_ws/install/agv_bringup/share/agv_bringup/local_setup.bash\n'}
+[5.173206] (-) TimerEvent: {}
+[5.195001] (agv_bringup) StdoutLine: {'line': b'-- Symlinking: /home/ubuntu/slam_project/agv2_ws/install/agv_bringup/share/agv_bringup/local_setup.sh\n'}
+[5.228020] (agv_bringup) StdoutLine: {'line': b'-- Symlinking: /home/ubuntu/slam_project/agv2_ws/install/agv_bringup/share/agv_bringup/local_setup.zsh\n'}
+[5.238986] (ydlidar_ros2_driver) StdoutLine: {'line': b'-- Found rclcpp: 16.0.19 (/opt/ros/humble/share/rclcpp/cmake)\n'}
+[5.262814] (agv_bringup) StdoutLine: {'line': b'-- Symlinking: /home/ubuntu/slam_project/agv2_ws/install/agv_bringup/share/agv_bringup/local_setup.dsv\n'}
+[5.273396] (-) TimerEvent: {}
+[5.299117] (agv_bringup) StdoutLine: {'line': b'-- Symlinking: /home/ubuntu/slam_project/agv2_ws/install/agv_bringup/share/agv_bringup/package.dsv\n'}
+[5.342245] (agv_bringup) StdoutLine: {'line': b'-- Symlinking: /home/ubuntu/slam_project/agv2_ws/install/agv_bringup/share/ament_index/resource_index/packages/agv_bringup\n'}
+[5.373619] (-) TimerEvent: {}
+[5.384205] (agv_bringup) StdoutLine: {'line': b'-- Symlinking: /home/ubuntu/slam_project/agv2_ws/install/agv_bringup/share/agv_bringup/cmake/agv_bringupConfig.cmake\n'}
+[5.420984] (agv_bringup) StdoutLine: {'line': b'-- Symlinking: /home/ubuntu/slam_project/agv2_ws/install/agv_bringup/share/agv_bringup/cmake/agv_bringupConfig-version.cmake\n'}
+[5.461189] (agv_bringup) StdoutLine: {'line': b'-- Symlinking: /home/ubuntu/slam_project/agv2_ws/install/agv_bringup/share/agv_bringup/package.xml\n'}
+[5.473905] (-) TimerEvent: {}
+[5.526697] (agv_bringup) CommandEnded: {'returncode': 0}
+[5.568876] (ydlidar_ros2_driver) StdoutLine: {'line': b'-- Found rosidl_generator_c: 3.1.8 (/opt/ros/humble/share/rosidl_generator_c/cmake)\n'}
+[5.574672] (-) TimerEvent: {}
+[5.630688] (ydlidar_ros2_driver) StdoutLine: {'line': b'-- Found rosidl_adapter: 3.1.8 (/opt/ros/humble/share/rosidl_adapter/cmake)\n'}
+[5.675224] (-) TimerEvent: {}
+[5.698129] (agv_bringup) JobEnded: {'identifier': 'agv_bringup', 'rc': 0}
+[5.709743] (myagv_teleop) Command: {'cmd': ['/usr/bin/python3', '-W', 'ignore:setup.py install is deprecated', '-W', 'ignore:easy_install command is deprecated', 'setup.py', 'develop', '--editable', '--build-directory', '/home/ubuntu/slam_project/agv2_ws/build/myagv_teleop/build', '--no-deps', 'symlink_data'], 'cwd': '/home/ubuntu/slam_project/agv2_ws/build/myagv_teleop', 'env': {'LESSOPEN': '| /usr/bin/lesspipe %s', 'USER': 'ubuntu', 'SSH_CLIENT': '192.168.1.200 50387 22', 'XDG_SESSION_TYPE': 'tty', 'SHLVL': '2', 'LD_LIBRARY_PATH': '/opt/ros/humble/lib/aarch64-linux-gnu:/opt/ros/humble/lib', 'MOTD_SHOWN': 'pam', 'HOME': '/home/ubuntu', 'OLDPWD': '/home/ubuntu/slam_project', 'SSH_TTY': '/dev/pts/0', 'ROS_PYTHON_VERSION': '3', 'LC_CTYPE': 'C.UTF-8', 'DBUS_SESSION_BUS_ADDRESS': 'unix:path=/run/user/1000/bus', 'ROS_DISTRO': 'humble', 'LOGNAME': 'ubuntu', '_': '/usr/bin/colcon', 'ROS_VERSION': '2', 'XDG_SESSION_CLASS': 'user', 'TERM': 'xterm-256color', 'XDG_SESSION_ID': '3', 'ROS_LOCALHOST_ONLY': '0', 'PATH': '/opt/ros/humble/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bin', 'XDG_RUNTIME_DIR': '/run/user/1000', 'LANG': 'C.UTF-8', 'LS_COLORS': 'rs=0:di=01;34:ln=01;36:mh=00:pi=40;33:so=01;35:do=01;35:bd=40;33;01:cd=40;33;01:or=40;31;01:mi=00:su=37;41:sg=30;43:ca=30;41:tw=30;42:ow=34;42:st=37;44:ex=01;32:*.tar=01;31:*.tgz=01;31:*.arc=01;31:*.arj=01;31:*.taz=01;31:*.lha=01;31:*.lz4=01;31:*.lzh=01;31:*.lzma=01;31:*.tlz=01;31:*.txz=01;31:*.tzo=01;31:*.t7z=01;31:*.zip=01;31:*.z=01;31:*.dz=01;31:*.gz=01;31:*.lrz=01;31:*.lz=01;31:*.lzo=01;31:*.xz=01;31:*.zst=01;31:*.tzst=01;31:*.bz2=01;31:*.bz=01;31:*.tbz=01;31:*.tbz2=01;31:*.tz=01;31:*.deb=01;31:*.rpm=01;31:*.jar=01;31:*.war=01;31:*.ear=01;31:*.sar=01;31:*.rar=01;31:*.alz=01;31:*.ace=01;31:*.zoo=01;31:*.cpio=01;31:*.7z=01;31:*.rz=01;31:*.cab=01;31:*.wim=01;31:*.swm=01;31:*.dwm=01;31:*.esd=01;31:*.jpg=01;35:*.jpeg=01;35:*.mjpg=01;35:*.mjpeg=01;35:*.gif=01;35:*.bmp=01;35:*.pbm=01;35:*.pgm=01;35:*.ppm=01;35:*.tga=01;35:*.xbm=01;35:*.xpm=01;35:*.tif=01;35:*.tiff=01;35:*.png=01;35:*.svg=01;35:*.svgz=01;35:*.mng=01;35:*.pcx=01;35:*.mov=01;35:*.mpg=01;35:*.mpeg=01;35:*.m2v=01;35:*.mkv=01;35:*.webm=01;35:*.webp=01;35:*.ogm=01;35:*.mp4=01;35:*.m4v=01;35:*.mp4v=01;35:*.vob=01;35:*.qt=01;35:*.nuv=01;35:*.wmv=01;35:*.asf=01;35:*.rm=01;35:*.rmvb=01;35:*.flc=01;35:*.avi=01;35:*.fli=01;35:*.flv=01;35:*.gl=01;35:*.dl=01;35:*.xcf=01;35:*.xwd=01;35:*.yuv=01;35:*.cgm=01;35:*.emf=01;35:*.ogv=01;35:*.ogx=01;35:*.aac=00;36:*.au=00;36:*.flac=00;36:*.m4a=00;36:*.mid=00;36:*.midi=00;36:*.mka=00;36:*.mp3=00;36:*.mpc=00;36:*.ogg=00;36:*.ra=00;36:*.wav=00;36:*.oga=00;36:*.opus=00;36:*.spx=00;36:*.xspf=00;36:', 'AMENT_PREFIX_PATH': '/opt/ros/humble', 'SHELL': '/bin/bash', 'LESSCLOSE': '/usr/bin/lesspipe %s %s', 'PWD': '/home/ubuntu/slam_project/agv2_ws/build/myagv_teleop', 'SSH_CONNECTION': '192.168.1.200 50387 192.168.1.205 22', 'XDG_DATA_DIRS': '/usr/local/share:/usr/share:/var/lib/snapd/desktop', 'PYTHONPATH': '/home/ubuntu/slam_project/agv2_ws/build/myagv_teleop/prefix_override:/usr/lib/python3/dist-packages/colcon_core/task/python/colcon_distutils_commands:/home/ubuntu/slam_project/agv2_ws/install/myagv_teleop/lib/python3.10/site-packages:/opt/ros/humble/lib/python3.10/site-packages:/opt/ros/humble/local/lib/python3.10/dist-packages', 'COLCON': '1'}, 'shell': False}
+[5.715365] (ydlidar_ros2_driver) StdoutLine: {'line': b'-- Found rosidl_generator_cpp: 3.1.8 (/opt/ros/humble/share/rosidl_generator_cpp/cmake)\n'}
+[5.775429] (-) TimerEvent: {}
+[5.784726] (ydlidar_ros2_driver) StdoutLine: {'line': b'-- Using all available rosidl_typesupport_c: rosidl_typesupport_fastrtps_c;rosidl_typesupport_introspection_c\n'}
+[5.804819] (myagv_odometry) StdoutLine: {'line': b'-- Found OpenSSL: /usr/lib/aarch64-linux-gnu/libcrypto.so (found version "3.0.2")  \n'}
+[5.875635] (-) TimerEvent: {}
+[5.881355] (ydlidar_ros2_driver) StdoutLine: {'line': b'-- Using all available rosidl_typesupport_cpp: rosidl_typesupport_fastrtps_cpp;rosidl_typesupport_introspection_cpp\n'}
+[5.975852] (-) TimerEvent: {}
+[5.981586] (myagv_odometry) StdoutLine: {'line': b'-- Found FastRTPS: /opt/ros/humble/include  \n'}
+[6.076091] (-) TimerEvent: {}
+[6.155516] (ydlidar_ros2_driver) StdoutLine: {'line': b'-- Found rmw_implementation_cmake: 6.1.2 (/opt/ros/humble/share/rmw_implementation_cmake/cmake)\n'}
+[6.174190] (ydlidar_ros2_driver) StdoutLine: {'line': b'-- Found rmw_fastrtps_cpp: 6.2.10 (/opt/ros/humble/share/rmw_fastrtps_cpp/cmake)\n'}
+[6.176241] (-) TimerEvent: {}
+[6.265058] (myagv_odometry) StdoutLine: {'line': b"-- Using RMW implementation 'rmw_fastrtps_cpp' as default\n"}
+[6.276400] (-) TimerEvent: {}
+[6.333690] (myagv_odometry) StdoutLine: {'line': b'-- Looking for pthread.h\n'}
+[6.376570] (-) TimerEvent: {}
+[6.478163] (-) TimerEvent: {}
+[6.579105] (-) TimerEvent: {}
+[6.654361] (ydlidar_ros2_driver) StdoutLine: {'line': b'-- Found OpenSSL: /usr/lib/aarch64-linux-gnu/libcrypto.so (found version "3.0.2")  \n'}
+[6.679291] (-) TimerEvent: {}
+[6.694115] (myagv_odometry) StdoutLine: {'line': b'-- Looking for pthread.h - found\n'}
+[6.696536] (myagv_odometry) StdoutLine: {'line': b'-- Performing Test CMAKE_HAVE_LIBC_PTHREAD\n'}
+[6.779496] (-) TimerEvent: {}
+[6.833970] (ydlidar_ros2_driver) StdoutLine: {'line': b'-- Found FastRTPS: /opt/ros/humble/include  \n'}
+[6.879715] (-) TimerEvent: {}
+[6.981575] (-) TimerEvent: {}
+[7.021815] (myagv_teleop) StdoutLine: {'line': b'running develop\n'}
+[7.050118] (myagv_odometry) StdoutLine: {'line': b'-- Performing Test CMAKE_HAVE_LIBC_PTHREAD - Success\n'}
+[7.054493] (myagv_odometry) StdoutLine: {'line': b'-- Found Threads: TRUE  \n'}
+[7.081788] (-) TimerEvent: {}
+[7.125864] (ydlidar_ros2_driver) StdoutLine: {'line': b"-- Using RMW implementation 'rmw_fastrtps_cpp' as default\n"}
+[7.181999] (-) TimerEvent: {}
+[7.190019] (ydlidar_ros2_driver) StdoutLine: {'line': b'-- Looking for pthread.h\n'}
+[7.282182] (-) TimerEvent: {}
+[7.383214] (-) TimerEvent: {}
+[7.424528] (myagv_odometry) StdoutLine: {'line': b'-- Found geometry_msgs: 4.9.1 (/opt/ros/humble/share/geometry_msgs/cmake)\n'}
+[7.483401] (-) TimerEvent: {}
+[7.527305] (myagv_odometry) StdoutLine: {'line': b'-- Found nav_msgs: 4.9.1 (/opt/ros/humble/share/nav_msgs/cmake)\n'}
+[7.563730] (ydlidar_ros2_driver) StdoutLine: {'line': b'-- Looking for pthread.h - found\n'}
+[7.566252] (ydlidar_ros2_driver) StdoutLine: {'line': b'-- Performing Test CMAKE_HAVE_LIBC_PTHREAD\n'}
+[7.583667] (-) TimerEvent: {}
+[7.646298] (myagv_odometry) StdoutLine: {'line': b'-- Found sensor_msgs: 4.9.1 (/opt/ros/humble/share/sensor_msgs/cmake)\n'}
+[7.683977] (-) TimerEvent: {}
+[7.768759] (myagv_odometry) StdoutLine: {'line': b'-- Found tf2_ros: 0.25.20 (/opt/ros/humble/share/tf2_ros/cmake)\n'}
+[7.784203] (-) TimerEvent: {}
+[7.885310] (-) TimerEvent: {}
+[7.926268] (myagv_teleop) StdoutLine: {'line': b'running egg_info\n'}
+[7.926994] (myagv_teleop) StdoutLine: {'line': b'creating myagv_teleop.egg-info\n'}
+[7.927712] (myagv_teleop) StdoutLine: {'line': b'writing myagv_teleop.egg-info/PKG-INFO\n'}
+[7.928479] (myagv_teleop) StdoutLine: {'line': b'writing dependency_links to myagv_teleop.egg-info/dependency_links.txt\n'}
+[7.929167] (myagv_teleop) StdoutLine: {'line': b'writing entry points to myagv_teleop.egg-info/entry_points.txt\n'}
+[7.929903] (myagv_teleop) StdoutLine: {'line': b'writing requirements to myagv_teleop.egg-info/requires.txt\n'}
+[7.930815] (myagv_teleop) StdoutLine: {'line': b'writing top-level names to myagv_teleop.egg-info/top_level.txt\n'}
+[7.931390] (ydlidar_ros2_driver) StdoutLine: {'line': b'-- Performing Test CMAKE_HAVE_LIBC_PTHREAD - Success\n'}
+[7.932438] (myagv_teleop) StdoutLine: {'line': b"writing manifest file 'myagv_teleop.egg-info/SOURCES.txt'\n"}
+[7.935469] (ydlidar_ros2_driver) StdoutLine: {'line': b'-- Found Threads: TRUE  \n'}
+[7.939642] (myagv_teleop) StdoutLine: {'line': b"reading manifest file 'myagv_teleop.egg-info/SOURCES.txt'\n"}
+[7.942647] (myagv_teleop) StdoutLine: {'line': b"writing manifest file 'myagv_teleop.egg-info/SOURCES.txt'\n"}
+[7.949772] (myagv_teleop) StdoutLine: {'line': b'running build_ext\n'}
+[7.950907] (myagv_teleop) StdoutLine: {'line': b'Creating /home/ubuntu/slam_project/agv2_ws/install/myagv_teleop/lib/python3.10/site-packages/myagv-teleop.egg-link (link to .)\n'}
+[7.955560] (myagv_teleop) StdoutLine: {'line': b'Installing myagv_teleop script to /home/ubuntu/slam_project/agv2_ws/install/myagv_teleop/lib/myagv_teleop\n'}
+[7.957641] (myagv_teleop) StdoutLine: {'line': b'\n'}
+[7.958485] (myagv_teleop) StdoutLine: {'line': b'Installed /home/ubuntu/slam_project/agv2_ws/build/myagv_teleop\n'}
+[7.959384] (myagv_teleop) StdoutLine: {'line': b'running symlink_data\n'}
+[7.960288] (myagv_teleop) StdoutLine: {'line': b'creating /home/ubuntu/slam_project/agv2_ws/install/myagv_teleop/share/ament_index\n'}
+[7.961129] (myagv_teleop) StdoutLine: {'line': b'creating /home/ubuntu/slam_project/agv2_ws/install/myagv_teleop/share/ament_index/resource_index\n'}
+[7.962175] (myagv_teleop) StdoutLine: {'line': b'creating /home/ubuntu/slam_project/agv2_ws/install/myagv_teleop/share/ament_index/resource_index/packages\n'}
+[7.963100] (myagv_teleop) StdoutLine: {'line': b'symbolically linking /home/ubuntu/slam_project/agv2_ws/build/myagv_teleop/resource/myagv_teleop -> /home/ubuntu/slam_project/agv2_ws/install/myagv_teleop/share/ament_index/resource_index/packages\n'}
+[7.964159] (myagv_teleop) StdoutLine: {'line': b'symbolically linking /home/ubuntu/slam_project/agv2_ws/build/myagv_teleop/package.xml -> /home/ubuntu/slam_project/agv2_ws/install/myagv_teleop/share/myagv_teleop\n'}
+[7.985786] (-) TimerEvent: {}
+[8.087773] (-) TimerEvent: {}
+[8.134262] (myagv_teleop) CommandEnded: {'returncode': 0}
+[8.169098] (myagv_teleop) JobEnded: {'identifier': 'myagv_teleop', 'rc': 0}
+[8.187845] (-) TimerEvent: {}
+[8.244703] (ydlidar_ros2_driver) StdoutLine: {'line': b'-- Found sensor_msgs: 4.9.1 (/opt/ros/humble/share/sensor_msgs/cmake)\n'}
+[8.288079] (-) TimerEvent: {}
+[8.387307] (ydlidar_ros2_driver) StdoutLine: {'line': b'-- Found visualization_msgs: 4.9.1 (/opt/ros/humble/share/visualization_msgs/cmake)\n'}
+[8.388239] (-) TimerEvent: {}
+[8.489071] (-) TimerEvent: {}
+[8.495681] (myagv_odometry) StdoutLine: {'line': b'-- Found tf2_geometry_msgs: 0.25.20 (/opt/ros/humble/share/tf2_geometry_msgs/cmake)\n'}
+[8.500465] (ydlidar_ros2_driver) StdoutLine: {'line': b'-- Found std_srvs: 4.9.1 (/opt/ros/humble/share/std_srvs/cmake)\n'}
+[8.589256] (-) TimerEvent: {}
+[8.597161] (ydlidar_ros2_driver) StdoutLine: {'line': b'-- Found ament_lint_auto: 0.12.15 (/opt/ros/humble/share/ament_lint_auto/cmake)\n'}
+[8.622273] (myagv_odometry) StdoutLine: {'line': b'-- Found eigen3_cmake_module: 0.1.1 (/opt/ros/humble/share/eigen3_cmake_module/cmake)\n'}
+[8.629193] (myagv_odometry) StdoutLine: {'line': b'-- Found Eigen3: TRUE (found version "3.4.0") \n'}
+[8.630169] (myagv_odometry) StdoutLine: {'line': b'-- Ensuring Eigen3 include directory is part of orocos-kdl CMake target\n'}
+[8.689443] (-) TimerEvent: {}
+[8.790251] (-) TimerEvent: {}
+[8.890953] (-) TimerEvent: {}
+[8.991643] (-) TimerEvent: {}
+[8.998933] (myagv_odometry) StderrLine: {'line': b'\x1b[31mCMake Error at /usr/share/cmake-3.22/Modules/FindPackageHandleStandardArgs.cmake:230 (message):\n'}
+[9.000341] (myagv_odometry) StderrLine: {'line': b'  Could NOT find Boost (missing: Boost_INCLUDE_DIR system)\n'}
+[9.000813] (myagv_odometry) StderrLine: {'line': b'Call Stack (most recent call first):\n'}
+[9.001307] (myagv_odometry) StderrLine: {'line': b'  /usr/share/cmake-3.22/Modules/FindPackageHandleStandardArgs.cmake:594 (_FPHSA_FAILURE_MESSAGE)\n'}
+[9.001999] (myagv_odometry) StderrLine: {'line': b'  /usr/share/cmake-3.22/Modules/FindBoost.cmake:2360 (find_package_handle_standard_args)\n'}
+[9.002956] (myagv_odometry) StderrLine: {'line': b'  CMakeLists.txt:16 (find_package)\n'}
+[9.003886] (myagv_odometry) StderrLine: {'line': b'\n'}
+[9.005233] (myagv_odometry) StderrLine: {'line': b'\x1b[0m\n'}
+[9.006060] (myagv_odometry) StdoutLine: {'line': b'-- Configuring incomplete, errors occurred!\n'}
+[9.006732] (myagv_odometry) StdoutLine: {'line': b'See also "/home/ubuntu/slam_project/agv2_ws/build/myagv_odometry/CMakeFiles/CMakeOutput.log".\n'}
+[9.044634] (myagv_odometry) CommandEnded: {'returncode': 1}
+[9.047361] (myagv_odometry) JobEnded: {'identifier': 'myagv_odometry', 'rc': 1}
+[9.089090] (ydlidar_ros2_driver) StdoutLine: {'line': b"-- Added test 'copyright' to check source files copyright and LICENSE\n"}
+[9.091793] (-) TimerEvent: {}
+[9.109766] (ydlidar_ros2_driver) StdoutLine: {'line': b"-- Added test 'cppcheck' to perform static code analysis on C / C++ code\n"}
+[9.110970] (ydlidar_ros2_driver) StdoutLine: {'line': b'-- Configured cppcheck include dirs: /home/ubuntu/slam_project/agv2_ws/src/ydlidar_ros2_driver/src\n'}
+[9.111459] (ydlidar_ros2_driver) StdoutLine: {'line': b'-- Configured cppcheck exclude dirs and/or files: \n'}
+[9.130592] (ydlidar_ros2_driver) StdoutLine: {'line': b"-- Added test 'cpplint' to check C / C++ code against the Google style\n"}
+[9.131169] (ydlidar_ros2_driver) StdoutLine: {'line': b'-- Configured cpplint exclude dirs and/or files: \n'}
+[9.135612] (ydlidar_ros2_driver) StdoutLine: {'line': b"-- Added test 'flake8' to check Python code syntax and style conventions\n"}
+[9.142132] (ydlidar_ros2_driver) StdoutLine: {'line': b"-- Added test 'lint_cmake' to check CMake code style\n"}
+[9.146782] (ydlidar_ros2_driver) StdoutLine: {'line': b"-- Added test 'pep257' to check Python code against some of the docstring style conventions in PEP 257\n"}
+[9.166419] (ydlidar_ros2_driver) StdoutLine: {'line': b"-- Added test 'uncrustify' to check C / C++ code style\n"}
+[9.166979] (ydlidar_ros2_driver) StdoutLine: {'line': b'-- Configured uncrustify additional arguments: \n'}
+[9.171133] (ydlidar_ros2_driver) StdoutLine: {'line': b"-- Added test 'xmllint' to check XML markup files\n"}
+[9.179010] (ydlidar_ros2_driver) StdoutLine: {'line': b'-- Configuring done\n'}
+[9.191946] (-) TimerEvent: {}
+[9.263210] (ydlidar_ros2_driver) StdoutLine: {'line': b'-- Generating done\n'}
+[9.286194] (ydlidar_ros2_driver) StdoutLine: {'line': b'-- Build files have been written to: /home/ubuntu/slam_project/agv2_ws/build/ydlidar_ros2_driver\n'}
+[9.292245] (-) TimerEvent: {}
+[9.328276] (ydlidar_ros2_driver) JobEnded: {'identifier': 'ydlidar_ros2_driver', 'rc': 'SIGINT'}
+[9.331612] (-) EventReactorShutdown: {}

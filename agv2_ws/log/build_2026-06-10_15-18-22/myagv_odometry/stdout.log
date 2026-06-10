@@ -1,0 +1,21 @@
+[35m[1mConsolidate compiler generated dependencies of target myagv_odometry_node[0m
+[100%] Built target myagv_odometry_node
+-- Install configuration: ""
+-- Execute custom install script
+-- Symlinking: /home/ubuntu/slam_project/agv2_ws/install/myagv_odometry/lib/myagv_odometry/myagv_odometry_node
+-- Symlinking: /home/ubuntu/slam_project/agv2_ws/install/myagv_odometry/include/myagv_odometry/myAGV.hpp
+-- Symlinking: /home/ubuntu/slam_project/agv2_ws/install/myagv_odometry/share/ament_index/resource_index/package_run_dependencies/myagv_odometry
+-- Symlinking: /home/ubuntu/slam_project/agv2_ws/install/myagv_odometry/share/ament_index/resource_index/parent_prefix_path/myagv_odometry
+-- Symlinking: /home/ubuntu/slam_project/agv2_ws/install/myagv_odometry/share/myagv_odometry/environment/ament_prefix_path.sh
+-- Symlinking: /home/ubuntu/slam_project/agv2_ws/install/myagv_odometry/share/myagv_odometry/environment/ament_prefix_path.dsv
+-- Symlinking: /home/ubuntu/slam_project/agv2_ws/install/myagv_odometry/share/myagv_odometry/environment/path.sh
+-- Symlinking: /home/ubuntu/slam_project/agv2_ws/install/myagv_odometry/share/myagv_odometry/environment/path.dsv
+-- Symlinking: /home/ubuntu/slam_project/agv2_ws/install/myagv_odometry/share/myagv_odometry/local_setup.bash
+-- Symlinking: /home/ubuntu/slam_project/agv2_ws/install/myagv_odometry/share/myagv_odometry/local_setup.sh
+-- Symlinking: /home/ubuntu/slam_project/agv2_ws/install/myagv_odometry/share/myagv_odometry/local_setup.zsh
+-- Symlinking: /home/ubuntu/slam_project/agv2_ws/install/myagv_odometry/share/myagv_odometry/local_setup.dsv
+-- Symlinking: /home/ubuntu/slam_project/agv2_ws/install/myagv_odometry/share/myagv_odometry/package.dsv
+-- Symlinking: /home/ubuntu/slam_project/agv2_ws/install/myagv_odometry/share/ament_index/resource_index/packages/myagv_odometry
+-- Symlinking: /home/ubuntu/slam_project/agv2_ws/install/myagv_odometry/share/myagv_odometry/cmake/myagv_odometryConfig.cmake
+-- Symlinking: /home/ubuntu/slam_project/agv2_ws/install/myagv_odometry/share/myagv_odometry/cmake/myagv_odometryConfig-version.cmake
+-- Symlinking: /home/ubuntu/slam_project/agv2_ws/install/myagv_odometry/share/myagv_odometry/package.xml

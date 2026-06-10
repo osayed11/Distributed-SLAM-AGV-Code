@@ -1,0 +1,317 @@
+[0.468s] DEBUG:colcon:Command line arguments: ['/usr/bin/colcon', 'build', '--symlink-install']
+[0.469s] DEBUG:colcon:Parsed command line arguments: Namespace(log_base=None, log_level=None, verb_name='build', build_base='build', install_base='install', merge_install=False, symlink_install=True, test_result_base=None, continue_on_error=False, executor='parallel', parallel_workers=4, event_handlers=None, ignore_user_meta=False, metas=['./colcon.meta'], base_paths=['.'], packages_ignore=None, packages_ignore_regex=None, paths=None, packages_up_to=None, packages_up_to_regex=None, packages_above=None, packages_above_and_dependencies=None, packages_above_depth=None, packages_select_by_dep=None, packages_skip_by_dep=None, packages_skip_up_to=None, packages_select_build_failed=False, packages_skip_build_finished=False, packages_select_test_failures=False, packages_skip_test_passed=False, packages_select=None, packages_skip=None, packages_select_regex=None, packages_skip_regex=None, packages_start=None, packages_end=None, allow_overriding=[], cmake_args=None, cmake_target=None, cmake_target_skip_unavailable=False, cmake_clean_cache=False, cmake_clean_first=False, cmake_force_configure=False, ament_cmake_args=None, catkin_cmake_args=None, catkin_skip_building_tests=False, mixin_files=None, mixin=None, verb_parser=<colcon_mixin.mixin.mixin_argument.MixinArgumentDecorator object at 0xffffa2c57040>, verb_extension=<colcon_core.verb.build.BuildVerb object at 0xffffa2dc4070>, main=<bound method BuildVerb.main of <colcon_core.verb.build.BuildVerb object at 0xffffa2dc4070>>, mixin_verb=('build',))
+[1.096s] Level 1:colcon.colcon_core.package_discovery:discover_packages(colcon_meta) check parameters
+[1.097s] Level 1:colcon.colcon_core.package_discovery:discover_packages(recursive) check parameters
+[1.097s] Level 1:colcon.colcon_core.package_discovery:discover_packages(ignore) check parameters
+[1.097s] Level 1:colcon.colcon_core.package_discovery:discover_packages(path) check parameters
+[1.097s] Level 1:colcon.colcon_core.package_discovery:discover_packages(colcon_meta) discover
+[1.097s] Level 1:colcon.colcon_core.package_discovery:discover_packages(recursive) discover
+[1.098s] INFO:colcon.colcon_core.package_discovery:Crawling recursively for packages in '/home/ubuntu/slam_project/agv2_ws'
+[1.098s] Level 1:colcon.colcon_core.package_identification:_identify(.) by extensions ['ignore', 'ignore_ament_install']
+[1.098s] Level 1:colcon.colcon_core.package_identification:_identify(.) by extension 'ignore'
+[1.099s] Level 1:colcon.colcon_core.package_identification:_identify(.) by extension 'ignore_ament_install'
+[1.099s] Level 1:colcon.colcon_core.package_identification:_identify(.) by extensions ['colcon_pkg']
+[1.099s] Level 1:colcon.colcon_core.package_identification:_identify(.) by extension 'colcon_pkg'
+[1.099s] Level 1:colcon.colcon_core.package_identification:_identify(.) by extensions ['colcon_meta']
+[1.099s] Level 1:colcon.colcon_core.package_identification:_identify(.) by extension 'colcon_meta'
+[1.099s] Level 1:colcon.colcon_core.package_identification:_identify(.) by extensions ['ros']
+[1.099s] Level 1:colcon.colcon_core.package_identification:_identify(.) by extension 'ros'
+[1.144s] Level 1:colcon.colcon_core.package_identification:_identify(.) by extensions ['cmake', 'python']
+[1.144s] Level 1:colcon.colcon_core.package_identification:_identify(.) by extension 'cmake'
+[1.144s] Level 1:colcon.colcon_core.package_identification:_identify(.) by extension 'python'
+[1.144s] Level 1:colcon.colcon_core.package_identification:_identify(.) by extensions ['python_setup_py']
+[1.144s] Level 1:colcon.colcon_core.package_identification:_identify(.) by extension 'python_setup_py'
+[1.145s] Level 1:colcon.colcon_core.package_identification:_identify(build) by extensions ['ignore', 'ignore_ament_install']
+[1.145s] Level 1:colcon.colcon_core.package_identification:_identify(build) by extension 'ignore'
+[1.146s] Level 1:colcon.colcon_core.package_identification:_identify(build) ignored
+[1.146s] Level 1:colcon.colcon_core.package_identification:_identify(install) by extensions ['ignore', 'ignore_ament_install']
+[1.147s] Level 1:colcon.colcon_core.package_identification:_identify(install) by extension 'ignore'
+[1.147s] Level 1:colcon.colcon_core.package_identification:_identify(install) ignored
+[1.147s] Level 1:colcon.colcon_core.package_identification:_identify(log) by extensions ['ignore', 'ignore_ament_install']
+[1.147s] Level 1:colcon.colcon_core.package_identification:_identify(log) by extension 'ignore'
+[1.148s] Level 1:colcon.colcon_core.package_identification:_identify(log) ignored
+[1.148s] Level 1:colcon.colcon_core.package_identification:_identify(src) by extensions ['ignore', 'ignore_ament_install']
+[1.148s] Level 1:colcon.colcon_core.package_identification:_identify(src) by extension 'ignore'
+[1.148s] Level 1:colcon.colcon_core.package_identification:_identify(src) by extension 'ignore_ament_install'
+[1.149s] Level 1:colcon.colcon_core.package_identification:_identify(src) by extensions ['colcon_pkg']
+[1.149s] Level 1:colcon.colcon_core.package_identification:_identify(src) by extension 'colcon_pkg'
+[1.149s] Level 1:colcon.colcon_core.package_identification:_identify(src) by extensions ['colcon_meta']
+[1.149s] Level 1:colcon.colcon_core.package_identification:_identify(src) by extension 'colcon_meta'
+[1.149s] Level 1:colcon.colcon_core.package_identification:_identify(src) by extensions ['ros']
+[1.149s] Level 1:colcon.colcon_core.package_identification:_identify(src) by extension 'ros'
+[1.150s] Level 1:colcon.colcon_core.package_identification:_identify(src) by extensions ['cmake', 'python']
+[1.150s] Level 1:colcon.colcon_core.package_identification:_identify(src) by extension 'cmake'
+[1.150s] Level 1:colcon.colcon_core.package_identification:_identify(src) by extension 'python'
+[1.150s] Level 1:colcon.colcon_core.package_identification:_identify(src) by extensions ['python_setup_py']
+[1.150s] Level 1:colcon.colcon_core.package_identification:_identify(src) by extension 'python_setup_py'
+[1.151s] Level 1:colcon.colcon_core.package_identification:_identify(src/agv_bringup) by extensions ['ignore', 'ignore_ament_install']
+[1.151s] Level 1:colcon.colcon_core.package_identification:_identify(src/agv_bringup) by extension 'ignore'
+[1.151s] Level 1:colcon.colcon_core.package_identification:_identify(src/agv_bringup) by extension 'ignore_ament_install'
+[1.151s] Level 1:colcon.colcon_core.package_identification:_identify(src/agv_bringup) by extensions ['colcon_pkg']
+[1.152s] Level 1:colcon.colcon_core.package_identification:_identify(src/agv_bringup) by extension 'colcon_pkg'
+[1.152s] Level 1:colcon.colcon_core.package_identification:_identify(src/agv_bringup) by extensions ['colcon_meta']
+[1.152s] Level 1:colcon.colcon_core.package_identification:_identify(src/agv_bringup) by extension 'colcon_meta'
+[1.152s] Level 1:colcon.colcon_core.package_identification:_identify(src/agv_bringup) by extensions ['ros']
+[1.152s] Level 1:colcon.colcon_core.package_identification:_identify(src/agv_bringup) by extension 'ros'
+[1.166s] DEBUG:colcon.colcon_core.package_identification:Package 'src/agv_bringup' with type 'ros.ament_cmake' and name 'agv_bringup'
+[1.167s] Level 1:colcon.colcon_core.package_identification:_identify(src/myagv_odometry) by extensions ['ignore', 'ignore_ament_install']
+[1.167s] Level 1:colcon.colcon_core.package_identification:_identify(src/myagv_odometry) by extension 'ignore'
+[1.167s] Level 1:colcon.colcon_core.package_identification:_identify(src/myagv_odometry) by extension 'ignore_ament_install'
+[1.167s] Level 1:colcon.colcon_core.package_identification:_identify(src/myagv_odometry) by extensions ['colcon_pkg']
+[1.168s] Level 1:colcon.colcon_core.package_identification:_identify(src/myagv_odometry) by extension 'colcon_pkg'
+[1.168s] Level 1:colcon.colcon_core.package_identification:_identify(src/myagv_odometry) by extensions ['colcon_meta']
+[1.168s] Level 1:colcon.colcon_core.package_identification:_identify(src/myagv_odometry) by extension 'colcon_meta'
+[1.168s] Level 1:colcon.colcon_core.package_identification:_identify(src/myagv_odometry) by extensions ['ros']
+[1.168s] Level 1:colcon.colcon_core.package_identification:_identify(src/myagv_odometry) by extension 'ros'
+[1.172s] DEBUG:colcon.colcon_core.package_identification:Package 'src/myagv_odometry' with type 'ros.ament_cmake' and name 'myagv_odometry'
+[1.173s] Level 1:colcon.colcon_core.package_identification:_identify(src/myagv_teleop) by extensions ['ignore', 'ignore_ament_install']
+[1.173s] Level 1:colcon.colcon_core.package_identification:_identify(src/myagv_teleop) by extension 'ignore'
+[1.173s] Level 1:colcon.colcon_core.package_identification:_identify(src/myagv_teleop) by extension 'ignore_ament_install'
+[1.173s] Level 1:colcon.colcon_core.package_identification:_identify(src/myagv_teleop) by extensions ['colcon_pkg']
+[1.174s] Level 1:colcon.colcon_core.package_identification:_identify(src/myagv_teleop) by extension 'colcon_pkg'
+[1.174s] Level 1:colcon.colcon_core.package_identification:_identify(src/myagv_teleop) by extensions ['colcon_meta']
+[1.174s] Level 1:colcon.colcon_core.package_identification:_identify(src/myagv_teleop) by extension 'colcon_meta'
+[1.174s] Level 1:colcon.colcon_core.package_identification:_identify(src/myagv_teleop) by extensions ['ros']
+[1.174s] Level 1:colcon.colcon_core.package_identification:_identify(src/myagv_teleop) by extension 'ros'
+[1.176s] DEBUG:colcon.colcon_core.package_identification:Package 'src/myagv_teleop' with type 'ros.ament_python' and name 'myagv_teleop'
+[1.177s] Level 1:colcon.colcon_core.package_identification:_identify(src/ydlidar_ros2_driver) by extensions ['ignore', 'ignore_ament_install']
+[1.178s] Level 1:colcon.colcon_core.package_identification:_identify(src/ydlidar_ros2_driver) by extension 'ignore'
+[1.178s] Level 1:colcon.colcon_core.package_identification:_identify(src/ydlidar_ros2_driver) by extension 'ignore_ament_install'
+[1.178s] Level 1:colcon.colcon_core.package_identification:_identify(src/ydlidar_ros2_driver) by extensions ['colcon_pkg']
+[1.178s] Level 1:colcon.colcon_core.package_identification:_identify(src/ydlidar_ros2_driver) by extension 'colcon_pkg'
+[1.178s] Level 1:colcon.colcon_core.package_identification:_identify(src/ydlidar_ros2_driver) by extensions ['colcon_meta']
+[1.178s] Level 1:colcon.colcon_core.package_identification:_identify(src/ydlidar_ros2_driver) by extension 'colcon_meta'
+[1.179s] Level 1:colcon.colcon_core.package_identification:_identify(src/ydlidar_ros2_driver) by extensions ['ros']
+[1.179s] Level 1:colcon.colcon_core.package_identification:_identify(src/ydlidar_ros2_driver) by extension 'ros'
+[1.181s] DEBUG:colcon.colcon_core.package_identification:Package 'src/ydlidar_ros2_driver' with type 'ros.ament_cmake' and name 'ydlidar_ros2_driver'
+[1.182s] Level 1:colcon.colcon_core.package_discovery:discover_packages(recursive) using defaults
+[1.182s] Level 1:colcon.colcon_core.package_discovery:discover_packages(ignore) discover
+[1.182s] Level 1:colcon.colcon_core.package_discovery:discover_packages(ignore) using defaults
+[1.182s] Level 1:colcon.colcon_core.package_discovery:discover_packages(path) discover
+[1.182s] Level 1:colcon.colcon_core.package_discovery:discover_packages(path) using defaults
+[1.258s] Level 1:colcon.colcon_core.package_discovery:discover_packages(prefix_path) check parameters
+[1.258s] Level 1:colcon.colcon_core.package_discovery:discover_packages(prefix_path) discover
+[1.269s] DEBUG:colcon.colcon_installed_package_information.package_discovery:Found 198 installed packages in /opt/ros/humble
+[1.274s] Level 1:colcon.colcon_core.package_discovery:discover_packages(prefix_path) using defaults
+[1.427s] Level 5:colcon.colcon_core.verb:set package 'agv_bringup' build argument 'cmake_args' from command line to 'None'
+[1.427s] Level 5:colcon.colcon_core.verb:set package 'agv_bringup' build argument 'cmake_target' from command line to 'None'
+[1.427s] Level 5:colcon.colcon_core.verb:set package 'agv_bringup' build argument 'cmake_target_skip_unavailable' from command line to 'False'
+[1.427s] Level 5:colcon.colcon_core.verb:set package 'agv_bringup' build argument 'cmake_clean_cache' from command line to 'False'
+[1.427s] Level 5:colcon.colcon_core.verb:set package 'agv_bringup' build argument 'cmake_clean_first' from command line to 'False'
+[1.428s] Level 5:colcon.colcon_core.verb:set package 'agv_bringup' build argument 'cmake_force_configure' from command line to 'False'
+[1.428s] Level 5:colcon.colcon_core.verb:set package 'agv_bringup' build argument 'ament_cmake_args' from command line to 'None'
+[1.428s] Level 5:colcon.colcon_core.verb:set package 'agv_bringup' build argument 'catkin_cmake_args' from command line to 'None'
+[1.428s] Level 5:colcon.colcon_core.verb:set package 'agv_bringup' build argument 'catkin_skip_building_tests' from command line to 'False'
+[1.428s] DEBUG:colcon.colcon_core.verb:Building package 'agv_bringup' with the following arguments: {'ament_cmake_args': None, 'build_base': '/home/ubuntu/slam_project/agv2_ws/build/agv_bringup', 'catkin_cmake_args': None, 'catkin_skip_building_tests': False, 'cmake_args': None, 'cmake_clean_cache': False, 'cmake_clean_first': False, 'cmake_force_configure': False, 'cmake_target': None, 'cmake_target_skip_unavailable': False, 'install_base': '/home/ubuntu/slam_project/agv2_ws/install/agv_bringup', 'merge_install': False, 'path': '/home/ubuntu/slam_project/agv2_ws/src/agv_bringup', 'symlink_install': True, 'test_result_base': None}
+[1.429s] Level 5:colcon.colcon_core.verb:set package 'myagv_odometry' build argument 'cmake_args' from command line to 'None'
+[1.430s] Level 5:colcon.colcon_core.verb:set package 'myagv_odometry' build argument 'cmake_target' from command line to 'None'
+[1.430s] Level 5:colcon.colcon_core.verb:set package 'myagv_odometry' build argument 'cmake_target_skip_unavailable' from command line to 'False'
+[1.430s] Level 5:colcon.colcon_core.verb:set package 'myagv_odometry' build argument 'cmake_clean_cache' from command line to 'False'
+[1.430s] Level 5:colcon.colcon_core.verb:set package 'myagv_odometry' build argument 'cmake_clean_first' from command line to 'False'
+[1.430s] Level 5:colcon.colcon_core.verb:set package 'myagv_odometry' build argument 'cmake_force_configure' from command line to 'False'
+[1.430s] Level 5:colcon.colcon_core.verb:set package 'myagv_odometry' build argument 'ament_cmake_args' from command line to 'None'
+[1.430s] Level 5:colcon.colcon_core.verb:set package 'myagv_odometry' build argument 'catkin_cmake_args' from command line to 'None'
+[1.430s] Level 5:colcon.colcon_core.verb:set package 'myagv_odometry' build argument 'catkin_skip_building_tests' from command line to 'False'
+[1.430s] DEBUG:colcon.colcon_core.verb:Building package 'myagv_odometry' with the following arguments: {'ament_cmake_args': None, 'build_base': '/home/ubuntu/slam_project/agv2_ws/build/myagv_odometry', 'catkin_cmake_args': None, 'catkin_skip_building_tests': False, 'cmake_args': None, 'cmake_clean_cache': False, 'cmake_clean_first': False, 'cmake_force_configure': False, 'cmake_target': None, 'cmake_target_skip_unavailable': False, 'install_base': '/home/ubuntu/slam_project/agv2_ws/install/myagv_odometry', 'merge_install': False, 'path': '/home/ubuntu/slam_project/agv2_ws/src/myagv_odometry', 'symlink_install': True, 'test_result_base': None}
+[1.432s] Level 5:colcon.colcon_core.verb:set package 'myagv_teleop' build argument 'cmake_args' from command line to 'None'
+[1.432s] Level 5:colcon.colcon_core.verb:set package 'myagv_teleop' build argument 'cmake_target' from command line to 'None'
+[1.432s] Level 5:colcon.colcon_core.verb:set package 'myagv_teleop' build argument 'cmake_target_skip_unavailable' from command line to 'False'
+[1.432s] Level 5:colcon.colcon_core.verb:set package 'myagv_teleop' build argument 'cmake_clean_cache' from command line to 'False'
+[1.432s] Level 5:colcon.colcon_core.verb:set package 'myagv_teleop' build argument 'cmake_clean_first' from command line to 'False'
+[1.432s] Level 5:colcon.colcon_core.verb:set package 'myagv_teleop' build argument 'cmake_force_configure' from command line to 'False'
+[1.432s] Level 5:colcon.colcon_core.verb:set package 'myagv_teleop' build argument 'ament_cmake_args' from command line to 'None'
+[1.432s] Level 5:colcon.colcon_core.verb:set package 'myagv_teleop' build argument 'catkin_cmake_args' from command line to 'None'
+[1.433s] Level 5:colcon.colcon_core.verb:set package 'myagv_teleop' build argument 'catkin_skip_building_tests' from command line to 'False'
+[1.433s] DEBUG:colcon.colcon_core.verb:Building package 'myagv_teleop' with the following arguments: {'ament_cmake_args': None, 'build_base': '/home/ubuntu/slam_project/agv2_ws/build/myagv_teleop', 'catkin_cmake_args': None, 'catkin_skip_building_tests': False, 'cmake_args': None, 'cmake_clean_cache': False, 'cmake_clean_first': False, 'cmake_force_configure': False, 'cmake_target': None, 'cmake_target_skip_unavailable': False, 'install_base': '/home/ubuntu/slam_project/agv2_ws/install/myagv_teleop', 'merge_install': False, 'path': '/home/ubuntu/slam_project/agv2_ws/src/myagv_teleop', 'symlink_install': True, 'test_result_base': None}
+[1.434s] Level 5:colcon.colcon_core.verb:set package 'ydlidar_ros2_driver' build argument 'cmake_args' from command line to 'None'
+[1.434s] Level 5:colcon.colcon_core.verb:set package 'ydlidar_ros2_driver' build argument 'cmake_target' from command line to 'None'
+[1.434s] Level 5:colcon.colcon_core.verb:set package 'ydlidar_ros2_driver' build argument 'cmake_target_skip_unavailable' from command line to 'False'
+[1.435s] Level 5:colcon.colcon_core.verb:set package 'ydlidar_ros2_driver' build argument 'cmake_clean_cache' from command line to 'False'
+[1.435s] Level 5:colcon.colcon_core.verb:set package 'ydlidar_ros2_driver' build argument 'cmake_clean_first' from command line to 'False'
+[1.435s] Level 5:colcon.colcon_core.verb:set package 'ydlidar_ros2_driver' build argument 'cmake_force_configure' from command line to 'False'
+[1.435s] Level 5:colcon.colcon_core.verb:set package 'ydlidar_ros2_driver' build argument 'ament_cmake_args' from command line to 'None'
+[1.435s] Level 5:colcon.colcon_core.verb:set package 'ydlidar_ros2_driver' build argument 'catkin_cmake_args' from command line to 'None'
+[1.435s] Level 5:colcon.colcon_core.verb:set package 'ydlidar_ros2_driver' build argument 'catkin_skip_building_tests' from command line to 'False'
+[1.435s] DEBUG:colcon.colcon_core.verb:Building package 'ydlidar_ros2_driver' with the following arguments: {'ament_cmake_args': None, 'build_base': '/home/ubuntu/slam_project/agv2_ws/build/ydlidar_ros2_driver', 'catkin_cmake_args': None, 'catkin_skip_building_tests': False, 'cmake_args': None, 'cmake_clean_cache': False, 'cmake_clean_first': False, 'cmake_force_configure': False, 'cmake_target': None, 'cmake_target_skip_unavailable': False, 'install_base': '/home/ubuntu/slam_project/agv2_ws/install/ydlidar_ros2_driver', 'merge_install': False, 'path': '/home/ubuntu/slam_project/agv2_ws/src/ydlidar_ros2_driver', 'symlink_install': True, 'test_result_base': None}
+[1.436s] INFO:colcon.colcon_core.executor:Executing jobs using 'parallel' executor
+[1.439s] DEBUG:colcon.colcon_parallel_executor.executor.parallel:run_until_complete
+[1.440s] INFO:colcon.colcon_ros.task.ament_cmake.build:Building ROS package in '/home/ubuntu/slam_project/agv2_ws/src/agv_bringup' with build type 'ament_cmake'
+[1.440s] INFO:colcon.colcon_cmake.task.cmake.build:Building CMake package in '/home/ubuntu/slam_project/agv2_ws/src/agv_bringup'
+[1.450s] INFO:colcon.colcon_core.plugin_system:Skipping extension 'colcon_core.shell.bat': Not used on non-Windows systems
+[1.451s] INFO:colcon.colcon_core.shell:Skip shell extension 'powershell' for command environment: Not usable outside of PowerShell
+[1.452s] DEBUG:colcon.colcon_core.shell:Skip shell extension 'dsv' for command environment
+[1.465s] INFO:colcon.colcon_ros.task.ament_cmake.build:Building ROS package in '/home/ubuntu/slam_project/agv2_ws/src/myagv_odometry' with build type 'ament_cmake'
+[1.465s] INFO:colcon.colcon_cmake.task.cmake.build:Building CMake package in '/home/ubuntu/slam_project/agv2_ws/src/myagv_odometry'
+[1.467s] INFO:colcon.colcon_core.shell:Skip shell extension 'powershell' for command environment: Not usable outside of PowerShell
+[1.467s] DEBUG:colcon.colcon_core.shell:Skip shell extension 'dsv' for command environment
+[1.479s] INFO:colcon.colcon_ros.task.ament_python.build:Building ROS package in '/home/ubuntu/slam_project/agv2_ws/src/myagv_teleop' with build type 'ament_python'
+[1.480s] Level 1:colcon.colcon_core.shell:create_environment_hook('myagv_teleop', 'ament_prefix_path')
+[1.481s] INFO:colcon.colcon_core.shell:Creating environment hook '/home/ubuntu/slam_project/agv2_ws/install/myagv_teleop/share/myagv_teleop/hook/ament_prefix_path.ps1'
+[1.485s] INFO:colcon.colcon_core.shell:Creating environment descriptor '/home/ubuntu/slam_project/agv2_ws/install/myagv_teleop/share/myagv_teleop/hook/ament_prefix_path.dsv'
+[1.487s] INFO:colcon.colcon_core.shell:Creating environment hook '/home/ubuntu/slam_project/agv2_ws/install/myagv_teleop/share/myagv_teleop/hook/ament_prefix_path.sh'
+[1.491s] INFO:colcon.colcon_core.shell:Skip shell extension 'powershell' for command environment: Not usable outside of PowerShell
+[1.492s] DEBUG:colcon.colcon_core.shell:Skip shell extension 'dsv' for command environment
+[1.503s] INFO:colcon.colcon_ros.task.ament_cmake.build:Building ROS package in '/home/ubuntu/slam_project/agv2_ws/src/ydlidar_ros2_driver' with build type 'ament_cmake'
+[1.504s] INFO:colcon.colcon_cmake.task.cmake.build:Building CMake package in '/home/ubuntu/slam_project/agv2_ws/src/ydlidar_ros2_driver'
+[1.505s] INFO:colcon.colcon_core.shell:Skip shell extension 'powershell' for command environment: Not usable outside of PowerShell
+[1.506s] DEBUG:colcon.colcon_core.shell:Skip shell extension 'dsv' for command environment
+[1.541s] DEBUG:colcon.colcon_core.event_handler.log_command:Invoking command in '/home/ubuntu/slam_project/agv2_ws/build/agv_bringup': CMAKE_PREFIX_PATH=/opt/ros/humble /usr/bin/cmake --build /home/ubuntu/slam_project/agv2_ws/build/agv_bringup -- -j4 -l4
+[1.561s] DEBUG:colcon.colcon_core.event_handler.log_command:Invoking command in '/home/ubuntu/slam_project/agv2_ws/build/myagv_odometry': CMAKE_PREFIX_PATH=/opt/ros/humble /usr/bin/cmake --build /home/ubuntu/slam_project/agv2_ws/build/myagv_odometry -- -j4 -l4
+[2.610s] INFO:colcon.colcon_core.task.python.build:Building Python package in '/home/ubuntu/slam_project/agv2_ws/src/myagv_teleop'
+[2.611s] INFO:colcon.colcon_core.shell:Skip shell extension 'powershell' for command environment: Not usable outside of PowerShell
+[2.611s] DEBUG:colcon.colcon_core.shell:Skip shell extension 'dsv' for command environment
+[2.635s] DEBUG:colcon.colcon_core.event_handler.log_command:Invoked command in '/home/ubuntu/slam_project/agv2_ws/build/myagv_odometry' returned '0': CMAKE_PREFIX_PATH=/opt/ros/humble /usr/bin/cmake --build /home/ubuntu/slam_project/agv2_ws/build/myagv_odometry -- -j4 -l4
+[2.675s] DEBUG:colcon.colcon_core.event_handler.log_command:Invoking command in '/home/ubuntu/slam_project/agv2_ws/build/myagv_odometry': CMAKE_PREFIX_PATH=/opt/ros/humble /usr/bin/cmake --install /home/ubuntu/slam_project/agv2_ws/build/myagv_odometry
+[2.676s] DEBUG:colcon.colcon_core.event_handler.log_command:Invoked command in '/home/ubuntu/slam_project/agv2_ws/build/agv_bringup' returned '0': CMAKE_PREFIX_PATH=/opt/ros/humble /usr/bin/cmake --build /home/ubuntu/slam_project/agv2_ws/build/agv_bringup -- -j4 -l4
+[2.687s] DEBUG:colcon.colcon_core.event_handler.log_command:Invoking command in '/home/ubuntu/slam_project/agv2_ws/build/agv_bringup': CMAKE_PREFIX_PATH=/opt/ros/humble /usr/bin/cmake --install /home/ubuntu/slam_project/agv2_ws/build/agv_bringup
+[2.705s] DEBUG:colcon.colcon_core.event_handler.log_command:Invoking command in '/home/ubuntu/slam_project/agv2_ws/build/ydlidar_ros2_driver': CMAKE_PREFIX_PATH=/opt/ros/humble /usr/bin/cmake --build /home/ubuntu/slam_project/agv2_ws/build/ydlidar_ros2_driver -- -j4 -l4
+[2.817s] Level 1:colcon.colcon_core.environment:create_environment_scripts_only(myagv_odometry)
+[2.821s] DEBUG:colcon.colcon_core.event_handler.log_command:Invoked command in '/home/ubuntu/slam_project/agv2_ws/build/myagv_odometry' returned '0': CMAKE_PREFIX_PATH=/opt/ros/humble /usr/bin/cmake --install /home/ubuntu/slam_project/agv2_ws/build/myagv_odometry
+[2.836s] Level 1:colcon.colcon_core.environment:checking '/home/ubuntu/slam_project/agv2_ws/install/myagv_odometry' for CMake module files
+[2.840s] Level 1:colcon.colcon_core.environment:checking '/home/ubuntu/slam_project/agv2_ws/install/myagv_odometry' for CMake config files
+[2.842s] Level 1:colcon.colcon_core.shell:create_environment_hook('myagv_odometry', 'cmake_prefix_path')
+[2.843s] INFO:colcon.colcon_core.shell:Creating environment hook '/home/ubuntu/slam_project/agv2_ws/install/myagv_odometry/share/myagv_odometry/hook/cmake_prefix_path.ps1'
+[2.846s] INFO:colcon.colcon_core.shell:Creating environment descriptor '/home/ubuntu/slam_project/agv2_ws/install/myagv_odometry/share/myagv_odometry/hook/cmake_prefix_path.dsv'
+[2.849s] INFO:colcon.colcon_core.shell:Creating environment hook '/home/ubuntu/slam_project/agv2_ws/install/myagv_odometry/share/myagv_odometry/hook/cmake_prefix_path.sh'
+[2.854s] Level 1:colcon.colcon_core.environment:checking '/home/ubuntu/slam_project/agv2_ws/install/myagv_odometry/lib'
+[2.855s] Level 1:colcon.colcon_core.environment:checking '/home/ubuntu/slam_project/agv2_ws/install/myagv_odometry/bin'
+[2.855s] Level 1:colcon.colcon_core.environment:checking '/home/ubuntu/slam_project/agv2_ws/install/myagv_odometry/lib/pkgconfig/myagv_odometry.pc'
+[2.856s] Level 1:colcon.colcon_core.environment:checking '/home/ubuntu/slam_project/agv2_ws/install/myagv_odometry/lib/python3.10/site-packages'
+[2.858s] Level 1:colcon.colcon_core.environment:checking '/home/ubuntu/slam_project/agv2_ws/install/myagv_odometry/bin'
+[2.860s] INFO:colcon.colcon_core.shell:Creating package script '/home/ubuntu/slam_project/agv2_ws/install/myagv_odometry/share/myagv_odometry/package.ps1'
+[2.866s] INFO:colcon.colcon_core.shell:Creating package descriptor '/home/ubuntu/slam_project/agv2_ws/install/myagv_odometry/share/myagv_odometry/package.dsv'
+[2.869s] INFO:colcon.colcon_core.shell:Creating package script '/home/ubuntu/slam_project/agv2_ws/install/myagv_odometry/share/myagv_odometry/package.sh'
+[2.873s] INFO:colcon.colcon_core.shell:Creating package script '/home/ubuntu/slam_project/agv2_ws/install/myagv_odometry/share/myagv_odometry/package.bash'
+[2.878s] INFO:colcon.colcon_core.shell:Creating package script '/home/ubuntu/slam_project/agv2_ws/install/myagv_odometry/share/myagv_odometry/package.zsh'
+[2.882s] Level 1:colcon.colcon_core.environment:create_file_with_runtime_dependencies(/home/ubuntu/slam_project/agv2_ws/install/myagv_odometry/share/colcon-core/packages/myagv_odometry)
+[2.886s] Level 1:colcon.colcon_core.environment:create_environment_scripts_only(myagv_odometry)
+[2.887s] Level 1:colcon.colcon_core.environment:checking '/home/ubuntu/slam_project/agv2_ws/install/myagv_odometry' for CMake module files
+[2.891s] Level 1:colcon.colcon_core.environment:checking '/home/ubuntu/slam_project/agv2_ws/install/myagv_odometry' for CMake config files
+[2.893s] Level 1:colcon.colcon_core.shell:create_environment_hook('myagv_odometry', 'cmake_prefix_path')
+[2.894s] INFO:colcon.colcon_core.shell:Creating environment hook '/home/ubuntu/slam_project/agv2_ws/install/myagv_odometry/share/myagv_odometry/hook/cmake_prefix_path.ps1'
+[2.898s] INFO:colcon.colcon_core.shell:Creating environment descriptor '/home/ubuntu/slam_project/agv2_ws/install/myagv_odometry/share/myagv_odometry/hook/cmake_prefix_path.dsv'
+[2.901s] INFO:colcon.colcon_core.shell:Creating environment hook '/home/ubuntu/slam_project/agv2_ws/install/myagv_odometry/share/myagv_odometry/hook/cmake_prefix_path.sh'
+[2.905s] Level 1:colcon.colcon_core.environment:checking '/home/ubuntu/slam_project/agv2_ws/install/myagv_odometry/lib'
+[2.906s] Level 1:colcon.colcon_core.environment:checking '/home/ubuntu/slam_project/agv2_ws/install/myagv_odometry/bin'
+[2.907s] Level 1:colcon.colcon_core.environment:checking '/home/ubuntu/slam_project/agv2_ws/install/myagv_odometry/lib/pkgconfig/myagv_odometry.pc'
+[2.909s] Level 1:colcon.colcon_core.environment:checking '/home/ubuntu/slam_project/agv2_ws/install/myagv_odometry/lib/python3.10/site-packages'
+[2.911s] Level 1:colcon.colcon_core.environment:checking '/home/ubuntu/slam_project/agv2_ws/install/myagv_odometry/bin'
+[2.913s] INFO:colcon.colcon_core.shell:Creating package script '/home/ubuntu/slam_project/agv2_ws/install/myagv_odometry/share/myagv_odometry/package.ps1'
+[2.919s] INFO:colcon.colcon_core.shell:Creating package descriptor '/home/ubuntu/slam_project/agv2_ws/install/myagv_odometry/share/myagv_odometry/package.dsv'
+[2.923s] INFO:colcon.colcon_core.shell:Creating package script '/home/ubuntu/slam_project/agv2_ws/install/myagv_odometry/share/myagv_odometry/package.sh'
+[2.928s] INFO:colcon.colcon_core.shell:Creating package script '/home/ubuntu/slam_project/agv2_ws/install/myagv_odometry/share/myagv_odometry/package.bash'
+[2.931s] INFO:colcon.colcon_core.shell:Creating package script '/home/ubuntu/slam_project/agv2_ws/install/myagv_odometry/share/myagv_odometry/package.zsh'
+[2.935s] Level 1:colcon.colcon_core.environment:create_file_with_runtime_dependencies(/home/ubuntu/slam_project/agv2_ws/install/myagv_odometry/share/colcon-core/packages/myagv_odometry)
+[2.941s] Level 1:colcon.colcon_core.environment:create_environment_scripts_only(agv_bringup)
+[2.942s] DEBUG:colcon.colcon_core.event_handler.log_command:Invoked command in '/home/ubuntu/slam_project/agv2_ws/build/agv_bringup' returned '0': CMAKE_PREFIX_PATH=/opt/ros/humble /usr/bin/cmake --install /home/ubuntu/slam_project/agv2_ws/build/agv_bringup
+[2.944s] Level 1:colcon.colcon_core.environment:checking '/home/ubuntu/slam_project/agv2_ws/install/agv_bringup' for CMake module files
+[2.947s] Level 1:colcon.colcon_core.environment:checking '/home/ubuntu/slam_project/agv2_ws/install/agv_bringup' for CMake config files
+[2.949s] Level 1:colcon.colcon_core.shell:create_environment_hook('agv_bringup', 'cmake_prefix_path')
+[2.950s] INFO:colcon.colcon_core.shell:Creating environment hook '/home/ubuntu/slam_project/agv2_ws/install/agv_bringup/share/agv_bringup/hook/cmake_prefix_path.ps1'
+[2.953s] INFO:colcon.colcon_core.shell:Creating environment descriptor '/home/ubuntu/slam_project/agv2_ws/install/agv_bringup/share/agv_bringup/hook/cmake_prefix_path.dsv'
+[2.958s] INFO:colcon.colcon_core.shell:Creating environment hook '/home/ubuntu/slam_project/agv2_ws/install/agv_bringup/share/agv_bringup/hook/cmake_prefix_path.sh'
+[2.966s] Level 1:colcon.colcon_core.environment:checking '/home/ubuntu/slam_project/agv2_ws/install/agv_bringup/bin'
+[2.967s] Level 1:colcon.colcon_core.environment:checking '/home/ubuntu/slam_project/agv2_ws/install/agv_bringup/lib/pkgconfig/agv_bringup.pc'
+[2.968s] Level 1:colcon.colcon_core.environment:checking '/home/ubuntu/slam_project/agv2_ws/install/agv_bringup/lib/python3.10/site-packages'
+[2.971s] Level 1:colcon.colcon_core.environment:checking '/home/ubuntu/slam_project/agv2_ws/install/agv_bringup/bin'
+[2.973s] INFO:colcon.colcon_core.shell:Creating package script '/home/ubuntu/slam_project/agv2_ws/install/agv_bringup/share/agv_bringup/package.ps1'
+[2.977s] INFO:colcon.colcon_core.shell:Creating package descriptor '/home/ubuntu/slam_project/agv2_ws/install/agv_bringup/share/agv_bringup/package.dsv'
+[2.980s] INFO:colcon.colcon_core.shell:Creating package script '/home/ubuntu/slam_project/agv2_ws/install/agv_bringup/share/agv_bringup/package.sh'
+[2.983s] INFO:colcon.colcon_core.shell:Creating package script '/home/ubuntu/slam_project/agv2_ws/install/agv_bringup/share/agv_bringup/package.bash'
+[2.985s] INFO:colcon.colcon_core.shell:Creating package script '/home/ubuntu/slam_project/agv2_ws/install/agv_bringup/share/agv_bringup/package.zsh'
+[2.987s] Level 1:colcon.colcon_core.environment:create_file_with_runtime_dependencies(/home/ubuntu/slam_project/agv2_ws/install/agv_bringup/share/colcon-core/packages/agv_bringup)
+[2.991s] Level 1:colcon.colcon_core.environment:create_environment_scripts_only(agv_bringup)
+[2.992s] Level 1:colcon.colcon_core.environment:checking '/home/ubuntu/slam_project/agv2_ws/install/agv_bringup' for CMake module files
+[2.996s] Level 1:colcon.colcon_core.environment:checking '/home/ubuntu/slam_project/agv2_ws/install/agv_bringup' for CMake config files
+[2.998s] Level 1:colcon.colcon_core.shell:create_environment_hook('agv_bringup', 'cmake_prefix_path')
+[2.999s] INFO:colcon.colcon_core.shell:Creating environment hook '/home/ubuntu/slam_project/agv2_ws/install/agv_bringup/share/agv_bringup/hook/cmake_prefix_path.ps1'
+[3.002s] INFO:colcon.colcon_core.shell:Creating environment descriptor '/home/ubuntu/slam_project/agv2_ws/install/agv_bringup/share/agv_bringup/hook/cmake_prefix_path.dsv'
+[3.004s] INFO:colcon.colcon_core.shell:Creating environment hook '/home/ubuntu/slam_project/agv2_ws/install/agv_bringup/share/agv_bringup/hook/cmake_prefix_path.sh'
+[3.008s] Level 1:colcon.colcon_core.environment:checking '/home/ubuntu/slam_project/agv2_ws/install/agv_bringup/bin'
+[3.009s] Level 1:colcon.colcon_core.environment:checking '/home/ubuntu/slam_project/agv2_ws/install/agv_bringup/lib/pkgconfig/agv_bringup.pc'
+[3.010s] Level 1:colcon.colcon_core.environment:checking '/home/ubuntu/slam_project/agv2_ws/install/agv_bringup/lib/python3.10/site-packages'
+[3.013s] Level 1:colcon.colcon_core.environment:checking '/home/ubuntu/slam_project/agv2_ws/install/agv_bringup/bin'
+[3.014s] INFO:colcon.colcon_core.shell:Creating package script '/home/ubuntu/slam_project/agv2_ws/install/agv_bringup/share/agv_bringup/package.ps1'
+[3.018s] INFO:colcon.colcon_core.shell:Creating package descriptor '/home/ubuntu/slam_project/agv2_ws/install/agv_bringup/share/agv_bringup/package.dsv'
+[3.022s] INFO:colcon.colcon_core.shell:Creating package script '/home/ubuntu/slam_project/agv2_ws/install/agv_bringup/share/agv_bringup/package.sh'
+[3.026s] INFO:colcon.colcon_core.shell:Creating package script '/home/ubuntu/slam_project/agv2_ws/install/agv_bringup/share/agv_bringup/package.bash'
+[3.030s] INFO:colcon.colcon_core.shell:Creating package script '/home/ubuntu/slam_project/agv2_ws/install/agv_bringup/share/agv_bringup/package.zsh'
+[3.033s] Level 1:colcon.colcon_core.environment:create_file_with_runtime_dependencies(/home/ubuntu/slam_project/agv2_ws/install/agv_bringup/share/colcon-core/packages/agv_bringup)
+[4.368s] DEBUG:colcon.colcon_core.event_handler.log_command:Invoking command in '/home/ubuntu/slam_project/agv2_ws/build/myagv_teleop': PYTHONPATH=/home/ubuntu/slam_project/agv2_ws/build/myagv_teleop/prefix_override:/usr/lib/python3/dist-packages/colcon_core/task/python/colcon_distutils_commands:/home/ubuntu/slam_project/agv2_ws/install/myagv_teleop/lib/python3.10/site-packages:${PYTHONPATH} /usr/bin/python3 -W ignore:setup.py install is deprecated -W ignore:easy_install command is deprecated setup.py develop --editable --build-directory /home/ubuntu/slam_project/agv2_ws/build/myagv_teleop/build --no-deps symlink_data
+[6.697s] Level 1:colcon.colcon_core.shell:create_environment_hook('myagv_teleop', 'pythonpath_develop')
+[6.699s] INFO:colcon.colcon_core.shell:Creating environment hook '/home/ubuntu/slam_project/agv2_ws/build/myagv_teleop/share/myagv_teleop/hook/pythonpath_develop.ps1'
+[6.700s] DEBUG:colcon.colcon_core.event_handler.log_command:Invoked command in '/home/ubuntu/slam_project/agv2_ws/build/myagv_teleop' returned '0': PYTHONPATH=/home/ubuntu/slam_project/agv2_ws/build/myagv_teleop/prefix_override:/usr/lib/python3/dist-packages/colcon_core/task/python/colcon_distutils_commands:/home/ubuntu/slam_project/agv2_ws/install/myagv_teleop/lib/python3.10/site-packages:${PYTHONPATH} /usr/bin/python3 -W ignore:setup.py install is deprecated -W ignore:easy_install command is deprecated setup.py develop --editable --build-directory /home/ubuntu/slam_project/agv2_ws/build/myagv_teleop/build --no-deps symlink_data
+[6.703s] INFO:colcon.colcon_core.shell:Creating environment descriptor '/home/ubuntu/slam_project/agv2_ws/build/myagv_teleop/share/myagv_teleop/hook/pythonpath_develop.dsv'
+[6.705s] INFO:colcon.colcon_core.shell:Creating environment hook '/home/ubuntu/slam_project/agv2_ws/build/myagv_teleop/share/myagv_teleop/hook/pythonpath_develop.sh'
+[6.709s] Level 1:colcon.colcon_core.environment:checking '/home/ubuntu/slam_project/agv2_ws/install/myagv_teleop' for CMake module files
+[6.711s] Level 1:colcon.colcon_core.environment:checking '/home/ubuntu/slam_project/agv2_ws/install/myagv_teleop' for CMake config files
+[6.715s] Level 1:colcon.colcon_core.environment:checking '/home/ubuntu/slam_project/agv2_ws/install/myagv_teleop/lib'
+[6.716s] Level 1:colcon.colcon_core.environment:checking '/home/ubuntu/slam_project/agv2_ws/install/myagv_teleop/bin'
+[6.716s] Level 1:colcon.colcon_core.environment:checking '/home/ubuntu/slam_project/agv2_ws/install/myagv_teleop/lib/pkgconfig/myagv_teleop.pc'
+[6.717s] Level 1:colcon.colcon_core.environment:checking '/home/ubuntu/slam_project/agv2_ws/install/myagv_teleop/lib/python3.10/site-packages'
+[6.718s] Level 1:colcon.colcon_core.shell:create_environment_hook('myagv_teleop', 'pythonpath')
+[6.719s] INFO:colcon.colcon_core.shell:Creating environment hook '/home/ubuntu/slam_project/agv2_ws/install/myagv_teleop/share/myagv_teleop/hook/pythonpath.ps1'
+[6.721s] INFO:colcon.colcon_core.shell:Creating environment descriptor '/home/ubuntu/slam_project/agv2_ws/install/myagv_teleop/share/myagv_teleop/hook/pythonpath.dsv'
+[6.724s] INFO:colcon.colcon_core.shell:Creating environment hook '/home/ubuntu/slam_project/agv2_ws/install/myagv_teleop/share/myagv_teleop/hook/pythonpath.sh'
+[6.728s] Level 1:colcon.colcon_core.environment:checking '/home/ubuntu/slam_project/agv2_ws/install/myagv_teleop/bin'
+[6.729s] Level 1:colcon.colcon_core.environment:create_environment_scripts_only(myagv_teleop)
+[6.730s] INFO:colcon.colcon_core.shell:Creating package script '/home/ubuntu/slam_project/agv2_ws/install/myagv_teleop/share/myagv_teleop/package.ps1'
+[6.734s] INFO:colcon.colcon_core.shell:Creating package descriptor '/home/ubuntu/slam_project/agv2_ws/install/myagv_teleop/share/myagv_teleop/package.dsv'
+[6.737s] INFO:colcon.colcon_core.shell:Creating package script '/home/ubuntu/slam_project/agv2_ws/install/myagv_teleop/share/myagv_teleop/package.sh'
+[6.740s] INFO:colcon.colcon_core.shell:Creating package script '/home/ubuntu/slam_project/agv2_ws/install/myagv_teleop/share/myagv_teleop/package.bash'
+[6.743s] INFO:colcon.colcon_core.shell:Creating package script '/home/ubuntu/slam_project/agv2_ws/install/myagv_teleop/share/myagv_teleop/package.zsh'
+[6.746s] Level 1:colcon.colcon_core.environment:create_file_with_runtime_dependencies(/home/ubuntu/slam_project/agv2_ws/install/myagv_teleop/share/colcon-core/packages/myagv_teleop)
+[28.029s] DEBUG:colcon.colcon_core.event_handler.log_command:Invoked command in '/home/ubuntu/slam_project/agv2_ws/build/ydlidar_ros2_driver' returned '0': CMAKE_PREFIX_PATH=/opt/ros/humble /usr/bin/cmake --build /home/ubuntu/slam_project/agv2_ws/build/ydlidar_ros2_driver -- -j4 -l4
+[28.040s] DEBUG:colcon.colcon_core.event_handler.log_command:Invoking command in '/home/ubuntu/slam_project/agv2_ws/build/ydlidar_ros2_driver': CMAKE_PREFIX_PATH=/opt/ros/humble /usr/bin/cmake --install /home/ubuntu/slam_project/agv2_ws/build/ydlidar_ros2_driver
+[29.258s] Level 1:colcon.colcon_core.environment:create_environment_scripts_only(ydlidar_ros2_driver)
+[29.259s] Level 1:colcon.colcon_core.environment:checking '/home/ubuntu/slam_project/agv2_ws/install/ydlidar_ros2_driver' for CMake module files
+[29.260s] DEBUG:colcon.colcon_core.event_handler.log_command:Invoked command in '/home/ubuntu/slam_project/agv2_ws/build/ydlidar_ros2_driver' returned '0': CMAKE_PREFIX_PATH=/opt/ros/humble /usr/bin/cmake --install /home/ubuntu/slam_project/agv2_ws/build/ydlidar_ros2_driver
+[29.263s] Level 1:colcon.colcon_core.environment:checking '/home/ubuntu/slam_project/agv2_ws/install/ydlidar_ros2_driver' for CMake config files
+[29.266s] Level 1:colcon.colcon_core.shell:create_environment_hook('ydlidar_ros2_driver', 'cmake_prefix_path')
+[29.267s] INFO:colcon.colcon_core.shell:Creating environment hook '/home/ubuntu/slam_project/agv2_ws/install/ydlidar_ros2_driver/share/ydlidar_ros2_driver/hook/cmake_prefix_path.ps1'
+[29.269s] INFO:colcon.colcon_core.shell:Creating environment descriptor '/home/ubuntu/slam_project/agv2_ws/install/ydlidar_ros2_driver/share/ydlidar_ros2_driver/hook/cmake_prefix_path.dsv'
+[29.271s] INFO:colcon.colcon_core.shell:Creating environment hook '/home/ubuntu/slam_project/agv2_ws/install/ydlidar_ros2_driver/share/ydlidar_ros2_driver/hook/cmake_prefix_path.sh'
+[29.274s] Level 1:colcon.colcon_core.environment:checking '/home/ubuntu/slam_project/agv2_ws/install/ydlidar_ros2_driver/lib'
+[29.274s] Level 1:colcon.colcon_core.environment:checking '/home/ubuntu/slam_project/agv2_ws/install/ydlidar_ros2_driver/bin'
+[29.274s] Level 1:colcon.colcon_core.environment:checking '/home/ubuntu/slam_project/agv2_ws/install/ydlidar_ros2_driver/lib/pkgconfig/ydlidar_ros2_driver.pc'
+[29.275s] Level 1:colcon.colcon_core.environment:checking '/home/ubuntu/slam_project/agv2_ws/install/ydlidar_ros2_driver/lib/python3.10/site-packages'
+[29.277s] Level 1:colcon.colcon_core.environment:checking '/home/ubuntu/slam_project/agv2_ws/install/ydlidar_ros2_driver/bin'
+[29.278s] INFO:colcon.colcon_core.shell:Creating package script '/home/ubuntu/slam_project/agv2_ws/install/ydlidar_ros2_driver/share/ydlidar_ros2_driver/package.ps1'
+[29.281s] INFO:colcon.colcon_core.shell:Creating package descriptor '/home/ubuntu/slam_project/agv2_ws/install/ydlidar_ros2_driver/share/ydlidar_ros2_driver/package.dsv'
+[29.283s] INFO:colcon.colcon_core.shell:Creating package script '/home/ubuntu/slam_project/agv2_ws/install/ydlidar_ros2_driver/share/ydlidar_ros2_driver/package.sh'
+[29.285s] INFO:colcon.colcon_core.shell:Creating package script '/home/ubuntu/slam_project/agv2_ws/install/ydlidar_ros2_driver/share/ydlidar_ros2_driver/package.bash'
+[29.286s] INFO:colcon.colcon_core.shell:Creating package script '/home/ubuntu/slam_project/agv2_ws/install/ydlidar_ros2_driver/share/ydlidar_ros2_driver/package.zsh'
+[29.288s] Level 1:colcon.colcon_core.environment:create_file_with_runtime_dependencies(/home/ubuntu/slam_project/agv2_ws/install/ydlidar_ros2_driver/share/colcon-core/packages/ydlidar_ros2_driver)
+[29.290s] Level 1:colcon.colcon_core.environment:create_environment_scripts_only(ydlidar_ros2_driver)
+[29.291s] Level 1:colcon.colcon_core.environment:checking '/home/ubuntu/slam_project/agv2_ws/install/ydlidar_ros2_driver' for CMake module files
+[29.294s] Level 1:colcon.colcon_core.environment:checking '/home/ubuntu/slam_project/agv2_ws/install/ydlidar_ros2_driver' for CMake config files
+[29.297s] Level 1:colcon.colcon_core.shell:create_environment_hook('ydlidar_ros2_driver', 'cmake_prefix_path')
+[29.298s] INFO:colcon.colcon_core.shell:Creating environment hook '/home/ubuntu/slam_project/agv2_ws/install/ydlidar_ros2_driver/share/ydlidar_ros2_driver/hook/cmake_prefix_path.ps1'
+[29.300s] INFO:colcon.colcon_core.shell:Creating environment descriptor '/home/ubuntu/slam_project/agv2_ws/install/ydlidar_ros2_driver/share/ydlidar_ros2_driver/hook/cmake_prefix_path.dsv'
+[29.301s] INFO:colcon.colcon_core.shell:Creating environment hook '/home/ubuntu/slam_project/agv2_ws/install/ydlidar_ros2_driver/share/ydlidar_ros2_driver/hook/cmake_prefix_path.sh'
+[29.304s] Level 1:colcon.colcon_core.environment:checking '/home/ubuntu/slam_project/agv2_ws/install/ydlidar_ros2_driver/lib'
+[29.304s] Level 1:colcon.colcon_core.environment:checking '/home/ubuntu/slam_project/agv2_ws/install/ydlidar_ros2_driver/bin'
+[29.304s] Level 1:colcon.colcon_core.environment:checking '/home/ubuntu/slam_project/agv2_ws/install/ydlidar_ros2_driver/lib/pkgconfig/ydlidar_ros2_driver.pc'
+[29.305s] Level 1:colcon.colcon_core.environment:checking '/home/ubuntu/slam_project/agv2_ws/install/ydlidar_ros2_driver/lib/python3.10/site-packages'
+[29.307s] Level 1:colcon.colcon_core.environment:checking '/home/ubuntu/slam_project/agv2_ws/install/ydlidar_ros2_driver/bin'
+[29.308s] INFO:colcon.colcon_core.shell:Creating package script '/home/ubuntu/slam_project/agv2_ws/install/ydlidar_ros2_driver/share/ydlidar_ros2_driver/package.ps1'
+[29.311s] INFO:colcon.colcon_core.shell:Creating package descriptor '/home/ubuntu/slam_project/agv2_ws/install/ydlidar_ros2_driver/share/ydlidar_ros2_driver/package.dsv'
+[29.313s] INFO:colcon.colcon_core.shell:Creating package script '/home/ubuntu/slam_project/agv2_ws/install/ydlidar_ros2_driver/share/ydlidar_ros2_driver/package.sh'
+[29.315s] INFO:colcon.colcon_core.shell:Creating package script '/home/ubuntu/slam_project/agv2_ws/install/ydlidar_ros2_driver/share/ydlidar_ros2_driver/package.bash'
+[29.318s] INFO:colcon.colcon_core.shell:Creating package script '/home/ubuntu/slam_project/agv2_ws/install/ydlidar_ros2_driver/share/ydlidar_ros2_driver/package.zsh'
+[29.320s] Level 1:colcon.colcon_core.environment:create_file_with_runtime_dependencies(/home/ubuntu/slam_project/agv2_ws/install/ydlidar_ros2_driver/share/colcon-core/packages/ydlidar_ros2_driver)
+[29.321s] DEBUG:colcon.colcon_parallel_executor.executor.parallel:closing loop
+[29.322s] DEBUG:colcon.colcon_parallel_executor.executor.parallel:loop closed
+[29.322s] DEBUG:colcon.colcon_parallel_executor.executor.parallel:run_until_complete finished with '0'
+[29.323s] DEBUG:colcon.colcon_core.event_reactor:joining thread
+[29.325s] DEBUG:colcon.colcon_core.event_reactor:joined thread
+[29.326s] INFO:colcon.colcon_core.shell:Creating prefix script '/home/ubuntu/slam_project/agv2_ws/install/local_setup.ps1'
+[29.330s] INFO:colcon.colcon_core.shell:Creating prefix util module '/home/ubuntu/slam_project/agv2_ws/install/_local_setup_util_ps1.py'
+[29.337s] INFO:colcon.colcon_core.shell:Creating prefix chain script '/home/ubuntu/slam_project/agv2_ws/install/setup.ps1'
+[29.342s] INFO:colcon.colcon_core.shell:Creating prefix script '/home/ubuntu/slam_project/agv2_ws/install/local_setup.sh'
+[29.344s] INFO:colcon.colcon_core.shell:Creating prefix util module '/home/ubuntu/slam_project/agv2_ws/install/_local_setup_util_sh.py'
+[29.347s] INFO:colcon.colcon_core.shell:Creating prefix chain script '/home/ubuntu/slam_project/agv2_ws/install/setup.sh'
+[29.351s] INFO:colcon.colcon_core.shell:Creating prefix script '/home/ubuntu/slam_project/agv2_ws/install/local_setup.bash'
+[29.354s] INFO:colcon.colcon_core.shell:Creating prefix chain script '/home/ubuntu/slam_project/agv2_ws/install/setup.bash'
+[29.358s] INFO:colcon.colcon_core.shell:Creating prefix script '/home/ubuntu/slam_project/agv2_ws/install/local_setup.zsh'
+[29.360s] INFO:colcon.colcon_core.shell:Creating prefix chain script '/home/ubuntu/slam_project/agv2_ws/install/setup.zsh'
