@@ -78,7 +78,6 @@ def wait_before_motion(pub, args):
         return
 
     msg = Twist()
-    rate = _node.create_rate(10)
     last_report = 0.0
     while rclpy.ok() and not stop_requested:
         remaining = target_epoch - time.time()
@@ -89,10 +88,7 @@ def wait_before_motion(pub, args):
         if args.verbose and (now - last_report >= 10.0 or remaining <= 10.0):
             print("start wait: %.1fs remaining" % remaining)
             last_report = now
-        try:
-            rate.sleep()
-        except Exception:
-            time.sleep(0.05)
+        time.sleep(0.1)
 
     if stop_requested:
         return
@@ -123,14 +119,10 @@ def circle_center(start_pose, radius, turn_sign):
 def drive_circle(pub, args):
     start_pose = pose
     center_x, center_y = circle_center(start_pose, args.radius, args.turn_sign)
-    # The myagv_odometry_node scales linear by 0.08 and angular by 0.6 before
-    # sending to the MCU, so actual_v = 0.08*cmd_v and actual_w = 0.6*cmd_w.
-    # For a circle: actual_w = actual_v / R  =>  cmd_w = cmd_v * (0.08/0.6) / R
-    _SCALE_RATIO = 0.08 / 0.6  # linear_scale / angular_scale from execute()
-    feedforward = args.turn_sign * args.linear * _SCALE_RATIO / args.radius
+    feedforward = args.turn_sign * args.linear / args.radius
     feedforward = clamp(feedforward, -args.max_angular, args.max_angular)
     msg = Twist()
-    rate = _node.create_rate(args.rate)
+    _dt = 1.0 / args.rate
     start_time = time.time()
     last_report = start_time
 
@@ -151,7 +143,7 @@ def drive_circle(pub, args):
         radial_y = y - center_y
         current_radius = math.hypot(radial_x, radial_y)
         if current_radius < 1e-6:
-            rate.sleep()
+            time.sleep(_dt)
             continue
 
         theta = math.atan2(radial_y, radial_x)
@@ -195,7 +187,7 @@ def drive_circle(pub, args):
             )
             last_report = now
 
-        rate.sleep()
+        time.sleep(_dt)
 
     publish_zero(pub)
     elapsed = time.time() - start_time

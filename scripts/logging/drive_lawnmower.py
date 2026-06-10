@@ -39,7 +39,7 @@ def publish_zero(pub, seconds=1.0):
 
 
 def drive_segment(pub, args, direction, segment_index, current_bias):
-    rate = _node.create_rate(args.rate)
+    _dt = 1.0 / args.rate
     start_time = time.time()
 
     print("Segment %d starting (%s) for %.1fs (bias: %.4f)..." % (
@@ -54,7 +54,7 @@ def drive_segment(pub, args, direction, segment_index, current_bias):
         msg.linear.x = direction * args.linear
         msg.angular.z = current_bias
         pub.publish(msg)
-        rate.sleep()
+        time.sleep(_dt)
 
     publish_zero(pub)
     print("Segment %d done." % segment_index)
