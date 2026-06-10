@@ -44,6 +44,7 @@ REQUIRED_TOPICS = {
 
 OPTIONAL_TOPICS = {
     "/camera/depth/camera_info":        {"min_hz": 0.0},
+    "/camera/imu":                      {"min_hz": 150.0, "target_hz": 200.0},
     "/diagnostics":                     {"min_hz": 0.0},
     "/tag_detections":                  {"min_hz": 0.0},
 }

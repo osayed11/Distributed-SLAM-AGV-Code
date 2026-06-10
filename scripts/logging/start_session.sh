@@ -445,6 +445,7 @@ if [ "${ROS_VERSION}" = "2" ]; then
         /camera/aligned_depth_to_color/image_raw \
         /camera/aligned_depth_to_color/camera_info \
         /camera/extrinsics/depth_to_color \
+        /camera/imu \
         /diagnostics \
         /tag_detections \
         "${MOCAP_TOPIC}" \
@@ -463,6 +464,7 @@ else
         /camera/aligned_depth_to_color/image_raw \
         /camera/aligned_depth_to_color/camera_info \
         /camera/extrinsics/depth_to_color \
+        /camera/imu \
         /diagnostics \
         /tag_detections \
         "${MOCAP_TOPIC}" \
