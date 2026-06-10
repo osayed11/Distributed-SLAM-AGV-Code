@@ -310,6 +310,7 @@ if [ "$HAS_ROS2" = true ] && [ -d "${ROOT}/agv2_ws/src" ]; then
 
     section "ROS2 workspace check"
     set +u
+    source "/opt/ros/${ROS2_DISTRO}/setup.bash"
     source "${ROOT}/agv2_ws/install/setup.bash"
     set -u
     for pkg in agv_bringup myagv_odometry myagv_teleop realsense2_camera ydlidar_ros2_driver; do
