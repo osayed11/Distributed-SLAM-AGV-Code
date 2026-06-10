@@ -1,7 +1,7 @@
 """ROS2 bringup launch for myAGV."""
 
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription
+from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, TimerAction, ExecuteProcess
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
 from launch_ros.actions import Node
@@ -119,6 +119,23 @@ def generate_launch_description():
         }.items(),
     )
 
+    # ydlidar_ros2_driver is a LifecycleNode — must be configured then activated
+    # before it starts publishing /scan. Give it 5s to initialise then trigger.
+    configure_lidar = TimerAction(
+        period=5.0,
+        actions=[ExecuteProcess(
+            cmd=['ros2', 'lifecycle', 'set', '/ydlidar_ros2_driver_node', 'configure'],
+            output='screen'
+        )]
+    )
+    activate_lidar = TimerAction(
+        period=8.0,
+        actions=[ExecuteProcess(
+            cmd=['ros2', 'lifecycle', 'set', '/ydlidar_ros2_driver_node', 'activate'],
+            output='screen'
+        )]
+    )
+
     return LaunchDescription([
         serial_port_arg,
         odometry_node,
@@ -126,5 +143,7 @@ def generate_launch_description():
         static_tf_base,
         static_tf_imu,
         ydlidar_launch,
+        configure_lidar,
+        activate_lidar,
         realsense_launch,
     ])

@@ -1,9 +1,10 @@
-ros__parameters:
-  serial_port: "/dev/ttyACM0"
-  baud: 115200
-  linear_scale: 1.0
-  lateral_scale: 1.0
-  angular_scale: 1.0
-  publish_imu: true
-  imu_frame_id: "imu_link"
-  debug_output: false
+myagv_odometry_node:
+  ros__parameters:
+    serial_port: "/dev/ttyACM0"
+    baud: 115200
+    linear_scale: 1.0
+    lateral_scale: 1.0
+    angular_scale: 1.0
+    publish_imu: true
+    imu_frame_id: "imu_link"
+    debug_output: false
