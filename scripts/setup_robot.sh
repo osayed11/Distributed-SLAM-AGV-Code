@@ -252,9 +252,10 @@ fi
 echo "Installing AGV base controller rules..."
 echo 'KERNEL=="ttyACM*", ATTRS{idVendor}=="0483", ATTRS{idProduct}=="5740", MODE:="0666", SYMLINK+="myAGV"' | sudo tee /etc/udev/rules.d/99-myagv-base.rules > /dev/null
 
-# YDLidar X2 (built-in UART on Pi)
-echo "Setting permissions for YDLidar on /dev/ttyAMA0..."
-echo 'KERNEL=="ttyAMA0", MODE:="0666"' | sudo tee /etc/udev/rules.d/99-ydlidar.rules > /dev/null
+# YDLidar X2 (Pi GPIO UART = ttyS0 = serial0)
+# ttyS0 is owned by group 'tty' by default; set 0666 so dialout user can read it.
+echo "Setting permissions for YDLidar on /dev/ttyS0..."
+echo 'KERNEL=="ttyS0", MODE:="0666"' | sudo tee /etc/udev/rules.d/99-ydlidar.rules > /dev/null
 
 sudo udevadm control --reload-rules && sudo udevadm trigger
 
