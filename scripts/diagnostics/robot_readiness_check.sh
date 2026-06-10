@@ -159,19 +159,8 @@ if rostopic list 2>/dev/null | grep -qx "/mocap"; then
     check_hz /mocap 10 20
 fi
 
-if [ "${CHECK_APRILTAG:-false}" = true ]; then
-    print_section "apriltag live pipeline"
-    roslaunch agv_bringup apriltag.launch > /tmp/agv_apriltag_check.log 2>&1 &
-    APRILTAG_PID=$!
-    sleep 8
-    rosnode list 2>/dev/null | grep apriltag || true
-    check_topic_registered /tag_detections
-    check_hz /tag_detections 10 10
-    echo "apriltag_log=/tmp/agv_apriltag_check.log"
-else
-    print_section "apriltag live pipeline"
-    echo "SKIP live AprilTag detector. Set CHECK_APRILTAG=true for a separate detector smoke test."
-fi
+print_section "apriltag live pipeline"
+echo "SKIP: AprilTag detector check removed."
 
 print_section "bringup log tail"
 tail -80 "${LOG}" || true

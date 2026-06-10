@@ -99,7 +99,7 @@ echo "  [i] chrony snapshot: ${CHRONY_FILE}"
 # If logging.launch is allowed to start bringup itself these checks may warn
 # before sensors exist; validate_bag.py remains the authoritative post-run gate.
 REQUIRED_TOPICS="/scan /odom /tf /camera/color/image_raw /camera/aligned_depth_to_color/image_raw"
-OPTIONAL_TOPICS="/imu"
+OPTIONAL_TOPICS=""
 GROUND_TRUTH_TOPICS="${MOCAP_TOPIC} /mocap"
 ALL_OK=true
 
@@ -445,7 +445,6 @@ if [ "${ROS_VERSION}" = "2" ]; then
         /camera/aligned_depth_to_color/image_raw \
         /camera/aligned_depth_to_color/camera_info \
         /camera/extrinsics/depth_to_color \
-        /imu \
         /diagnostics \
         /tag_detections \
         "${MOCAP_TOPIC}" \
@@ -464,7 +463,6 @@ else
         /camera/aligned_depth_to_color/image_raw \
         /camera/aligned_depth_to_color/camera_info \
         /camera/extrinsics/depth_to_color \
-        /imu \
         /diagnostics \
         /tag_detections \
         "${MOCAP_TOPIC}" \

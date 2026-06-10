@@ -5,6 +5,6 @@ myagv_odometry_node:
     linear_scale: 1.0
     lateral_scale: 1.0
     angular_scale: 1.0
-    publish_imu: true
+    publish_imu: false
     imu_frame_id: "imu_link"
     debug_output: false

@@ -44,12 +44,7 @@ REQUIRED_TOPICS = {
 
 OPTIONAL_TOPICS = {
     "/camera/depth/camera_info":        {"min_hz": 0.0},
-    "/imu":                             {"min_hz": 10.0, "target_hz": 20.0},
-    "/camera/imu":                      {"min_hz": 150.0, "target_hz": 200.0},
-    "/camera/accel/sample":             {"min_hz": 60.0, "target_hz": 100.0},
-    "/camera/gyro/sample":              {"min_hz": 150.0, "target_hz": 200.0},
     "/diagnostics":                     {"min_hz": 0.0},
-    "/aruco/target_pose":               {"min_hz": 0.0},
     "/tag_detections":                  {"min_hz": 0.0},
 }
 
@@ -748,13 +743,10 @@ def main():
                         help="Treat warnings as failures")
     parser.add_argument("--require-gt", action="store_true",
                         help="Require a ground-truth/mocap topic")
-    parser.add_argument("--require-imu", action="store_true",
-                        help="Require at least one IMU stream")
     args = parser.parse_args()
 
     bag_path = args.bag.rstrip("/")
     require_gt = args.require_gt or os.environ.get("REQUIRE_GT") == "true"
-    require_imu = args.require_imu or os.environ.get("REQUIRE_IMU") == "true"
 
     if not os.path.exists(bag_path):
         print("ERROR: bag not found: {}".format(bag_path))
@@ -779,11 +771,9 @@ def main():
     duration = check_duration(info)
     bag_topics = check_topics(info, duration)
     check_ground_truth(bag_topics, duration, require_gt)
-    check_imu_requirement(bag_topics, duration, require_imu)
     check_tf_tree(bag_path, bag_topics)
     check_frame_drops(bag_path, bag_topics, duration)
     check_colour_depth_sync(bag_path, bag_topics)
-    check_imu_monotonic(bag_path, bag_topics)
 
     exit_code = print_summary(bag_path, duration, bag_topics, args.strict)
     sys.exit(exit_code)

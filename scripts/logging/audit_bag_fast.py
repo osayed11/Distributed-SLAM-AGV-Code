@@ -51,7 +51,7 @@ MIN_HZ = {
     "/camera/aligned_depth_to_color/camera_info":  12.0,
 }
 
-IMU_TOPICS = ["/imu", "/camera/imu", "/camera/accel/sample", "/camera/gyro/sample"]
+IMU_TOPICS = ["/camera/imu", "/camera/accel/sample", "/camera/gyro/sample"]
 
 
 # ---------------------------------------------------------------------------

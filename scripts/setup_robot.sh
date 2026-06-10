@@ -152,7 +152,6 @@ if [ "$INSTALL_SYSTEM" = true ]; then
             --recv-key C1CF6E31E6BADE8868B172B4F42ED6FBAB17C654 || true
 
         sudo apt-get install -y \
-            ros-${ROS1_DISTRO}-apriltag-ros \
             ros-${ROS1_DISTRO}-cv-bridge \
             ros-${ROS1_DISTRO}-ddynamic-reconfigure \
             ros-${ROS1_DISTRO}-diagnostic-msgs \
@@ -181,7 +180,6 @@ if [ "$INSTALL_SYSTEM" = true ]; then
             ros-${ROS2_DISTRO}-cv-bridge \
             ros-${ROS2_DISTRO}-image-transport \
             ros-${ROS2_DISTRO}-diagnostic-msgs \
-            ros-${ROS2_DISTRO}-apriltag-ros \
             ros-${ROS2_DISTRO}-realsense2-camera \
             python3-colcon-common-extensions \
             python3-colcon-mixin
