@@ -149,7 +149,12 @@ def _get_ros2_bag_info(bag_path):
 
 
 def _ros2_db_files(bag_path):
-    return sorted(glob.glob(os.path.join(bag_path, "*.db3")))
+    files = glob.glob(os.path.join(bag_path, "*.db3"))
+    import re
+    def _num(f):
+        m = re.search(r'(\d+)\.db3$', f)
+        return int(m.group(1)) if m else 0
+    return sorted(files, key=_num)
 
 
 def _ros2_get_timestamps(bag_path, topic_name):
@@ -754,45 +759,36 @@ def check_imu_data(bag_path, bag_topics):
         gyros = []
         accels = []
         for db_file in _ros2_db_files(bag_path):
+            if len(gyros) >= SAMPLE:
+                break
             try:
                 conn = sqlite3.connect(db_file)
-                tid = conn.execute(
+                row = conn.execute(
                     "SELECT id FROM topics WHERE name='/camera/imu'"
                 ).fetchone()
-                if not tid:
+                if not row:
                     conn.close()
                     continue
-                # Spread sample across the full recording
-                total = conn.execute(
-                    "SELECT COUNT(*) FROM messages WHERE topic_id=?", (tid[0],)
-                ).fetchone()[0]
-                step = max(1, total // SAMPLE)
-                rows = conn.execute(
-                    "SELECT data FROM messages WHERE topic_id=? ORDER BY timestamp",
-                    (tid[0],)
+                msgs = conn.execute(
+                    "SELECT data FROM messages WHERE topic_id=? LIMIT 30",
+                    (row[0],)
                 ).fetchall()
                 conn.close()
-                for i, (raw,) in enumerate(rows):
-                    if i % step != 0:
-                        continue
-                    try:
-                        d = bytes(raw)
-                        le = (d[1] == 1)
-                        e = "<" if le else ">"
-                        # Compute off_after_hdr using the same cdr_read_string logic
-                        fl = struct.unpack_from(e+"I", d, 12)[0]
-                        off = 12 + 4 + fl + (4 - (fl % 4)) % 4
-                        orient_off = off + 8   # float64 alignment padding
-                        gyr_off = orient_off + 104
-                        acc_off = gyr_off + 96
-                        gx, gy, gz = struct.unpack_from(e+"ddd", d, gyr_off)
-                        ax, ay, az = struct.unpack_from(e+"ddd", d, acc_off)
-                        gyros.append((gx, gy, gz))
-                        accels.append((ax, ay, az))
-                    except Exception:
-                        continue
+                for (raw,) in msgs:
+                    d = bytes(raw)
+                    le = (d[1] == 1)
+                    e = "<" if le else ">"
+                    fl = struct.unpack_from(e+"I", d, 12)[0]
+                    off = 12 + 4 + fl + (4 - (fl % 4)) % 4
+                    orient_off = off + 8
+                    gyr_off = orient_off + 104
+                    acc_off = gyr_off + 96
+                    gx, gy, gz = struct.unpack_from(e+"ddd", d, gyr_off)
+                    ax, ay, az = struct.unpack_from(e+"ddd", d, acc_off)
+                    gyros.append((gx, gy, gz))
+                    accels.append((ax, ay, az))
             except Exception:
-                pass
+                continue
 
     else:
         # ROS1: use subprocess
