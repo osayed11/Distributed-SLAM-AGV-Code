@@ -233,8 +233,8 @@ def parse_args(argv):
                         help="Start immediately without pressing Enter")
     parser.add_argument("--verbose", action="store_true",
                         help="Print periodic odom feedback")
-    parser.add_argument("--mcu-angular-scale", type=float, default=2.0,
-                        help="MCU angular scaling factor (measured 2.0 for agv37)")
+    parser.add_argument("--mcu-angular-scale", type=float, default=1.0,
+                        help="MCU angular scaling factor")
     return parser.parse_args(argv)
 
 
