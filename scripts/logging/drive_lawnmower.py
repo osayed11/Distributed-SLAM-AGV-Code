@@ -14,6 +14,7 @@ import time
 import threading
 
 import rclpy
+from rclpy.signals import SignalHandlerOptions
 from geometry_msgs.msg import Twist
 
 _node = None
@@ -102,9 +103,16 @@ def main(argv):
     signal.signal(signal.SIGINT, request_stop)
     signal.signal(signal.SIGTERM, request_stop)
 
-    rclpy.init()
+    rclpy.init(signal_handler_options=SignalHandlerOptions.NO)
     _node = rclpy.create_node("drive_shuttle_timed")
-    _spin_thread = threading.Thread(target=rclpy.spin, args=(_node,), daemon=True)
+
+    def _spin():
+        try:
+            rclpy.spin(_node)
+        except Exception:
+            pass
+
+    _spin_thread = threading.Thread(target=_spin, daemon=True)
     _spin_thread.start()
 
     pub = _node.create_publisher(Twist, "/cmd_vel", 1)
@@ -118,7 +126,10 @@ def main(argv):
         publish_zero(pub)
         print("Finished.")
     finally:
-        rclpy.shutdown()
+        try:
+            rclpy.shutdown()
+        except Exception:
+            pass
 
 
 if __name__ == "__main__":

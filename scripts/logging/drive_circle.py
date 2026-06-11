@@ -17,6 +17,7 @@ import time
 import threading
 
 import rclpy
+from rclpy.signals import SignalHandlerOptions
 from geometry_msgs.msg import Twist
 from nav_msgs.msg import Odometry
 
@@ -270,7 +271,7 @@ def main(argv):
     signal.signal(signal.SIGINT, request_stop)
     signal.signal(signal.SIGTERM, request_stop)
 
-    rclpy.init()
+    rclpy.init(signal_handler_options=SignalHandlerOptions.NO)
     _node = rclpy.create_node("agv_drive_circle")
     _node.create_subscription(Odometry, "/odom", odom_cb, 20)
     pub = _node.create_publisher(Twist, "/cmd_vel", 1)
