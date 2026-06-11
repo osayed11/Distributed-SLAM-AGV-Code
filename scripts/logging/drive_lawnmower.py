@@ -41,6 +41,7 @@ def publish_zero(pub, seconds=1.0):
 def drive_segment(pub, args, direction, segment_index, current_bias):
     _dt = 1.0 / args.rate
     start_time = time.time()
+    _next_iter = start_time + _dt
 
     print("Segment %d starting (%s) for %.1fs (bias: %.4f)..." % (
         segment_index, "fwd" if direction > 0 else "rev", args.duration, current_bias))
@@ -54,7 +55,12 @@ def drive_segment(pub, args, direction, segment_index, current_bias):
         msg.linear.x = direction * args.linear
         msg.angular.z = current_bias
         pub.publish(msg)
-        time.sleep(_dt)
+        _next_iter += _dt
+        sleep_dur = _next_iter - time.time()
+        if sleep_dur > 0:
+            time.sleep(sleep_dur)
+        elif sleep_dur < -_dt:
+            _next_iter = time.time() + _dt
 
     publish_zero(pub)
     print("Segment %d done." % segment_index)
@@ -101,7 +107,7 @@ def main(argv):
     _spin_thread = threading.Thread(target=rclpy.spin, args=(_node,), daemon=True)
     _spin_thread.start()
 
-    pub = _node.create_publisher(Twist, "/cmd_vel", 10)
+    pub = _node.create_publisher(Twist, "/cmd_vel", 1)
 
     if not args.no_prompt:
         print("Ready. Press Enter...")

@@ -126,6 +126,7 @@ def drive_circle(pub, args):
     _dt = 1.0 / args.rate
     start_time = time.time()
     last_report = start_time
+    _next_iter = start_time + _dt
 
     x, y, _ = pose
     last_theta = math.atan2(y - center_y, x - center_x)
@@ -144,7 +145,10 @@ def drive_circle(pub, args):
         radial_y = y - center_y
         current_radius = math.hypot(radial_x, radial_y)
         if current_radius < 1e-6:
-            time.sleep(_dt)
+            _next_iter += _dt
+            sleep_dur = _next_iter - time.time()
+            if sleep_dur > 0:
+                time.sleep(sleep_dur)
             continue
 
         theta = math.atan2(radial_y, radial_x)
@@ -188,7 +192,12 @@ def drive_circle(pub, args):
             )
             last_report = now
 
-        time.sleep(_dt)
+        _next_iter += _dt
+        sleep_dur = _next_iter - time.time()
+        if sleep_dur > 0:
+            time.sleep(sleep_dur)
+        elif sleep_dur < -_dt:
+            _next_iter = time.time() + _dt
 
     publish_zero(pub)
     elapsed = time.time() - start_time
@@ -264,9 +273,15 @@ def main(argv):
     rclpy.init()
     _node = rclpy.create_node("agv_drive_circle")
     _node.create_subscription(Odometry, "/odom", odom_cb, 20)
-    pub = _node.create_publisher(Twist, "/cmd_vel", 10)
+    pub = _node.create_publisher(Twist, "/cmd_vel", 1)
 
-    _spin_thread = threading.Thread(target=rclpy.spin, args=(_node,), daemon=True)
+    def _spin():
+        try:
+            rclpy.spin(_node)
+        except Exception:
+            pass
+
+    _spin_thread = threading.Thread(target=_spin, daemon=True)
     _spin_thread.start()
 
     wait_for_odom(timeout=10.0)
@@ -301,7 +316,10 @@ def main(argv):
     finally:
         publish_zero(pub, seconds=1.0)
         print("Circle drive finished; zero velocity sent.")
-        rclpy.shutdown()
+        try:
+            rclpy.shutdown()
+        except Exception:
+            pass
 
 
 if __name__ == "__main__":
