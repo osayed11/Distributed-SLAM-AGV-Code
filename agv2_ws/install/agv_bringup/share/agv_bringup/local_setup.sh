@@ -1,1 +1,0 @@
-/home/ubuntu/slam_project/agv2_ws/build/agv_bringup/ament_cmake_environment_hooks/local_setup.sh

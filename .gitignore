@@ -1,9 +1,11 @@
 **/build/
 **/devel/
+**/install/
 **/logs/
 .catkin_workspace
 build/
 devel/
+install/
 logs/
 *.bag
 *.swp

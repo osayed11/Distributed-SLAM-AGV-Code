@@ -325,9 +325,10 @@ fi
 section "script permissions"
 chmod +x \
     "${ROOT}/scripts/logging/start_session.sh" \
+    "${ROOT}/scripts/logging/drive_circle.py" \
+    "${ROOT}/scripts/logging/drive_lawnmower.py" \
     "${ROOT}/scripts/logging/drive_straight.py" \
     "${ROOT}/scripts/logging/drive_square.py" \
-    "${ROOT}/scripts/logging/drive_circle.py" \
     "${ROOT}/scripts/logging/drive_forward_back.py" \
     "${ROOT}/scripts/logging/drive_odom_shuttle.py" \
     "${ROOT}/scripts/logging/launch_odom_shuttle_fleet.sh" \
