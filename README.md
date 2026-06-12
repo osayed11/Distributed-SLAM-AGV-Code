@@ -88,7 +88,13 @@ provisioned or has no internet access.
 
 The lab uses OptiTrack motion capture via a VRPN server on the Motive machine (`192.168.50.200:3883`).
 
-Verify the OptiTrack stream is live before recording (the OptiTrack system publishes on ROS2 regardless of which ROS version the robot runs):
+Verify the OptiTrack stream is live before recording. The OptiTrack system publishes on ROS2 — on macOS start a pixi shell first:
+
+```bash
+pixi shell
+```
+
+Then check the topic is publishing:
 
 ```bash
 ros2 topic echo /optitrack/rigid_bodies/orkar_agv1
@@ -97,6 +103,17 @@ ros2 topic echo /optitrack/rigid_bodies/orkar_agv1
 If the topic is silent, check that:
 1. The robot is within the OptiTrack camera capture volume
 2. The rigid body is actively tracked in Motive (green indicator)
+
+To visualise the ground truth trajectory in RViz2:
+
+```bash
+rviz2
+```
+
+In RViz2:
+1. Set **Fixed Frame** to `world`
+2. Click **Add → By topic → /optitrack/rigid_bodies/orkar_agv1 → Path**
+3. The path will trace the robot's trajectory at ~100 Hz as it moves
 
 **ROS2 (current)**
 
@@ -264,8 +281,6 @@ scripts/logging/audit_bag_fast.py          Fast topic/rate/gap/sync audit
 scripts/logging/drive_circle.py            Concentric-circle motion controller
 scripts/logging/drive_lawnmower.py         Straight-line shuttle motion controller
 scripts/logging/drive_square.py            Odom-bounded square motion helper
-scripts/logging/drive_straight.py          Odom-bounded straight-line dataset helper
-scripts/logging/drive_forward_back.py      Odom-bounded smoke-test motion helper
 scripts/scenarios/run_s1_concentric_robot.sh  Single-robot S1 runner with epoch stagger
 agv2_ws/src/agv_bringup/launch/bringup.launch.py
 agv2_ws/src/agv_bringup/launch/apriltag.launch.py

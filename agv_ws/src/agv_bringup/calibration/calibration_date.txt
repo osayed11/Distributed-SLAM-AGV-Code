@@ -1,6 +1,0 @@
-NOT YET CALIBRATED
-Calibration date: YYYY-MM-DD
-Calibration operator:
-Robot ID:
-Git commit at calibration time: (run: git rev-parse HEAD)
-Notes:
