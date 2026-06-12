@@ -1,33 +1,72 @@
 # AGV On-Board Stack
 
-Robot-side ROS Noetic stack for AGV data collection in the multi-robot SLAM dataset project.
+Robot-side ROS2 Humble stack for AGV data collection in the multi-robot SLAM dataset project.
 
 The goal of this repo is repeatable deployment: clone or pull it on a robot, run one setup script, then collect bags with a single session command.
 
+## Post-Flash Robot Setup
+
+After flashing Ubuntu onto the Raspberry Pi, do the following before anything else.
+
+### 1. Set the hostname
+
+```bash
+sudo hostnamectl set-hostname agv<N>   # e.g. agv37
+sudo reboot
+```
+
+### 2. Connect to WiFi
+
+```bash
+sudo nmcli device wifi connect "<SSID>" password "<PASSWORD>"
+```
+
+Verify:
+
+```bash
+ip addr show wlan0   # confirm an IP is assigned
+ping -c 3 8.8.8.8   # confirm internet access
+```
+
+### 3. Enable hostname-based SSH (no IP needed)
+
+Install `avahi-daemon` on the robot so it advertises `agv<N>.local` over mDNS:
+
+```bash
+sudo apt update
+sudo apt install -y avahi-daemon
+sudo systemctl enable avahi-daemon
+sudo systemctl start avahi-daemon
+```
+
+On your **laptop** (run once):
+
+```bash
+sudo apt install -y libnss-mdns        # Linux
+# macOS already supports .local via Bonjour — no install needed
+```
+
+You can now SSH using either the hostname or IP:
+
+```bash
+ssh ubuntu@agv37.local     # hostname (preferred)
+ssh ubuntu@<robot-ip>      # fallback if mDNS is unavailable
+```
+
+---
+
 ## 🚀 Quick Start
 
-On a new robot: 
+On a new robot:
 
 ### 1. Installation
 On a fresh or updated robot, use one of the following methods to retrieve the stack.
 
-**Option A: Standard Clone (Try this first)**
 ```bash
 git clone https://github.com/osayed11/Distributed-SLAM-AGV-Code.git ~/slam_project
 cd slam_project
 bash scripts/setup_robot.sh
 ```
-
-**Option B: Download Zip**
-```bash
-wget https://github.com/osayed11/Distributed-SLAM-AGV-Code/archive/refs/heads/main.zip
-unzip main.zip
-mv Distributed-SLAM-AGV-Code-main slam_project
-rm main.zip
-cd slam_project
-bash scripts/setup_robot.sh
-```
-
 
 On an updated robot:
 
@@ -38,12 +77,72 @@ bash scripts/setup_robot.sh
 ```
 
 `setup_robot.sh` installs expected system dependencies by default, including
-`chrony`, `apriltag_ros`, ROS message packages, rosbag, TF, and build tools.
-After building it validates all critical packages with `rospack find`. Use
+`chrony`, `apriltag_ros`, ROS2 message packages, and build tools (`colcon`).
+After building it validates all critical packages with `ros2 pkg list`. Use
 `bash scripts/setup_robot.sh --skip-system` only when the robot is already
 provisioned or has no internet access.
 
-### 2. Record a session
+### 2. Ground Truth (OptiTrack)
+
+The lab uses OptiTrack motion capture via a VRPN server on the Motive machine (`192.168.50.200:3883`).
+
+Verify the OptiTrack stream is live before recording (the OptiTrack system publishes on ROS2 regardless of which ROS version the robot runs):
+
+```bash
+ros2 topic echo /optitrack/rigid_bodies/orkar_agv1
+```
+
+If the topic is silent, check that:
+1. The robot is within the OptiTrack camera capture volume
+2. The rigid body is actively tracked in Motive (green indicator)
+
+**ROS2 (current)**
+
+The mocap topic is recorded automatically. The default is `/optitrack/rigid_bodies/orkar_agv1`. Set `MOCAP_TOPIC` in the environment to override it for a different robot:
+
+```bash
+export MOCAP_TOPIC=/optitrack/rigid_bodies/orkar_agv2
+```
+
+**ROS1 (legacy)**
+
+Install the VRPN client once per robot:
+
+```bash
+sudo apt install ros-noetic-vrpn-client-ros
+```
+
+Run it alongside `bringup.launch` in a separate terminal:
+
+```bash
+source /opt/ros/noetic/setup.bash
+source ~/slam_project/agv_ws/devel/setup.bash
+roslaunch vrpn_client_ros sample.launch server:=192.168.50.200
+```
+
+Verify the stream:
+
+```bash
+rostopic echo /optitrack/rigid_bodies/orkar_agv1
+```
+
+If the topic is silent, check that:
+1. The robot is within the OptiTrack camera capture volume
+2. The rigid body is actively tracked in Motive (green indicator)
+3. VRPN streaming is enabled in Motive under **View → Data Streaming**
+
+> The VRPN version mismatch warning (`07.33` vs `07.34`) is benign.
+
+**Rigid body naming convention**
+
+| Robot | Motive rigid body name | Topic |
+|-------|----------------------|-------|
+| AGV1  | `orkar_agv1`         | `/optitrack/rigid_bodies/orkar_agv1` |
+| AGV2  | `orkar_agv2`         | `/optitrack/rigid_bodies/orkar_agv2` |
+| AGV3  | `orkar_agv3`         | `/optitrack/rigid_bodies/orkar_agv3` |
+| AGV4  | `orkar_agv4`         | `/optitrack/rigid_bodies/orkar_agv4` |
+
+### 3. Record a session
 
 Start a data collection session:
 
@@ -53,28 +152,28 @@ bash scripts/logging/start_session.sh agv1 square_manual
 ```
 
 `start_session.sh` manages the full lifecycle:
-1. Launches `bringup.launch` (base driver, LiDAR, camera)
+1. Launches `bringup.launch.py` (base driver, LiDAR, camera)
 2. Waits for `/scan`, `/odom`, and camera streams to stabilise
-3. Starts `rosbag record` only after sensors are confirmed live
-4. On `Ctrl+C`, stops rosbag cleanly → stops bringup → finalises manifest
+3. Starts `ros2 bag record` only after sensors are confirmed live
+4. On `Ctrl+C`, stops recording cleanly → stops bringup → finalises manifest
 
 Drive manually in another terminal:
 
 ```bash
-ssh ubuntu@<robot-ip>
-source /opt/ros/noetic/setup.bash
-source ~/slam_project/agv_ws/devel/setup.bash
-rosrun myagv_teleop myagv_teleop.py
+ssh ubuntu@agv37.local          # or ssh ubuntu@<robot-ip>
+source /opt/ros/humble/setup.bash
+source ~/slam_project/agv_ws/install/setup.bash
+ros2 run myagv_teleop myagv_teleop.py
 ```
 
 Or run an automatic motion pattern:
 
 ```bash
-# Square
-python scripts/logging/drive_square.py --side 0.75 --linear 0.22 --angular 0.28 --cycles 1
+# Lawnmower (straight-line shuttle)
+python3 scripts/logging/drive_lawnmower.py --duration 20 --linear 0.15 --cycles 3
 
 # Circle (for concentric-circle scenarios)
-python scripts/logging/drive_circle.py --radius 0.50 --linear 0.16 --duration 60 --no-prompt --verbose
+python3 scripts/logging/drive_circle.py --radius 0.50 --linear 0.16 --duration 60 --no-prompt --verbose
 ```
 
 Stop recording with `Ctrl+C`. Bags and manifests are written to `~/agv_data`.
@@ -91,7 +190,7 @@ Or run a single robot with epoch-based stagger timing:
 
 ```bash
 T0=$(($(date +%s)+300))
-python scripts/logging/drive_circle.py --radius 0.50 --linear 0.16 --duration 600 --start-at-epoch $T0 --start-delay 0 --no-prompt --verbose
+python3 scripts/logging/drive_circle.py --radius 0.50 --linear 0.16 --duration 600 --start-at-epoch $T0 --start-delay 0 --no-prompt --verbose
 ```
 
 Robot assignments for S1:
@@ -110,17 +209,18 @@ Use these paths for normal robot operation:
 
 ```text
 scripts/setup_robot.sh                     Build/check workspaces after clone or pull
-scripts/logging/start_session.sh           Managed bringup + sensor gate + rosbag + manifest
+scripts/logging/start_session.sh           Managed bringup + sensor gate + ros2 bag + manifest
 scripts/logging/validate_bag.py            Full post-run publishability check
 scripts/logging/audit_bag_fast.py          Fast topic/rate/gap/sync audit
-scripts/logging/drive_circle.py            Concentric-circle motion for S1 scenarios
-scripts/logging/drive_straight.py          Odom-bounded straight-line dataset helper
+scripts/logging/drive_circle.py            Concentric-circle motion controller
+scripts/logging/drive_lawnmower.py         Straight-line shuttle motion controller
 scripts/logging/drive_square.py            Odom-bounded square motion helper
+scripts/logging/drive_straight.py          Odom-bounded straight-line dataset helper
 scripts/logging/drive_forward_back.py      Odom-bounded smoke-test motion helper
 scripts/scenarios/run_s1_concentric_robot.sh  Single-robot S1 runner with epoch stagger
-agv_ws/src/agv_bringup/launch/bringup.launch
-agv_ws/src/agv_bringup/launch/logging.launch
-agv_ws/src/agv_bringup/launch/apriltag.launch
+agv_ws/src/agv_bringup/launch/bringup.launch.py
+agv_ws/src/agv_bringup/launch/logging.launch.py
+agv_ws/src/agv_bringup/launch/apriltag.launch.py
 agv_ws/src/agv_bringup/calibration/
 ```
 
@@ -135,8 +235,8 @@ scripts/diagnostics/
 ```text
 slam_project/
 ├── agv_ws/                  <-- The ONLY workspace (Unified)
-│   ├── build/               <-- (Auto-generated by catkin_make)
-│   ├── devel/               <-- (Auto-generated, source this!)
+│   ├── build/               <-- (Auto-generated by colcon)
+│   ├── install/             <-- (Auto-generated, source this!)
 │   └── src/                 <-- ALL packages live here now
 │       ├── agv_bringup/     <-- Master launch files + config + calibration
 │       ├── myagv_odometry/  <-- Encoder/Motor feedback + base IMU
@@ -150,8 +250,9 @@ slam_project/
 ├── scripts/                 <-- Automation & Utility
 │   ├── setup_robot.sh       <-- One-click installer (with swap, chrony, udev)
 │   ├── logging/             <-- Data collection scripts
-│   │   ├── start_session.sh <-- Managed lifecycle: bringup → sensor gate → rosbag
+│   │   ├── start_session.sh <-- Managed lifecycle: bringup → sensor gate → ros2 bag
 │   │   ├── drive_circle.py  <-- Concentric-circle motion controller
+│   │   ├── drive_lawnmower.py <-- Straight-line shuttle motion controller
 │   │   ├── drive_square.py  <-- Square motion controller
 │   │   ├── validate_bag.py  <-- Full bag quality validator
 │   │   └── audit_bag_fast.py<-- Fast topic/rate auditor
@@ -171,14 +272,14 @@ slam_project/
 Source order matters:
 
 ```bash
-source /opt/ros/noetic/setup.bash
-source ~/slam_project/agv_ws/devel/setup.bash
+source /opt/ros/humble/setup.bash
+source ~/slam_project/agv_ws/install/setup.bash
 ```
 
 Manual bringup without recording:
 
 ```bash
-roslaunch agv_bringup bringup.launch
+ros2 launch agv_bringup bringup.launch.py
 ```
 
 AprilTag detector (optional, for offline loop-closure injection):
@@ -196,79 +297,11 @@ bash scripts/logging/start_session.sh <robot_name> <scenario_name>
 `start_session.sh` writes:
 
 ```text
-~/agv_data/<robot>_<scenario>_<timestamp>.bag
+~/agv_data/<robot>_<scenario>_<timestamp>/          ROS2 bag directory
 ~/agv_data/<robot>_<scenario>_<timestamp>_manifest.yaml
 ~/agv_data/<robot>_<scenario>_<timestamp>_chrony.txt
 ~/agv_data/<robot>_<scenario>_<timestamp>_bringup.log
 ```
-
-It records with `rosbag --buffsize=2048 --lz4`, which was validated on the live robot for RGB-D + LiDAR recording without buffer overflow.
-
-## Ground Truth (OptiTrack + VRPN)
-
-The new lab uses OptiTrack motion capture streaming via a VRPN server on the Motive machine (`192.168.50.200:3883`). The `vrpn_client_ros` package bridges this into ROS1 and publishes live ground truth poses at 100 Hz.
-
-### Prerequisites
-
-Install the VRPN client package once per robot:
-
-```bash
-sudo apt install ros-noetic-vrpn-client-ros
-```
-
-### Starting the VRPN client
-
-Run this alongside (or after) `bringup.launch` in a separate terminal:
-
-```bash
-source /opt/ros/noetic/setup.bash
-source ~/slam_project/agv_ws/devel/setup.bash
-roslaunch vrpn_client_ros sample.launch server:=192.168.50.200
-```
-
-The node connects to Motive, discovers all rigid bodies, and publishes each one as:
-
-```text
-/optitrack/rigid_bodies/<rigid_body_name>   geometry_msgs/PoseStamped  (100 Hz)
-```
-
-For example, the robot named `orkar_agv1` in Motive publishes on:
-
-```text
-/optitrack/rigid_bodies/orkar_agv1
-```
-
-### Verifying the stream
-
-```bash
-rostopic echo /optitrack/rigid_bodies/orkar_agv1
-```
-
-You should see `geometry_msgs/PoseStamped` messages at ~100 Hz in the `world` frame. If the topic is silent, check that:
-1. The robot is within the OptiTrack camera capture volume
-2. The rigid body is actively tracked in Motive (green indicator)
-3. VRPN streaming is enabled in Motive under **View → Data Streaming**
-
-### Recording ground truth in a bag
-
-To include ground truth in a recording session, pass the mocap topic via the environment variable:
-
-```bash
-MOCAP_TOPIC=/optitrack/rigid_bodies/orkar_agv1 bash scripts/logging/start_session.sh agv1 <scenario>
-```
-
-### Rigid body naming convention
-
-| Robot | Motive rigid body name | ROS1 topic |
-|-------|----------------------|------------|
-| AGV1  | `orkar_agv1`         | `/optitrack/rigid_bodies/orkar_agv1` |
-| AGV2  | `orkar_agv2`         | `/optitrack/rigid_bodies/orkar_agv2` |
-| AGV3  | `orkar_agv3`         | `/optitrack/rigid_bodies/orkar_agv3` |
-| AGV4  | `orkar_agv4`         | `/optitrack/rigid_bodies/orkar_agv4` |
-
-> **Note:** The VRPN version mismatch warning (`vrpn: ver. 07.33` vs `07.34`) is benign and does not affect data quality.
-
----
 
 ## Recorded Topics
 
@@ -308,7 +341,7 @@ ${MOCAP_TOPIC:-/optitrack/rigid_bodies/orkar_agv1}     OptiTrack ground truth (s
 Live robot bag checked on 2026-04-29:
 
 ```text
-bag: agv1_square_manual_20260429_224111.bag
+bag: agv1_square_manual_20260429_224111
 duration: 85.1 s
 /scan: 17.93 Hz
 /odom: 12.65 Hz
@@ -324,7 +357,7 @@ Known limitations:
 
 ```text
 D455 camera IMU is permanently disabled (base /imu is used instead).
-Ground truth is optional by default (PhaseSpace may be recorded separately).
+Ground truth is optional by default (OptiTrack may be recorded separately).
 ```
 
 ## Transform Tree
@@ -364,15 +397,15 @@ Fast audit:
 
 ```bash
 cd ~/slam_project
-source /opt/ros/noetic/setup.bash
-source ~/slam_project/agv_ws/devel/setup.bash
-python scripts/logging/audit_bag_fast.py ~/agv_data/<bag>.bag
+source /opt/ros/humble/setup.bash
+source ~/slam_project/agv_ws/install/setup.bash
+python3 scripts/logging/audit_bag_fast.py ~/agv_data/<bag_dir>
 ```
 
 Full validator:
 
 ```bash
-python3 scripts/logging/validate_bag.py ~/agv_data/<bag>.bag
+python3 scripts/logging/validate_bag.py ~/agv_data/<bag_dir>
 ```
 
 Exit codes:
@@ -385,12 +418,24 @@ Exit codes:
 
 ## Copy Bags To Laptop
 
-From the laptop:
+ROS2 bags are directories (containing `.db3` and `metadata.yaml`). Copy the whole directory from the laptop:
 
 ```bash
-scp ubuntu@<robot-ip>:/home/ubuntu/agv_data/*.bag ~/Desktop/slam_data/
+# Using hostname
+scp -r ubuntu@agv37.local:/home/ubuntu/agv_data/<bag_dir>/ ~/Desktop/slam_data/
+scp ubuntu@agv37.local:/home/ubuntu/agv_data/*_manifest.yaml ~/Desktop/slam_data/
+scp ubuntu@agv37.local:/home/ubuntu/agv_data/*_chrony.txt ~/Desktop/slam_data/
+
+# Using IP
+scp -r ubuntu@<robot-ip>:/home/ubuntu/agv_data/<bag_dir>/ ~/Desktop/slam_data/
 scp ubuntu@<robot-ip>:/home/ubuntu/agv_data/*_manifest.yaml ~/Desktop/slam_data/
 scp ubuntu@<robot-ip>:/home/ubuntu/agv_data/*_chrony.txt ~/Desktop/slam_data/
+```
+
+To copy all bags at once:
+
+```bash
+rsync -avz ubuntu@agv37.local:/home/ubuntu/agv_data/ ~/Desktop/slam_data/
 ```
 
 ## Clean Robot Run Data
@@ -398,7 +443,8 @@ scp ubuntu@<robot-ip>:/home/ubuntu/agv_data/*_chrony.txt ~/Desktop/slam_data/
 On the robot:
 
 ```bash
-rm -f ~/agv_data/*.bag ~/agv_data/*.bag.active ~/agv_data/*_manifest.yaml ~/agv_data/*_chrony.txt ~/agv_data/*_bringup.log
+rm -rf ~/agv_data/*/
+rm -f ~/agv_data/*_manifest.yaml ~/agv_data/*_chrony.txt ~/agv_data/*_bringup.log
 ```
 
 ## Hardware
@@ -414,9 +460,10 @@ Base MCU IMU:        Published on /imu by myagv_odometry_node
 
 For each robot:
 
-1. Clone/pull this repo to `~/slam_project`.
-2. Run `bash scripts/setup_robot.sh`.
-3. Assign a stable robot name, e.g. `agv1`, `agv2`, `agv3`.
-4. Record with `bash scripts/logging/start_session.sh <robot_name> <scenario>`.
-5. For fleet orchestration, use `launch_fleet.sh` from the parent directory.
-6. Before each run, confirm chrony on robot and mocap machines if ground truth is recorded separately.
+1. Flash Ubuntu arm64, set hostname (`agv<N>`), connect to WiFi, install avahi-daemon (see Post-Flash setup above).
+2. Clone/pull this repo to `~/slam_project`.
+3. Run `bash scripts/setup_robot.sh`.
+4. Assign a stable robot name, e.g. `agv1`, `agv2`, `agv3`.
+5. Record with `bash scripts/logging/start_session.sh <robot_name> <scenario>`.
+6. For fleet orchestration, use `launch_fleet.sh` from the parent directory.
+7. Before each run, confirm chrony on robot and mocap machines if ground truth is recorded separately.
