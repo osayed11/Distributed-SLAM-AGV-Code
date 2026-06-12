@@ -205,6 +205,53 @@ agv4 -> radius 1.25 m -> starts at T0 +  90 s
 agv5 -> radius 1.50 m -> starts at T0 + 120 s
 ```
 
+## Validation
+
+Fast audit:
+
+```bash
+cd ~/slam_project
+source /opt/ros/humble/setup.bash
+source ~/slam_project/agv2_ws/install/setup.bash
+python3 scripts/logging/audit_bag_fast.py ~/agv_data/<bag_dir>
+```
+
+Full validator:
+
+```bash
+python3 scripts/logging/validate_bag.py ~/agv_data/<bag_dir>
+```
+
+Exit codes:
+
+```text
+0 = pass
+1 = fail
+2 = warning
+```
+
+## Copy Bags To Laptop
+
+ROS2 bags are directories (containing `.db3` and `metadata.yaml`). Copy the whole directory from the laptop:
+
+```bash
+# Using hostname
+scp -r ubuntu@agv37.local:/home/ubuntu/agv_data/<bag_dir>/ ~/Desktop/slam_data/
+scp ubuntu@agv37.local:/home/ubuntu/agv_data/*_manifest.yaml ~/Desktop/slam_data/
+scp ubuntu@agv37.local:/home/ubuntu/agv_data/*_chrony.txt ~/Desktop/slam_data/
+
+# Using IP
+scp -r ubuntu@<robot-ip>:/home/ubuntu/agv_data/<bag_dir>/ ~/Desktop/slam_data/
+scp ubuntu@<robot-ip>:/home/ubuntu/agv_data/*_manifest.yaml ~/Desktop/slam_data/
+scp ubuntu@<robot-ip>:/home/ubuntu/agv_data/*_chrony.txt ~/Desktop/slam_data/
+```
+
+To copy all bags at once:
+
+```bash
+rsync -avz ubuntu@agv37.local:/home/ubuntu/agv_data/ ~/Desktop/slam_data/
+```
+
 ## What Is Production
 
 Use these paths for normal robot operation:
@@ -394,53 +441,6 @@ base_footprint -> laser_frame:
 base_footprint -> camera_link:
   xyz=(-0.132025, 0.000153, 0.187925)
   rpy=(pi/2, -0.007906, -pi/2)
-```
-
-## Validation
-
-Fast audit:
-
-```bash
-cd ~/slam_project
-source /opt/ros/humble/setup.bash
-source ~/slam_project/agv2_ws/install/setup.bash
-python3 scripts/logging/audit_bag_fast.py ~/agv_data/<bag_dir>
-```
-
-Full validator:
-
-```bash
-python3 scripts/logging/validate_bag.py ~/agv_data/<bag_dir>
-```
-
-Exit codes:
-
-```text
-0 = pass
-1 = fail
-2 = warning
-```
-
-## Copy Bags To Laptop
-
-ROS2 bags are directories (containing `.db3` and `metadata.yaml`). Copy the whole directory from the laptop:
-
-```bash
-# Using hostname
-scp -r ubuntu@agv37.local:/home/ubuntu/agv_data/<bag_dir>/ ~/Desktop/slam_data/
-scp ubuntu@agv37.local:/home/ubuntu/agv_data/*_manifest.yaml ~/Desktop/slam_data/
-scp ubuntu@agv37.local:/home/ubuntu/agv_data/*_chrony.txt ~/Desktop/slam_data/
-
-# Using IP
-scp -r ubuntu@<robot-ip>:/home/ubuntu/agv_data/<bag_dir>/ ~/Desktop/slam_data/
-scp ubuntu@<robot-ip>:/home/ubuntu/agv_data/*_manifest.yaml ~/Desktop/slam_data/
-scp ubuntu@<robot-ip>:/home/ubuntu/agv_data/*_chrony.txt ~/Desktop/slam_data/
-```
-
-To copy all bags at once:
-
-```bash
-rsync -avz ubuntu@agv37.local:/home/ubuntu/agv_data/ ~/Desktop/slam_data/
 ```
 
 ## Clean Robot Run Data
