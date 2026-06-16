@@ -245,8 +245,9 @@ void MyAGV::publishImuSensor()
 // -------------------------------------------------------------------------
 void MyAGV::execute()
 {
-  // Send velocity command
-  writeSpeed(0.08 * linearX, 0.08 * linearY, 0.6 * angularZ);
+  // Send velocity command. The MCU protocol expects normalized m/s, m/s,
+  // rad/s-style command values in [-1, 1], matching the original ROS1 driver.
+  writeSpeed(linearX, linearY, angularZ);
 
   // Read sensor packet
   if (!readSpeed()) {
