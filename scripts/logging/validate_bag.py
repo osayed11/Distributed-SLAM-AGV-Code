@@ -50,8 +50,6 @@ OPTIONAL_TOPICS = {
     "/diagnostics":                     {"min_hz": 0.0},
     "/tag_detections":                  {"min_hz": 0.0},
 }
-if CMD_TOPIC != "/cmd_vel":
-    OPTIONAL_TOPICS["/cmd_vel"] = {"min_hz": 0.0}
 
 GROUND_TRUTH_TOPICS = [
     "/optitrack/rigid_bodies/orkar_agv1",
@@ -496,9 +494,15 @@ def check_imu_requirement(bag_topics, duration, require_imu):
     for topic in present:
         msg_count = bag_topics[topic].get("messages", 0)
         actual_hz = msg_count / duration if duration > 0 else 0.0
-        if actual_hz > 0.0:
+        min_hz = OPTIONAL_TOPICS.get(topic, {}).get("min_hz", 0.0)
+        if actual_hz >= min_hz:
             any_live = True
             record(PASS, topic, "{} msgs @ {:.1f} Hz".format(msg_count, actual_hz))
+        elif actual_hz > 0.0:
+            any_live = True
+            level = FAIL if require_imu else WARN
+            record(level, topic, "{} msgs @ {:.1f} Hz — below required {:.0f} Hz".format(
+                msg_count, actual_hz, min_hz))
         else:
             record(WARN, topic, "present but no messages")
     if require_imu and not any_live:

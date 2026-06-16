@@ -263,6 +263,34 @@ BRINGUP_PID=""
 ROSBAG_PID=""
 CLEANED_UP=false
 
+wait_or_kill() {
+    local pid="$1"
+    local label="$2"
+    local timeout_s="${3:-20}"
+    local end=$((SECONDS + timeout_s))
+
+    if [ -z "${pid}" ] || ! kill -0 "${pid}" 2>/dev/null; then
+        return 0
+    fi
+
+    while [ "${SECONDS}" -lt "${end}" ]; do
+        if ! kill -0 "${pid}" 2>/dev/null; then
+            wait "${pid}" 2>/dev/null || true
+            return 0
+        fi
+        sleep 1
+    done
+
+    echo "  [WARN] ${label} did not exit after ${timeout_s}s; sending SIGTERM."
+    kill -TERM "${pid}" 2>/dev/null || true
+    sleep 5
+    if kill -0 "${pid}" 2>/dev/null; then
+        echo "  [WARN] ${label} still running; sending SIGKILL."
+        kill -KILL "${pid}" 2>/dev/null || true
+    fi
+    wait "${pid}" 2>/dev/null || true
+}
+
 finalise_manifest() {
     echo ""
     echo "=== Finalising manifest ==="
@@ -316,13 +344,13 @@ cleanup() {
         echo ""
         echo "Stopping rosbag..."
         kill -INT "${ROSBAG_PID}" 2>/dev/null || true
-        wait "${ROSBAG_PID}" 2>/dev/null || true
+        wait_or_kill "${ROSBAG_PID}" "rosbag" 30
     fi
 
     if [ -n "${BRINGUP_PID}" ] && kill -0 "${BRINGUP_PID}" 2>/dev/null; then
         echo "Stopping bringup..."
         kill -INT "${BRINGUP_PID}" 2>/dev/null || true
-        wait "${BRINGUP_PID}" 2>/dev/null || true
+        wait_or_kill "${BRINGUP_PID}" "bringup" 30
     fi
 
     finalise_manifest
