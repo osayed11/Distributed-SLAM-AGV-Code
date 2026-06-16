@@ -181,6 +181,10 @@ if [ "$INSTALL_SYSTEM" = true ]; then
             ros-${ROS2_DISTRO}-image-transport \
             ros-${ROS2_DISTRO}-diagnostic-msgs \
             ros-${ROS2_DISTRO}-realsense2-camera \
+            ros-${ROS2_DISTRO}-ros2bag \
+            ros-${ROS2_DISTRO}-rosbag2 \
+            ros-${ROS2_DISTRO}-rosbag2-py \
+            ros-${ROS2_DISTRO}-rosbag2-storage-default-plugins \
             python3-colcon-common-extensions \
             python3-colcon-mixin
     fi
@@ -339,6 +343,7 @@ source /opt/ros/${ROS2_DISTRO}/setup.bash
 source ${ROOT}/agv2_ws/install/setup.bash
 
 # One-command data run:
+export REQUIRE_IMU=true
 bash ${ROOT}/scripts/logging/start_session.sh agv1 square_manual
 
 # Optional manual teleop in another terminal:
