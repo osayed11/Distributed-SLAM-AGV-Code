@@ -15,6 +15,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 INSTALL_SYSTEM=true
 REQUIRED_LIBREALSENSE_VERSION="${REQUIRED_LIBREALSENSE_VERSION:-2.57.6}"
+export DEBIAN_FRONTEND="${DEBIAN_FRONTEND:-noninteractive}"
+export NEEDRESTART_MODE="${NEEDRESTART_MODE:-l}"
 
 for arg in "$@"; do
     case "$arg" in
@@ -31,6 +33,62 @@ for arg in "$@"; do
             ;;
     esac
 done
+
+UBUNTU_CODENAME=$(lsb_release -cs 2>/dev/null || echo "focal")
+
+section() {
+    echo ""
+    echo "== $1 =="
+}
+
+configure_noninteractive_apt() {
+    if [ -d /etc/needrestart ]; then
+        sudo mkdir -p /etc/needrestart/conf.d
+        printf "%s\n" "\$nrconf{restart} = 'l';" | \
+            sudo tee /etc/needrestart/conf.d/99-agv-noninteractive.conf > /dev/null
+    fi
+}
+
+bootstrap_ros2_humble_if_needed() {
+    if [ "$INSTALL_SYSTEM" = false ]; then
+        return
+    fi
+    if [ -f /opt/ros/humble/setup.bash ] || \
+       [ -f /opt/ros/iron/setup.bash ] || \
+       [ -f /opt/ros/jazzy/setup.bash ] || \
+       [ -f /opt/ros/noetic/setup.bash ] || \
+       [ -f /opt/ros/melodic/setup.bash ]; then
+        return
+    fi
+    if [ "$UBUNTU_CODENAME" != "jammy" ]; then
+        echo "ERROR: no supported ROS installation found under /opt/ros" >&2
+        echo "       automatic ROS2 bootstrap is only enabled for Ubuntu jammy." >&2
+        exit 1
+    fi
+
+    section "ros2 humble bootstrap"
+    echo "No ROS installation found. Installing ROS2 Humble base packages..."
+    configure_noninteractive_apt
+    sudo apt-get update
+    sudo apt-get install -y software-properties-common curl gnupg lsb-release
+    sudo add-apt-repository -y universe
+    sudo mkdir -p /etc/apt/keyrings
+    sudo curl -fsSL https://raw.githubusercontent.com/ros/rosdistro/master/ros.key \
+        -o /etc/apt/keyrings/ros-archive-keyring.gpg
+    echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/ros-archive-keyring.gpg] http://packages.ros.org/ros2/ubuntu ${UBUNTU_CODENAME} main" | \
+        sudo tee /etc/apt/sources.list.d/ros2.list > /dev/null
+    sudo apt-get update
+    sudo apt-get install -y \
+        ros-humble-ros-base \
+        ros-humble-ros2bag \
+        ros-humble-rosbag2 \
+        ros-humble-rosbag2-py \
+        ros-humble-rosbag2-storage-default-plugins \
+        python3-colcon-common-extensions \
+        python3-colcon-mixin
+}
+
+bootstrap_ros2_humble_if_needed
 
 # ---------------------------------------------------------------------------
 # Detect which ROS versions are present on this machine
@@ -56,14 +114,6 @@ if [ "$HAS_ROS1" = false ] && [ "$HAS_ROS2" = false ]; then
     echo "ERROR: no supported ROS installation found under /opt/ros" >&2
     exit 1
 fi
-
-# Detect Ubuntu codename for apt source selection
-UBUNTU_CODENAME=$(lsb_release -cs 2>/dev/null || echo "focal")
-
-section() {
-    echo ""
-    echo "== $1 =="
-}
 
 require_file() {
     if [ ! -f "$1" ]; then
@@ -130,6 +180,7 @@ ensure_swap
 if [ "$INSTALL_SYSTEM" = true ]; then
     section "system dependencies"
 
+    configure_noninteractive_apt
     sudo apt-get update
     sudo apt-get install -y \
         build-essential \
@@ -205,7 +256,7 @@ if [ "$INSTALL_SYSTEM" = true ]; then
         sudo apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv-key FB0B24895113F120
 
         # Use the correct apt repo for this Ubuntu version (focal=20.04, jammy=22.04)
-        sudo add-apt-repository "deb https://librealsense.intel.com/Debian/apt-repo ${UBUNTU_CODENAME} main" -u
+        sudo add-apt-repository -y "deb https://librealsense.intel.com/Debian/apt-repo ${UBUNTU_CODENAME} main" -u
 
         sudo apt-get install -y librealsense2-utils librealsense2-dev librealsense2-dbg
     else
