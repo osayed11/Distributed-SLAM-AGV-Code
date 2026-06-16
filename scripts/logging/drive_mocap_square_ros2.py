@@ -10,6 +10,7 @@ import threading
 import time
 
 import rclpy
+from rclpy.executors import ExternalShutdownException, SingleThreadedExecutor
 from rclpy.signals import SignalHandlerOptions
 from geometry_msgs.msg import PoseStamped, Twist
 
@@ -62,6 +63,13 @@ def wait_for_pose(timeout):
         if time.time() - start > timeout:
             raise RuntimeError("Timed out waiting for mocap pose")
         time.sleep(0.05)
+
+
+def spin_executor(executor):
+    try:
+        executor.spin()
+    except ExternalShutdownException:
+        pass
 
 
 def line_coordinates(current_pose, origin_pose, line_yaw):
@@ -372,7 +380,9 @@ def main(argv):
     _node.create_subscription(PoseStamped, args.pose_topic, pose_cb, 5)
     pub = _node.create_publisher(Twist, args.cmd_topic, 5)
 
-    spin_thread = threading.Thread(target=rclpy.spin, args=(_node,), daemon=True)
+    executor = SingleThreadedExecutor()
+    executor.add_node(_node)
+    spin_thread = threading.Thread(target=spin_executor, args=(executor,))
     spin_thread.start()
 
     try:
@@ -384,8 +394,17 @@ def main(argv):
     finally:
         publish_zero(pub)
         try:
+            executor.shutdown()
+        except Exception:
+            pass
+        spin_thread.join(timeout=2.0)
+        try:
             _node.destroy_node()
-            rclpy.shutdown()
+        except Exception:
+            pass
+        try:
+            if rclpy.ok():
+                rclpy.shutdown()
         except Exception:
             pass
 
