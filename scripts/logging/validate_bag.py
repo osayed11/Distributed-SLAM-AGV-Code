@@ -50,6 +50,14 @@ OPTIONAL_TOPICS = {
 }
 
 GROUND_TRUTH_TOPICS = [
+    "/optitrack/rigid_bodies/orkar_agv1",
+    "/optitrack/rigid_bodies/orkar_agv2",
+    "/optitrack/rigid_bodies/orkar_agv3",
+    "/optitrack/rigid_bodies/orkar_agv4",
+    "/gt/agv1/pose",
+    "/gt/agv2/pose",
+    "/gt/agv3/pose",
+    "/gt/agv4/pose",
     "/phasespace/rigids",
     "/mocap",
     "/ground_truth",

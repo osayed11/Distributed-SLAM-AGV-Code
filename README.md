@@ -167,6 +167,7 @@ Start a data collection session:
 
 ```bash
 cd ~/slam_project
+export REQUIRE_IMU=true
 bash scripts/logging/start_session.sh agv1 square_manual
 ```
 
@@ -386,45 +387,42 @@ Default robot bag topics:
 /camera/aligned_depth_to_color/image_raw D455 aligned depth image
 /camera/aligned_depth_to_color/camera_info Aligned depth intrinsics
 /camera/extrinsics/depth_to_color        Depth-to-color extrinsics
-/imu                                     Base MCU IMU (accel + gyro)
-/diagnostics                             ROS diagnostics
+/camera/imu                              D455 camera IMU (accel + gyro)
 ```
 
 Optional topics (recorded when detectors are enabled or ground truth is present):
 
 ```text
+/imu                                                   Base MCU IMU, when published
+/diagnostics                                           ROS diagnostics, when published
 /tag_detections                                        AprilTag detections (ENABLE_APRILTAG=true)
 ${MOCAP_TOPIC:-/optitrack/rigid_bodies/orkar_agv1}     OptiTrack ground truth (set MOCAP_TOPIC per robot)
 ```
 
-> **Note:** The D455 camera IMU (`/camera/imu`, `/camera/accel/*`, `/camera/gyro/*`)
-> is permanently disabled. The D455 motion module does not publish IMU data
-> reliably while RGB-D video streams are active on the current firmware/driver
-> stack. The dataset IMU requirement is satisfied by the base `/imu` topic from
-> `myagv_odometry_node`.
+> **Note:** On the ROS2 Humble stack, `/camera/imu` is the validated IMU stream
+> and should be required for new dataset runs with `REQUIRE_IMU=true`.
 
 ## Current Validated Baseline
 
 Live robot bag checked on 2026-04-29:
 
 ```text
-bag: agv1_square_manual_20260429_224111
-duration: 85.1 s
-/scan: 17.93 Hz
-/odom: 12.65 Hz
-/camera/color/image_raw: 14.96 Hz
-/camera/aligned_depth_to_color/image_raw: 14.96 Hz
-/tf: 87.02 Hz
-camera color/depth sync: 0.00 ms median, 0.00 ms max
-diagnostics: 0 warnings, 0 errors
-overall audit: PASS
+bag: agv37_ros2_20260611_153804
+duration: 68.7 s
+/scan: 17.2 Hz
+/odom: 12.7 Hz
+/camera/color/image_raw: 14.9 Hz
+/camera/aligned_depth_to_color/image_raw: 14.6 Hz
+/camera/imu: 192.4 Hz
+/tf: 12.7 Hz
+overall validation: WARN, no hard failures
 ```
 
 Known limitations:
 
 ```text
-D455 camera IMU is permanently disabled (base /imu is used instead).
-Ground truth is optional by default (OptiTrack may be recorded separately).
+Occasional RGB-D frame gaps were observed on agv37; usable but flag in QA.
+Ground truth is optional by default; set REQUIRE_GT=true when OptiTrack must be in-bag.
 ```
 
 ## Transform Tree
@@ -472,8 +470,8 @@ rm -f ~/agv_data/*_manifest.yaml ~/agv_data/*_chrony.txt ~/agv_data/*_bringup.lo
 ```text
 AGV base controller: /dev/ttyACM0 (symlink /dev/myAGV via udev)
 YDLiDAR X2:          /dev/ydlidar (symlink via udev, native /dev/ttyUSB0)
-RealSense D455:      USB 3.x, RGB-D 640x480 @ 15 Hz (camera IMU disabled)
-Base MCU IMU:        Published on /imu by myagv_odometry_node
+RealSense D455:      USB 3.x, RGB-D 640x480 @ 15 Hz plus /camera/imu
+Base MCU IMU:        Optional /imu topic when exposed by the base driver
 ```
 
 ## Scaling To More Robots

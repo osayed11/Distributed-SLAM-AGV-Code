@@ -29,6 +29,7 @@ DATESTAMP=$(date +%Y%m%d_%H%M%S)
 MOCAP_TOPIC="${MOCAP_TOPIC:-/optitrack/rigid_bodies/orkar_agv1}"
 REQUIRE_GT="${REQUIRE_GT:-false}"
 REQUIRE_IMU="${REQUIRE_IMU:-false}"
+IMU_TOPICS="${IMU_TOPICS:-/camera/imu /imu}"
 ENABLE_REALSENSE_SYNC="${ENABLE_REALSENSE_SYNC:-true}"
 
 CAMERA_COLOR_WIDTH="${CAMERA_COLOR_WIDTH:-640}"
@@ -48,21 +49,23 @@ mkdir -p "${BAG_DIR}"
 # ---------------------------------------------------------------------------
 # Source ROS
 # ---------------------------------------------------------------------------
-# Detect ROS version available on this machine
-ROS_VERSION=$(command -v ros2 >/dev/null 2>&1 && echo 2 || echo 1)
-
-# Source ROS2 if available (preferred for agv2_ws robots)
+# Source ROS2 if available (preferred for agv2_ws robots), otherwise ROS1.
+ROS_VERSION=0
 if [ -f /opt/ros/humble/setup.bash ]; then
     source /opt/ros/humble/setup.bash
+    ROS_VERSION=2
 elif [ -f /opt/ros/iron/setup.bash ]; then
     source /opt/ros/iron/setup.bash
-fi
-
-# Source ROS1 as fallback for Melodic robots
-if [ -f /opt/ros/noetic/setup.bash ]; then
+    ROS_VERSION=2
+elif [ -f /opt/ros/noetic/setup.bash ]; then
     source /opt/ros/noetic/setup.bash
+    ROS_VERSION=1
 elif [ -f /opt/ros/melodic/setup.bash ]; then
     source /opt/ros/melodic/setup.bash
+    ROS_VERSION=1
+else
+    echo "ERROR: no supported ROS setup found under /opt/ros" >&2
+    exit 1
 fi
 
 # Source whichever workspace is built
@@ -173,8 +176,16 @@ else
     fi
 
     if [ "$REQUIRE_IMU" = true ]; then
-        if ! _topic_hz_ok /imu; then
-            echo "ERROR: REQUIRE_IMU=true but base /imu is not publishing."
+        IMU_OK=false
+        for topic in $IMU_TOPICS; do
+            if _topic_hz_ok "$topic"; then
+                echo "  [OK] IMU topic detected: $topic"
+                IMU_OK=true
+                break
+            fi
+        done
+        if [ "$IMU_OK" = false ]; then
+            echo "ERROR: REQUIRE_IMU=true but no IMU topic is publishing (${IMU_TOPICS})."
             exit 1
         fi
     fi
@@ -216,7 +227,8 @@ calibration_hash: "sha256:${CALIB_HASH}"
 mocap_topic: "${MOCAP_TOPIC}"
 ground_truth_required: ${REQUIRE_GT}
 imu_required: ${REQUIRE_IMU}
-camera_imu: disabled
+imu_topics: "${IMU_TOPICS}"
+camera_imu: enabled
 enable_realsense_sync: ${ENABLE_REALSENSE_SYNC}
 
 camera_profile:
@@ -227,7 +239,7 @@ camera_profile:
   depth_height: ${CAMERA_DEPTH_HEIGHT}
   depth_fps: ${CAMERA_DEPTH_FPS}
 notes: ""
-usb_mode_note: "D455 observed on USB 3.2; RGB-D stable. D455 IMU disabled by default because video+motion publishes no IMU messages on current wrapper/device stack."
+usb_mode_note: "D455 observed on USB 3.x; RGB-D and /camera/imu are recorded when available."
 EOF
 
 echo ""
@@ -327,6 +339,7 @@ export DATESTAMP="$DATESTAMP"
 export MOCAP_TOPIC="$MOCAP_TOPIC"
 export REQUIRE_GT="$REQUIRE_GT"
 export REQUIRE_IMU="$REQUIRE_IMU"
+export IMU_TOPICS="$IMU_TOPICS"
 
 export ENABLE_REALSENSE_SYNC="$ENABLE_REALSENSE_SYNC"
 
@@ -444,7 +457,16 @@ check_topic_silent /camera/color/image_raw 45 || FAILED_TOPICS+=("/camera/color/
 check_topic_silent /camera/aligned_depth_to_color/image_raw 25 || FAILED_TOPICS+=("/camera/aligned_depth_to_color/image_raw")
 
 if [ "$REQUIRE_IMU" = true ]; then
-    check_topic_silent /imu 15 || FAILED_TOPICS+=("/imu")
+    IMU_OK=false
+    for topic in $IMU_TOPICS; do
+        if check_topic_silent "$topic" 15; then
+            IMU_OK=true
+            break
+        fi
+    done
+    if [ "$IMU_OK" = false ]; then
+        FAILED_TOPICS+=("IMU (${IMU_TOPICS})")
+    fi
 fi
 
 if [ ${#FAILED_TOPICS[@]} -ne 0 ]; then
@@ -477,6 +499,7 @@ if [ "${ROS_VERSION}" = "2" ]; then
         /camera/aligned_depth_to_color/camera_info \
         /camera/extrinsics/depth_to_color \
         /camera/imu \
+        /imu \
         /diagnostics \
         /tag_detections \
         "${MOCAP_TOPIC}" \
@@ -496,6 +519,7 @@ else
         /camera/aligned_depth_to_color/camera_info \
         /camera/extrinsics/depth_to_color \
         /camera/imu \
+        /imu \
         /diagnostics \
         /tag_detections \
         "${MOCAP_TOPIC}" \

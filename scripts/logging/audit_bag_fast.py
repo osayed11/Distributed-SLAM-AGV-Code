@@ -37,7 +37,6 @@ REQUIRED_TOPICS = [
     "/camera/aligned_depth_to_color/image_raw",
     "/camera/aligned_depth_to_color/camera_info",
     "/camera/extrinsics/depth_to_color",
-    "/diagnostics",
 ]
 
 MIN_HZ = {
@@ -52,6 +51,12 @@ MIN_HZ = {
 }
 
 IMU_TOPICS = ["/camera/imu"]
+OPTIONAL_TOPICS = [
+    "/diagnostics",
+    "/tag_detections",
+    os.environ.get("MOCAP_TOPIC", "/optitrack/rigid_bodies/orkar_agv1"),
+    "/mocap",
+]
 
 
 # ---------------------------------------------------------------------------
@@ -436,6 +441,18 @@ def main():
             max_gap(recv_times.get(topic, [])),
             max_gap(header_times.get(topic, []))))
 
+    print("")
+    print("optional_topics:")
+    for topic in OPTIONAL_TOPICS:
+        if not topic:
+            continue
+        count = counts.get(topic, 0)
+        rate = count / duration if duration > 0 else 0.0
+        if count:
+            print("  PASS {:48s} count={:<6d} hz={:6.2f}".format(topic, count, rate))
+        else:
+            print("  WARN {:48s} count=0".format(topic))
+
     color_stamps = header_times.get("/camera/color/image_raw", [])
     depth_stamps = header_times.get("/camera/aligned_depth_to_color/image_raw", [])
     sync_diffs = nearest_diffs(color_stamps, depth_stamps)
@@ -489,6 +506,7 @@ def main():
     if bag_format == "ROS2" and not has_semantics:
         print("note: install rosbag2_py + rclpy for full semantic analysis "
               "(cmd_vel counts, odom position, enriched TF edges)")
+    sys.exit(1 if hard_fail else 0)
 
 
 if __name__ == "__main__":
