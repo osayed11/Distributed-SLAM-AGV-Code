@@ -118,10 +118,12 @@ void MyAGV::writeSpeed(double movex, double movey, double rot)
        static_cast<unsigned int>(y_send) +
        static_cast<unsigned int>(rot_send)) % 256);
 
-  unsigned char buf[6] = {HEADER, HEADER, x_send, y_send, rot_send, checksum};
+  // Match the original ROS1 driver frame length. The MCU receives the first
+  // six bytes as header + x/y/yaw/checksum and ignores the two trailing zeros.
+  unsigned char buf[8] = {HEADER, HEADER, x_send, y_send, rot_send, checksum, 0, 0};
 
   try {
-    boost::asio::write(sp_, boost::asio::buffer(buf, 6));
+    boost::asio::write(sp_, boost::asio::buffer(buf, sizeof(buf)));
   } catch (const boost::system::system_error & e) {
     RCLCPP_WARN(this->get_logger(), "writeSpeed error: %s", e.what());
   }
