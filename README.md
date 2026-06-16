@@ -483,6 +483,26 @@ Known limitations:
 ```text
 Occasional RGB-D frame gaps were observed on agv37; usable but flag in QA.
 Ground truth is optional by default; set REQUIRE_GT=true when OptiTrack must be in-bag.
+RealSense USB/control stalls can affect all sensor streams, not only IMU.
+If logs show UVCIOC_CTRL_QUERY timeouts, HID frame warnings, Right MIPI errors,
+or realsense2_camera enters kernel D state, reboot or power-cycle before
+collecting publishable data.
+start_session.sh performs one USB reset before launch and disables the
+RealSense launch initial_reset to avoid double-resetting the D455.
+```
+
+RealSense baseline checked on agv37 at home on 2026-06-16:
+
+```text
+camera: Intel RealSense D455
+firmware: 5.17.0.10
+USB: 3.2 descriptor, 5000 Mb/s link
+IMU: BMI085
+ROS driver package: realsense2_camera 4.57.7
+ROS node LibRealSense: 2.57.7
+standalone librealsense tools: 2.58.1
+live /camera/imu: about 200 Hz
+static recording-load /camera/imu: about 173 Hz over 63.5 s
 ```
 
 ## Transform Tree
@@ -534,6 +554,33 @@ RealSense D455:      USB 3.x, RGB-D 640x480 @ 15 Hz plus /camera/imu
 Base MCU IMU:        Optional /imu topic when exposed by the base driver
 ```
 
+## RealSense Setup Gate
+
+Run this before collecting publishable data on any newly flashed robot:
+
+```bash
+rs-enumerate-devices | grep -E "Firmware Version|Usb Type Descriptor|Imu Type"
+dpkg -l | grep -E "librealsense2|ros-humble-realsense2-camera"
+ros2 topic hz /camera/imu
+ros2 topic hz /camera/gyro/sample
+ros2 topic hz /camera/accel/sample
+ros2 topic hz /camera/color/image_raw
+ros2 topic hz /camera/aligned_depth_to_color/image_raw
+```
+
+Expected known-good D455 baseline:
+
+```text
+Firmware Version: 5.17.0.10
+Usb Type Descriptor: 3.x / 5000 Mb/s
+ROS realsense2_camera package: 4.57.7
+ROS node LibRealSense: 2.57.7
+/camera/imu: near 200 Hz live, at least 150 Hz under recording load
+/camera/gyro/sample: near 200 Hz
+/camera/accel/sample: near 100 Hz
+RGB-D image topics: near 15 Hz
+```
+
 ## Scaling To More Robots
 
 For each robot:
@@ -542,6 +589,7 @@ For each robot:
 2. Clone/pull this repo to `~/slam_project`.
 3. Run `bash scripts/setup_robot.sh`.
 4. Assign a stable robot name, e.g. `agv1`, `agv2`, `agv3`.
-5. Record with `bash scripts/logging/start_session.sh <robot_name> <scenario>`.
-6. For fleet orchestration, use `launch_fleet.sh` from the parent directory.
-7. Before each run, confirm chrony on robot and mocap machines if ground truth is recorded separately.
+5. Run the RealSense setup gate and require the D455 firmware, driver, USB link, and IMU rates to match the known-good baseline.
+6. Record with `bash scripts/logging/start_session.sh <robot_name> <scenario>`.
+7. For fleet orchestration, use `launch_fleet.sh` from the parent directory.
+8. Before each run, confirm chrony on robot and mocap machines if ground truth is recorded separately.
