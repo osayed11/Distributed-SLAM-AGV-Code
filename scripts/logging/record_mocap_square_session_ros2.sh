@@ -39,11 +39,19 @@ BASE_SERVICE="${BASE_SERVICE:-agv-base-d${ROS_DOMAIN_ID}.service}"
 RESTART_BASE_SERVICE="${RESTART_BASE_SERVICE:-true}"
 
 cd "${ROOT}"
-source /opt/ros/humble/setup.bash
+
+source_ros_setup() {
+    set +u
+    # ROS setup scripts are not safe under bash nounset.
+    source "$1"
+    set -u
+}
+
+source_ros_setup /opt/ros/humble/setup.bash
 if [ -f "${ROOT}/agv2_ws/install/setup.bash" ]; then
-    source "${ROOT}/agv2_ws/install/setup.bash"
+    source_ros_setup "${ROOT}/agv2_ws/install/setup.bash"
 elif [ -f "${ROOT}/install/setup.bash" ]; then
-    source "${ROOT}/install/setup.bash"
+    source_ros_setup "${ROOT}/install/setup.bash"
 fi
 
 SESSION_LOG="/tmp/${ROBOT_NAME}_${SCENARIO}_session_$(date +%Y%m%d_%H%M%S).log"
