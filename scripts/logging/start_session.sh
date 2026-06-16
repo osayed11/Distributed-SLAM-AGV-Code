@@ -31,6 +31,7 @@ REQUIRE_GT="${REQUIRE_GT:-false}"
 REQUIRE_IMU="${REQUIRE_IMU:-false}"
 IMU_TOPICS="${IMU_TOPICS:-/camera/imu /imu}"
 ENABLE_REALSENSE_SYNC="${ENABLE_REALSENSE_SYNC:-true}"
+ROSBAG2_MAX_CACHE_SIZE="${ROSBAG2_MAX_CACHE_SIZE:-536870912}"
 
 CAMERA_COLOR_WIDTH="${CAMERA_COLOR_WIDTH:-640}"
 CAMERA_COLOR_HEIGHT="${CAMERA_COLOR_HEIGHT:-480}"
@@ -230,6 +231,7 @@ imu_required: ${REQUIRE_IMU}
 imu_topics: "${IMU_TOPICS}"
 camera_imu: enabled
 enable_realsense_sync: ${ENABLE_REALSENSE_SYNC}
+rosbag2_max_cache_size_bytes: ${ROSBAG2_MAX_CACHE_SIZE}
 
 camera_profile:
   color_width: ${CAMERA_COLOR_WIDTH}
@@ -342,6 +344,7 @@ export REQUIRE_IMU="$REQUIRE_IMU"
 export IMU_TOPICS="$IMU_TOPICS"
 
 export ENABLE_REALSENSE_SYNC="$ENABLE_REALSENSE_SYNC"
+export ROSBAG2_MAX_CACHE_SIZE="$ROSBAG2_MAX_CACHE_SIZE"
 
 export CAMERA_COLOR_WIDTH="$CAMERA_COLOR_WIDTH"
 export CAMERA_COLOR_HEIGHT="$CAMERA_COLOR_HEIGHT"
@@ -486,6 +489,7 @@ START_EPOCH=$(date +%s)
 if [ "${ROS_VERSION}" = "2" ]; then
     # ROS2: ros2 bag record writes to a directory; -o specifies the directory name
     ros2 bag record \
+        --max-cache-size "${ROSBAG2_MAX_CACHE_SIZE}" \
         -o "${BAG_DIR}/${SESSION_ID}" \
         /scan \
         /odom \

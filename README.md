@@ -225,19 +225,47 @@ agv5 -> radius 1.50 m -> starts at T0 + 120 s
 
 ## Validation
 
+Quick ROS2 setup validation on a newly flashed robot:
+
+```bash
+cd ~/slam_project
+source /opt/ros/humble/setup.bash
+source ~/slam_project/agv2_ws/install/setup.bash
+
+export REQUIRE_IMU=true
+export REQUIRE_GT=false
+
+# Include a command stream in the validation bag without moving the robot.
+ros2 topic pub -r 5 /cmd_vel geometry_msgs/msg/Twist \
+  "{linear: {x: 0.0, y: 0.0, z: 0.0}, angular: {x: 0.0, y: 0.0, z: 0.0}}" \
+  >/tmp/cmd_vel_zero.log 2>&1 &
+CMD_PID=$!
+
+timeout -s INT 160 bash scripts/logging/start_session.sh agv1 ros2_validation
+kill "$CMD_PID" 2>/dev/null || true
+```
+
+Select the newest ROS2 bag directory. Use `find -type d` so the command does
+not accidentally select the manifest YAML:
+
+```bash
+latest_bag="$(find ~/agv_data -maxdepth 1 -type d -name 'agv1_ros2_validation_*' | sort | tail -1)"
+echo "$latest_bag"
+```
+
 Fast audit:
 
 ```bash
 cd ~/slam_project
 source /opt/ros/humble/setup.bash
 source ~/slam_project/agv2_ws/install/setup.bash
-python3 scripts/logging/audit_bag_fast.py ~/agv_data/<bag_dir>
+python3 scripts/logging/audit_bag_fast.py "$latest_bag"
 ```
 
 Full validator:
 
 ```bash
-python3 scripts/logging/validate_bag.py ~/agv_data/<bag_dir>
+python3 scripts/logging/validate_bag.py "$latest_bag"
 ```
 
 Exit codes:
