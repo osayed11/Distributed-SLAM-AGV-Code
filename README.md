@@ -196,6 +196,38 @@ python3 scripts/logging/drive_lawnmower.py --duration 20 --linear 0.15 --cycles 
 python3 scripts/logging/drive_circle.py --radius 0.50 --linear 0.16 --duration 60 --no-prompt --verbose
 ```
 
+ROS2 mocap-feedback driving at Here East:
+
+```bash
+cd ~/slam_project
+source /opt/ros/humble/setup.bash
+source ~/slam_project/agv2_ws/install/setup.bash
+
+# Confirm this robot can see its OptiTrack rigid body.
+ros2 topic hz /optitrack/rigid_bodies/orkar_agv1
+
+# Non-moving controller check.
+python3 scripts/logging/drive_mocap_straight_ros2.py \
+  --pose-topic /optitrack/rigid_bodies/orkar_agv1 \
+  --distance 0.5 \
+  --line-yaw-offset-deg 90 \
+  --dry-run \
+  --verbose
+
+# First moving test.
+python3 scripts/logging/drive_mocap_straight_ros2.py \
+  --pose-topic /optitrack/rigid_bodies/orkar_agv1 \
+  --distance 1.0 \
+  --linear 0.08 \
+  --line-yaw-offset-deg 90 \
+  --max-lateral-error 0.15 \
+  --yes \
+  --verbose
+```
+
+For other robots, change both `orkar_agv1` instances to `orkar_agv2`,
+`orkar_agv3`, etc. Run only one robot first, then scale to the fleet.
+
 Stop recording with `Ctrl+C`. Bags and manifests are written to `~/agv_data`.
 
 ## Scenario 1: Concentric Circles
