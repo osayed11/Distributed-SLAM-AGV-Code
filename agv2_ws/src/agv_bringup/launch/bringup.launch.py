@@ -29,6 +29,11 @@ def generate_launch_description():
         default_value='false',
         description='Enable RealSense hardware frame sync')
 
+    initial_reset_arg = DeclareLaunchArgument(
+        'initial_reset',
+        default_value='true',
+        description='Reset the RealSense device during node startup')
+
     cmd_vel_topic_arg = DeclareLaunchArgument(
         'cmd_vel_topic',
         default_value='/cmd_vel',
@@ -128,7 +133,7 @@ def generate_launch_description():
             'enable_infra2':                    'false',
             'rgb_camera.enable_auto_exposure':  'true',
             'depth_module.enable_auto_exposure':'true',
-            'initial_reset':                    'true',
+            'initial_reset':                    LaunchConfiguration('initial_reset'),
         }.items(),
     )
 
@@ -137,6 +142,7 @@ def generate_launch_description():
         color_profile_arg,
         depth_profile_arg,
         enable_sync_arg,
+        initial_reset_arg,
         cmd_vel_topic_arg,
         odometry_node,
         static_tf_camera,

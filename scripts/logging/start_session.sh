@@ -452,6 +452,7 @@ if [ "${ROS_VERSION}" = "2" ]; then
         color_profile:="${COLOR_PROFILE}" \
         depth_profile:="${DEPTH_PROFILE}" \
         enable_sync:="${ENABLE_REALSENSE_SYNC}" \
+        initial_reset:="false" \
         cmd_vel_topic:="${CMD_TOPIC}" \
         > "${BRINGUP_LOG}" 2>&1 &
 else
