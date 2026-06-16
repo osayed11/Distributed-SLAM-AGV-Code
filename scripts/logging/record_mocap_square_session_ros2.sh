@@ -56,6 +56,13 @@ fi
 
 SESSION_LOG="/tmp/${ROBOT_NAME}_${SCENARIO}_session_$(date +%Y%m%d_%H%M%S).log"
 SESSION_PID=""
+BASE_SERVICE_EXISTS=false
+
+user_service_exists() {
+    systemctl --user list-unit-files --all "$1" --no-legend 2>/dev/null \
+        | awk '{print $1}' \
+        | grep -Fxq "$1"
+}
 
 cleanup() {
     local status=$?
@@ -64,7 +71,7 @@ cleanup() {
         kill -INT "${SESSION_PID}" 2>/dev/null || true
         wait "${SESSION_PID}" 2>/dev/null || true
     fi
-    if [ "${RESTART_BASE_SERVICE}" = "true" ]; then
+    if [ "${BASE_SERVICE_EXISTS}" = "true" ] && [ "${RESTART_BASE_SERVICE}" = "true" ]; then
         systemctl --user start "${BASE_SERVICE}" >/dev/null 2>&1 || true
     fi
     exit "${status}"
@@ -78,7 +85,8 @@ echo "Mocap topic: ${MOCAP_TOPIC}"
 echo "Cmd topic:   ${CMD_TOPIC}"
 echo "Session log: ${SESSION_LOG}"
 
-if systemctl --user list-unit-files "${BASE_SERVICE}" >/dev/null 2>&1; then
+if user_service_exists "${BASE_SERVICE}"; then
+    BASE_SERVICE_EXISTS=true
     echo "Stopping user base service during managed session: ${BASE_SERVICE}"
     systemctl --user stop "${BASE_SERVICE}" >/dev/null 2>&1 || true
 fi
