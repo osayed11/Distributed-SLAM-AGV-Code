@@ -309,8 +309,14 @@ echo 'KERNEL=="ttyACM*", ATTRS{idVendor}=="0483", ATTRS{idProduct}=="5740", MODE
 # ttyS0 is owned by group 'tty' by default; set 0666 so dialout user can read it.
 echo "Setting permissions for YDLidar on /dev/ttyS0..."
 echo 'KERNEL=="ttyS0", MODE:="0666"' | sudo tee /etc/udev/rules.d/99-ydlidar.rules > /dev/null
+# On Raspberry Pi UART devices, the udev rule is not always reapplied to the
+# already-created ttyS0 node after reboot. tmpfiles gives us a persistent boot
+# time chmod and the direct chmod fixes the current session immediately.
+echo 'z /dev/ttyS0 0666 root tty - -' | sudo tee /etc/tmpfiles.d/agv-hardware.conf > /dev/null
 
 sudo udevadm control --reload-rules && sudo udevadm trigger
+sudo systemd-tmpfiles --create /etc/tmpfiles.d/agv-hardware.conf || true
+sudo chmod 666 /dev/ttyS0 2>/dev/null || true
 
 # ---------------------------------------------------------------------------
 # Validate common dependencies
