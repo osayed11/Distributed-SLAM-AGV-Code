@@ -14,7 +14,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 INSTALL_SYSTEM=true
-REQUIRED_LIBREALSENSE_VERSION="${REQUIRED_LIBREALSENSE_VERSION:-2.57.6}"
+REQUIRED_LIBREALSENSE_VERSION="${REQUIRED_LIBREALSENSE_VERSION:-2.58.1}"
 export DEBIAN_FRONTEND="${DEBIAN_FRONTEND:-noninteractive}"
 export NEEDRESTART_MODE="${NEEDRESTART_MODE:-l}"
 
@@ -386,11 +386,16 @@ fi
 section "script permissions"
 chmod +x \
     "${ROOT}/scripts/logging/start_session.sh" \
+    "${ROOT}/scripts/logging/record_mocap_square_session_ros2.sh" \
     "${ROOT}/scripts/logging/drive_circle.py" \
     "${ROOT}/scripts/logging/drive_lawnmower.py" \
     "${ROOT}/scripts/logging/drive_square.py" \
+    "${ROOT}/scripts/logging/drive_mocap_straight_ros2.py" \
+    "${ROOT}/scripts/logging/drive_mocap_square_ros2.py" \
     "${ROOT}/scripts/logging/validate_bag.py" \
     "${ROOT}/scripts/logging/audit_bag_fast.py" \
+    "${ROOT}/scripts/mocap/natnet_ros2_pose_publisher.py" \
+    "${ROOT}/scripts/mocap/natnet_watch.py" \
     "${ROOT}/scripts/diagnostics/"*.sh 2>/dev/null || true
 
 section "next commands"
