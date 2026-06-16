@@ -25,10 +25,15 @@ import yaml
 from collections import defaultdict
 
 
+CMD_TOPIC = os.environ.get("CMD_TOPIC", "/cmd_vel")
+CMD_TOPICS = [CMD_TOPIC]
+if CMD_TOPIC != "/cmd_vel":
+    CMD_TOPICS.append("/cmd_vel")
+
 REQUIRED_TOPICS = [
     "/scan",
     "/odom",
-    "/cmd_vel",
+    CMD_TOPIC,
     "/tf",
     "/tf_static",
     "/camera/color/image_raw",
@@ -150,7 +155,7 @@ def _read_ros1_bag(bag_path):
                     if p and c:
                         tf_edges.add(p + " -> " + c)
 
-            elif topic == "/cmd_vel":
+            elif topic in CMD_TOPICS:
                 lin, ang = msg.linear, msg.angular
                 if (abs(lin.x) + abs(lin.y) + abs(lin.z) +
                         abs(ang.x) + abs(ang.y) + abs(ang.z)) > 1e-6:
@@ -267,7 +272,7 @@ def _ros2_semantics_via_rosbag2(bag_path, counts):
             type_cache[ros2_type] = get_message(ros2_type)
         return type_cache[ros2_type]
 
-    semantic_topics = {"/tf", "/tf_static", "/cmd_vel", "/odom"}
+    semantic_topics = {"/tf", "/tf_static", "/odom"}.union(CMD_TOPICS)
 
     while reader.has_next():
         topic, data, _ = reader.read_next()
@@ -285,7 +290,7 @@ def _ros2_semantics_via_rosbag2(bag_path, counts):
                 if p and c:
                     tf_edges.add(p + " -> " + c)
 
-        elif topic == "/cmd_vel":
+        elif topic in CMD_TOPICS:
             lin, ang = msg.linear, msg.angular
             if (abs(lin.x) + abs(lin.y) + abs(lin.z) +
                     abs(ang.x) + abs(ang.y) + abs(ang.z)) > 1e-6:

@@ -29,6 +29,11 @@ def generate_launch_description():
         default_value='false',
         description='Enable RealSense hardware frame sync')
 
+    cmd_vel_topic_arg = DeclareLaunchArgument(
+        'cmd_vel_topic',
+        default_value='/cmd_vel',
+        description='Topic that commands the AGV base')
+
     base_ros2_yaml = PathJoinSubstitution([
         FindPackageShare('agv_bringup'), 'config', 'base_ros2.yaml'])
 
@@ -39,6 +44,9 @@ def generate_launch_description():
         parameters=[
             base_ros2_yaml,
             {'serial_port': LaunchConfiguration('serial_port')},
+        ],
+        remappings=[
+            ('cmd_vel', LaunchConfiguration('cmd_vel_topic')),
         ],
         output='screen',
     )
@@ -129,6 +137,7 @@ def generate_launch_description():
         color_profile_arg,
         depth_profile_arg,
         enable_sync_arg,
+        cmd_vel_topic_arg,
         odometry_node,
         static_tf_camera,
         static_tf_base,

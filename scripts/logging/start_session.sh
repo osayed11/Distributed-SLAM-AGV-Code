@@ -27,6 +27,7 @@ ROBOT_NAME="${1:-agv_unknown}"
 SCENARIO="${2:-unknown_scenario}"
 DATESTAMP=$(date +%Y%m%d_%H%M%S)
 MOCAP_TOPIC="${MOCAP_TOPIC:-/optitrack/rigid_bodies/orkar_agv1}"
+CMD_TOPIC="${CMD_TOPIC:-/cmd_vel}"
 REQUIRE_GT="${REQUIRE_GT:-false}"
 REQUIRE_IMU="${REQUIRE_IMU:-false}"
 IMU_TOPICS="${IMU_TOPICS:-/camera/imu /imu}"
@@ -226,6 +227,7 @@ bag_size_mb: ~
 duration_sec: ~
 calibration_hash: "sha256:${CALIB_HASH}"
 mocap_topic: "${MOCAP_TOPIC}"
+cmd_topic: "${CMD_TOPIC}"
 ground_truth_required: ${REQUIRE_GT}
 imu_required: ${REQUIRE_IMU}
 imu_topics: "${IMU_TOPICS}"
@@ -339,6 +341,7 @@ export ROBOT_NAME="$ROBOT_NAME"
 export SCENARIO="$SCENARIO"
 export DATESTAMP="$DATESTAMP"
 export MOCAP_TOPIC="$MOCAP_TOPIC"
+export CMD_TOPIC="$CMD_TOPIC"
 export REQUIRE_GT="$REQUIRE_GT"
 export REQUIRE_IMU="$REQUIRE_IMU"
 export IMU_TOPICS="$IMU_TOPICS"
@@ -421,6 +424,7 @@ if [ "${ROS_VERSION}" = "2" ]; then
         color_profile:="${COLOR_PROFILE}" \
         depth_profile:="${DEPTH_PROFILE}" \
         enable_sync:="${ENABLE_REALSENSE_SYNC}" \
+        cmd_vel_topic:="${CMD_TOPIC}" \
         > "${BRINGUP_LOG}" 2>&1 &
 else
     roslaunch agv_bringup bringup.launch \
@@ -487,27 +491,30 @@ fi
 echo "Sensors are live; starting bag recording."
 START_EPOCH=$(date +%s)
 if [ "${ROS_VERSION}" = "2" ]; then
+    ROS2_RECORD_TOPICS=(
+        /scan
+        /odom
+        "${CMD_TOPIC}"
+        /tf
+        /tf_static
+        /camera/color/image_raw
+        /camera/color/camera_info
+        /camera/depth/camera_info
+        /camera/aligned_depth_to_color/image_raw
+        /camera/aligned_depth_to_color/camera_info
+        /camera/extrinsics/depth_to_color
+        /camera/imu
+        /imu
+        /diagnostics
+        /tag_detections
+        "${MOCAP_TOPIC}"
+        /mocap
+    )
     # ROS2: ros2 bag record writes to a directory; -o specifies the directory name
     ros2 bag record \
         --max-cache-size "${ROSBAG2_MAX_CACHE_SIZE}" \
         -o "${BAG_DIR}/${SESSION_ID}" \
-        /scan \
-        /odom \
-        /cmd_vel \
-        /tf \
-        /tf_static \
-        /camera/color/image_raw \
-        /camera/color/camera_info \
-        /camera/depth/camera_info \
-        /camera/aligned_depth_to_color/image_raw \
-        /camera/aligned_depth_to_color/camera_info \
-        /camera/extrinsics/depth_to_color \
-        /camera/imu \
-        /imu \
-        /diagnostics \
-        /tag_detections \
-        "${MOCAP_TOPIC}" \
-        /mocap &
+        "${ROS2_RECORD_TOPICS[@]}" &
 else
     # ROS1 fallback for Melodic/Noetic robots
     rosbag record --buffsize=2048 --lz4 -O "${BAG_FILE}" \

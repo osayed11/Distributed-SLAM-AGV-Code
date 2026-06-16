@@ -30,10 +30,12 @@ from collections import defaultdict
 # ---------------------------------------------------------------------------
 # Publishability thresholds
 # ---------------------------------------------------------------------------
+CMD_TOPIC = os.environ.get("CMD_TOPIC", "/cmd_vel")
+
 REQUIRED_TOPICS = {
     "/scan":                                    {"min_hz": 5.0,   "target_hz": 18.0},
     "/odom":                                    {"min_hz": 10.0,  "target_hz": 20.0},
-    "/cmd_vel":                                 {"min_hz": 0.0,   "target_hz": 0.0},
+    CMD_TOPIC:                                  {"min_hz": 0.0,   "target_hz": 0.0},
     "/tf":                                      {"min_hz": 10.0,  "target_hz": 50.0},
     "/tf_static":                               {"min_hz": 0.0,   "target_hz": 0.0},
     "/camera/color/image_raw":                  {"min_hz": 12.0,  "target_hz": 15.0},
@@ -48,6 +50,8 @@ OPTIONAL_TOPICS = {
     "/diagnostics":                     {"min_hz": 0.0},
     "/tag_detections":                  {"min_hz": 0.0},
 }
+if CMD_TOPIC != "/cmd_vel":
+    OPTIONAL_TOPICS["/cmd_vel"] = {"min_hz": 0.0}
 
 GROUND_TRUTH_TOPICS = [
     "/optitrack/rigid_bodies/orkar_agv1",
@@ -904,10 +908,13 @@ def main():
                         help="Treat warnings as failures")
     parser.add_argument("--require-gt", action="store_true",
                         help="Require a ground-truth/mocap topic")
+    parser.add_argument("--require-imu", action="store_true",
+                        help="Require an IMU topic")
     args = parser.parse_args()
 
     bag_path = args.bag.rstrip("/")
     require_gt = args.require_gt or os.environ.get("REQUIRE_GT") == "true"
+    require_imu = args.require_imu or os.environ.get("REQUIRE_IMU") == "true"
 
     if not os.path.exists(bag_path):
         print("ERROR: bag not found: {}".format(bag_path))
@@ -932,6 +939,7 @@ def main():
     duration = check_duration(info)
     bag_topics = check_topics(info, duration)
     check_ground_truth(bag_topics, duration, require_gt)
+    check_imu_requirement(bag_topics, duration, require_imu)
     check_tf_tree(bag_path, bag_topics)
     check_frame_drops(bag_path, bag_topics, duration)
     check_colour_depth_sync(bag_path, bag_topics)
