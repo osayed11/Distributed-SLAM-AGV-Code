@@ -15,6 +15,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 INSTALL_SYSTEM=true
 REQUIRED_LIBREALSENSE_VERSION="${REQUIRED_LIBREALSENSE_VERSION:-2.58.1}"
+REQUIRED_LIBREALSENSE_DEB_VERSION="${REQUIRED_LIBREALSENSE_DEB_VERSION:-2.58.1-0~realsense.8235}"
 export DEBIAN_FRONTEND="${DEBIAN_FRONTEND:-noninteractive}"
 export NEEDRESTART_MODE="${NEEDRESTART_MODE:-l}"
 
@@ -159,6 +160,37 @@ check_realsense_version() {
     fi
 }
 
+install_pinned_realsense_sdk() {
+    local deb_version="${REQUIRED_LIBREALSENSE_DEB_VERSION}"
+    local packages=(
+        librealsense2
+        librealsense2-dev
+        librealsense2-utils
+        librealsense2-udev-rules
+        librealsense2-gl
+        librealsense2-dbg
+    )
+    local install_args=()
+    local pkg
+
+    echo "Installing Intel RealSense SDK ${REQUIRED_LIBREALSENSE_VERSION} (${deb_version})..."
+    for pkg in "${packages[@]}"; do
+        if apt-cache policy "${pkg}" | grep -q "${deb_version}"; then
+            install_args+=("${pkg}=${deb_version}")
+        else
+            echo "WARN: ${pkg} ${deb_version} not available from apt; skipping exact pin for this package."
+        fi
+    done
+
+    if [ "${#install_args[@]}" -eq 0 ]; then
+        echo "ERROR: no RealSense ${deb_version} packages are available from configured apt sources." >&2
+        return 1
+    fi
+
+    sudo apt-get install -y --allow-downgrades "${install_args[@]}"
+    sudo apt-mark hold "${packages[@]}" >/dev/null || true
+}
+
 ensure_catkin_workspace() {
     if [ ! -d "$1/src" ]; then
         echo "ERROR: missing catkin workspace src directory: $1/src" >&2
@@ -258,9 +290,11 @@ if [ "$INSTALL_SYSTEM" = true ]; then
         # Use the correct apt repo for this Ubuntu version (focal=20.04, jammy=22.04)
         sudo add-apt-repository -y "deb https://librealsense.intel.com/Debian/apt-repo ${UBUNTU_CODENAME} main" -u
 
-        sudo apt-get install -y librealsense2-utils librealsense2-dev librealsense2-dbg
+        install_pinned_realsense_sdk
     else
         echo "RealSense SDK already installed."
+        sudo apt-mark hold librealsense2 librealsense2-dev librealsense2-utils \
+            librealsense2-udev-rules librealsense2-gl librealsense2-dbg >/dev/null || true
     fi
 
     # --- YDLidar SDK (native C library, required by both ROS1 and ROS2 drivers) ---

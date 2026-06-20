@@ -8,6 +8,16 @@ ROOT="${SLAM_PROJECT_ROOT:-${HOME}/slam_project}"
 LOG="/tmp/agv_bringup_check_$(date +%Y%m%d_%H%M%S).log"
 ROS_MAJOR=0
 ROS_DISTRO_USED=""
+FAILURES=0
+
+REQUIRED_REALSENSE_FIRMWARE="${REQUIRED_REALSENSE_FIRMWARE:-5.17.0.10}"
+REQUIRED_ROS_REALSENSE_CAMERA_VERSION="${REQUIRED_ROS_REALSENSE_CAMERA_VERSION:-4.57.7}"
+REQUIRED_ROS_LIBREALSENSE_VERSION="${REQUIRED_ROS_LIBREALSENSE_VERSION:-2.57.7}"
+REQUIRED_STANDALONE_LIBREALSENSE_VERSION="${REQUIRED_STANDALONE_LIBREALSENSE_VERSION:-2.58.1}"
+MIN_CAMERA_IMU_HZ="${MIN_CAMERA_IMU_HZ:-150}"
+MIN_CAMERA_GYRO_HZ="${MIN_CAMERA_GYRO_HZ:-150}"
+MIN_CAMERA_ACCEL_HZ="${MIN_CAMERA_ACCEL_HZ:-90}"
+MIN_RGBD_HZ="${MIN_RGBD_HZ:-12}"
 
 source_ros_setup() {
     set +u
@@ -64,6 +74,101 @@ print_section() {
     echo "== $1 =="
 }
 
+pass_gate() {
+    echo "PASS $1: $2"
+}
+
+fail_gate() {
+    echo "FAIL $1: $2"
+    FAILURES=$((FAILURES + 1))
+}
+
+dpkg_version() {
+    dpkg-query -W -f='${Version}' "$1" 2>/dev/null || true
+}
+
+check_dpkg_prefix() {
+    local package="$1"
+    local expected="$2"
+    local label="$3"
+    local version
+
+    version="$(dpkg_version "${package}")"
+    if [ -z "${version}" ]; then
+        fail_gate "${label}" "${package} is not installed"
+    elif [ "${version#${expected}}" != "${version}" ]; then
+        pass_gate "${label}" "${package} ${version}"
+    else
+        fail_gate "${label}" "expected ${package} ${expected}*, found ${version}"
+    fi
+}
+
+check_realsense_gate() {
+    local usb_tree
+    local rs_info
+    local standalone_version
+
+    print_section "realsense gate"
+
+    usb_tree="$(lsusb -t 2>/dev/null || true)"
+    if printf "%s\n" "${usb_tree}" | grep -q "Driver=uvcvideo, 5000M"; then
+        pass_gate "RealSense USB" "D455 video interfaces are on USB 3.x / 5000M"
+    else
+        fail_gate "RealSense USB" "D455 is not visible as uvcvideo at 5000M"
+    fi
+
+    if command -v rs-enumerate-devices >/dev/null 2>&1; then
+        rs_info="$(timeout 15 rs-enumerate-devices 2>&1 || true)"
+        printf "%s\n" "${rs_info}" | grep -Ei "Device Name|Firmware Version|Usb Type Descriptor|Imu Type|BMI085" || true
+
+        if printf "%s\n" "${rs_info}" | grep -q "Firmware Version.*${REQUIRED_REALSENSE_FIRMWARE}"; then
+            pass_gate "RealSense firmware" "${REQUIRED_REALSENSE_FIRMWARE}"
+        else
+            fail_gate "RealSense firmware" "expected ${REQUIRED_REALSENSE_FIRMWARE}"
+        fi
+
+        if printf "%s\n" "${rs_info}" | grep -Eq "Usb Type Descriptor.*3\\."; then
+            pass_gate "RealSense USB descriptor" "USB 3.x"
+        else
+            fail_gate "RealSense USB descriptor" "expected USB 3.x from rs-enumerate-devices"
+        fi
+
+        if printf "%s\n" "${rs_info}" | grep -q "BMI085"; then
+            pass_gate "RealSense IMU" "BMI085"
+        else
+            fail_gate "RealSense IMU" "expected BMI085"
+        fi
+    else
+        fail_gate "RealSense tools" "rs-enumerate-devices is not installed"
+    fi
+
+    if [ "${ROS_MAJOR}" = "2" ]; then
+        check_dpkg_prefix "ros-${ROS_DISTRO_USED}-realsense2-camera" \
+            "${REQUIRED_ROS_REALSENSE_CAMERA_VERSION}" "ROS driver"
+        check_dpkg_prefix "ros-${ROS_DISTRO_USED}-librealsense2" \
+            "${REQUIRED_ROS_LIBREALSENSE_VERSION}" "ROS node LibRealSense package"
+        if ldd /opt/ros/"${ROS_DISTRO_USED}"/lib/librealsense2_camera.so 2>/dev/null | \
+            grep -q "/opt/ros/${ROS_DISTRO_USED}/lib.*/librealsense2.so.2.57"; then
+            pass_gate "ROS node LibRealSense link" "using ROS ${REQUIRED_ROS_LIBREALSENSE_VERSION} library path"
+        else
+            fail_gate "ROS node LibRealSense link" "realsense2_camera is not linked to the ROS 2.57.x librealsense library"
+        fi
+    fi
+
+    check_dpkg_prefix "librealsense2-utils" \
+        "${REQUIRED_STANDALONE_LIBREALSENSE_VERSION}" "standalone librealsense tools"
+    if command -v pkg-config >/dev/null 2>&1 && pkg-config --exists realsense2; then
+        standalone_version="$(pkg-config --modversion realsense2)"
+        if [ "${standalone_version}" = "${REQUIRED_STANDALONE_LIBREALSENSE_VERSION}" ]; then
+            pass_gate "standalone librealsense pkg-config" "${standalone_version}"
+        else
+            fail_gate "standalone librealsense pkg-config" "expected ${REQUIRED_STANDALONE_LIBREALSENSE_VERSION}, found ${standalone_version}"
+        fi
+    else
+        fail_gate "standalone librealsense pkg-config" "realsense2 metadata missing"
+    fi
+}
+
 topic_list() {
     if [ "${ROS_MAJOR}" = "2" ]; then
         ros2 topic list 2>/dev/null
@@ -84,8 +189,10 @@ check_hz() {
     local topic="$1"
     local timeout_sec="${2:-12}"
     local window="${3:-20}"
+    local min_rate="${4:-}"
     local out
     local line
+    local rate
 
     if [ "${ROS_MAJOR}" = "2" ]; then
         out=$(timeout "${timeout_sec}" ros2 topic hz --window "${window}" "${topic}" 2>&1 || true)
@@ -94,9 +201,14 @@ check_hz() {
     fi
     line=$(printf "%s\n" "${out}" | grep "average rate" | tail -1 || true)
     if [ -n "${line}" ]; then
-        echo "PASS ${topic}: ${line}"
+        rate=$(printf "%s\n" "${line}" | awk -F': ' '{print $2}' | awk '{print $1}')
+        if [ -n "${min_rate}" ] && ! awk -v rate="${rate}" -v min="${min_rate}" 'BEGIN { exit(rate >= min ? 0 : 1) }'; then
+            fail_gate "${topic}" "${line}; expected >= ${min_rate} Hz"
+        else
+            pass_gate "${topic}" "${line}"
+        fi
     else
-        echo "FAIL ${topic}: no average rate within ${timeout_sec}s"
+        fail_gate "${topic}" "no average rate within ${timeout_sec}s"
         printf "%s\n" "${out}" | tail -5
     fi
 }
@@ -104,14 +216,14 @@ check_hz() {
 check_topic_registered() {
     local topic="$1"
     if topic_list | grep -qx "${topic}"; then
-        echo "PASS ${topic}: registered"
+        pass_gate "${topic}" "registered"
         if [ "${ROS_MAJOR}" = "2" ]; then
             ros2 topic info "${topic}" 2>/dev/null | sed -n '1,8p'
         else
             rostopic info "${topic}" 2>/dev/null | sed -n '1,8p'
         fi
     else
-        echo "FAIL ${topic}: not registered"
+        fail_gate "${topic}" "not registered"
     fi
 }
 
@@ -119,13 +231,26 @@ check_optional_hz() {
     local topic="$1"
     local timeout_sec="${2:-8}"
     local window="${3:-20}"
+    local out
+    local line
 
     if ! topic_list | grep -qx "${topic}"; then
         echo "INFO optional ${topic}: not registered"
         return
     fi
 
-    check_hz "${topic}" "${timeout_sec}" "${window}" | sed 's/^FAIL/INFO optional/; s/^PASS/PASS optional/'
+    if [ "${ROS_MAJOR}" = "2" ]; then
+        out=$(timeout "${timeout_sec}" ros2 topic hz --window "${window}" "${topic}" 2>&1 || true)
+    else
+        out=$(timeout "${timeout_sec}" rostopic hz "${topic}" --window "${window}" 2>&1 || true)
+    fi
+    line=$(printf "%s\n" "${out}" | grep "average rate" | tail -1 || true)
+    if [ -n "${line}" ]; then
+        echo "PASS optional ${topic}: ${line}"
+    else
+        echo "INFO optional ${topic}: registered but no average rate within ${timeout_sec}s"
+        printf "%s\n" "${out}" | tail -3
+    fi
 }
 
 tf_echo() {
@@ -150,8 +275,10 @@ print_section "usb"
 lsusb -t || true
 if command -v rs-enumerate-devices >/dev/null 2>&1; then
     echo ""
-    rs-enumerate-devices 2>/dev/null | grep -E "Firmware Version|Usb Type Descriptor|Imu Type" || true
+    timeout 15 rs-enumerate-devices 2>/dev/null | grep -E "Firmware Version|Usb Type Descriptor|Imu Type" || true
 fi
+
+check_realsense_gate
 
 print_section "packages"
 if [ "${ROS_MAJOR}" = "2" ]; then
@@ -219,17 +346,20 @@ check_topic_registered /odom
 check_topic_registered /tf
 check_topic_registered /camera/color/image_raw
 check_topic_registered /camera/aligned_depth_to_color/image_raw
+check_topic_registered /camera/imu
+check_topic_registered /camera/accel/sample
+check_topic_registered /camera/gyro/sample
 
 print_section "core topic rates"
 check_hz /scan 30 20
 check_hz /odom 12 20
 check_hz /tf 12 30
-check_hz /camera/color/image_raw 12 20
-check_hz /camera/aligned_depth_to_color/image_raw 12 20
+check_hz /camera/color/image_raw 12 20 "${MIN_RGBD_HZ}"
+check_hz /camera/aligned_depth_to_color/image_raw 12 20 "${MIN_RGBD_HZ}"
 check_optional_hz /imu 8 10
-check_optional_hz /camera/imu 12 40
-check_optional_hz /camera/accel/sample 8 30
-check_optional_hz /camera/gyro/sample 8 30
+check_hz /camera/imu 12 40 "${MIN_CAMERA_IMU_HZ}"
+check_hz /camera/accel/sample 8 30 "${MIN_CAMERA_ACCEL_HZ}"
+check_hz /camera/gyro/sample 8 30 "${MIN_CAMERA_GYRO_HZ}"
 
 print_section "tf checks"
 tf_echo base_footprint base_link
@@ -245,3 +375,17 @@ echo "SKIP: AprilTag detector is optional and not launched by this readiness che
 
 print_section "bringup log tail"
 tail -80 "${LOG}" || true
+
+if grep -Eiq "UVCIOC_CTRL_QUERY|control_transfer.*failed|Connection timed out|Failed to create device" "${LOG}" 2>/dev/null; then
+    fail_gate "RealSense runtime log" "driver reported UVC/control timeout errors"
+else
+    pass_gate "RealSense runtime log" "no UVC/control timeout errors in bringup log"
+fi
+
+print_section "readiness summary"
+if [ "${FAILURES}" -eq 0 ]; then
+    echo "READINESS PASS"
+else
+    echo "READINESS FAIL: ${FAILURES} gate failure(s)"
+    exit 1
+fi

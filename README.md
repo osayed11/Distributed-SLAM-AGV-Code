@@ -559,6 +559,12 @@ Base MCU IMU:        Optional /imu topic when exposed by the base driver
 Run this before collecting publishable data on any newly flashed robot:
 
 ```bash
+bash scripts/diagnostics/robot_readiness_check.sh
+```
+
+For a manual spot check:
+
+```bash
 rs-enumerate-devices | grep -E "Firmware Version|Usb Type Descriptor|Imu Type"
 dpkg -l | grep -E "librealsense2|ros-humble-realsense2-camera"
 ros2 topic hz /camera/imu
@@ -573,8 +579,10 @@ Expected known-good D455 baseline:
 ```text
 Firmware Version: 5.17.0.10
 Usb Type Descriptor: 3.x / 5000 Mb/s
+IMU: BMI085
 ROS realsense2_camera package: 4.57.7
 ROS node LibRealSense: 2.57.7
+standalone librealsense tools: 2.58.1
 /camera/imu: near 200 Hz live, at least 150 Hz under recording load
 /camera/gyro/sample: near 200 Hz
 /camera/accel/sample: near 100 Hz
