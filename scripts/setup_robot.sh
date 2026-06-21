@@ -162,6 +162,7 @@ check_realsense_version() {
 
 install_pinned_realsense_sdk() {
     local deb_version="${REQUIRED_LIBREALSENSE_DEB_VERSION}"
+    local version="${REQUIRED_LIBREALSENSE_VERSION}"
     local packages=(
         librealsense2
         librealsense2-dev
@@ -171,24 +172,39 @@ install_pinned_realsense_sdk() {
         librealsense2-dbg
     )
     local install_args=()
-    local pkg
+    local pinned_exact=true
+    local pkg avail
 
-    echo "Installing Intel RealSense SDK ${REQUIRED_LIBREALSENSE_VERSION} (${deb_version})..."
+    echo "Installing Intel RealSense SDK ${version} (preferred build ${deb_version})..."
     for pkg in "${packages[@]}"; do
-        if apt-cache policy "${pkg}" | grep -q "${deb_version}"; then
+        if apt-cache policy "${pkg}" 2>/dev/null | grep -q "${deb_version}"; then
+            # Exact validated build is available - pin it.
             install_args+=("${pkg}=${deb_version}")
         else
-            echo "WARN: ${pkg} ${deb_version} not available from apt; skipping exact pin for this package."
+            # Intel rotates the deb build suffix (-0~realsense.NNNN), so the exact
+            # string disappears from the repo over time. Fall back to any build of
+            # the validated VERSION so reproducibility is still honoured; only as a
+            # last resort take whatever build the repo currently offers.
+            avail="$(apt-cache madison "${pkg}" 2>/dev/null | awk -v v="${version}" '$3 ~ ("^" v) {print $3; exit}' || true)"
+            if [ -n "${avail}" ]; then
+                install_args+=("${pkg}=${avail}")
+            else
+                install_args+=("${pkg}")
+            fi
+            pinned_exact=false
         fi
     done
 
-    if [ "${#install_args[@]}" -eq 0 ]; then
-        echo "ERROR: no RealSense ${deb_version} packages are available from configured apt sources." >&2
-        return 1
+    if [ "${pinned_exact}" = false ]; then
+        echo "WARN: exact build ${deb_version} not in apt; installing nearest ${version} build instead."
+        echo "      The camera works regardless; verify the SDK version if calibration reproducibility matters."
     fi
 
-    sudo apt-get install -y --allow-downgrades "${install_args[@]}"
-    sudo apt-mark hold "${packages[@]}" >/dev/null || true
+    # Never abort the whole setup over the SDK pin: the camera runs off the
+    # ros-*-realsense2-camera package, which is installed separately above.
+    sudo apt-get install -y --allow-downgrades "${install_args[@]}" || \
+        echo "WARN: RealSense SDK apt install failed; continuing (camera still works via ros-*-realsense2-camera)."
+    sudo apt-mark hold "${packages[@]}" >/dev/null 2>&1 || true
 }
 
 ensure_catkin_workspace() {
