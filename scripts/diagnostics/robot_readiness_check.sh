@@ -5,10 +5,17 @@
 set -u
 
 ROOT="${SLAM_PROJECT_ROOT:-${HOME}/slam_project}"
-LOG="/tmp/agv_bringup_check_$(date +%Y%m%d_%H%M%S).log"
+RUN_STAMP="$(date +%Y%m%d_%H%M%S)"
+RUN_DIR="${RUN_DIR:-/tmp/agv_readiness_${RUN_STAMP}}"
+LOG="/tmp/agv_bringup_check_${RUN_STAMP}.log"
+READINESS_LOG="${RUN_DIR}/readiness.log"
+KERNEL_LOG="${RUN_DIR}/kernel_after.log"
 ROS_MAJOR=0
 ROS_DISTRO_USED=""
 FAILURES=0
+
+mkdir -p "${RUN_DIR}"
+exec > >(tee -a "${READINESS_LOG}") 2>&1
 
 REQUIRED_REALSENSE_FIRMWARE="${REQUIRED_REALSENSE_FIRMWARE:-5.17.0.10}"
 REQUIRED_ROS_REALSENSE_CAMERA_VERSION="${REQUIRED_ROS_REALSENSE_CAMERA_VERSION:-4.57.7}"
@@ -453,7 +460,17 @@ tf_echo() {
     fi
 }
 
+capture_kernel_snapshot() {
+    if sudo -n true >/dev/null 2>&1; then
+        sudo -n dmesg -T > "${KERNEL_LOG}" 2>&1 || true
+    else
+        dmesg -T > "${KERNEL_LOG}" 2>&1 || true
+    fi
+}
+
 print_section "ros"
+echo "readiness_run_dir=${RUN_DIR}"
+echo "readiness_log=${READINESS_LOG}"
 echo "ros_distro=${ROS_DISTRO_USED}"
 echo "ros_major=${ROS_MAJOR}"
 echo "root=${ROOT}"
@@ -589,6 +606,20 @@ elif grep -Eiq "UVCIOC_CTRL_QUERY|control_transfer.*failed|Connection timed out|
     warn_gate "RealSense runtime log" "UVC/control timeout text observed; topic-rate gates decide readiness"
 else
     pass_gate "RealSense runtime log" "no UVC/control timeout text in bringup log"
+fi
+
+print_section "fault classification"
+capture_kernel_snapshot
+echo "readiness_log=${READINESS_LOG}"
+echo "bringup_log=${LOG}"
+echo "kernel_log=${KERNEL_LOG}"
+if [ -f "${ROOT}/scripts/diagnostics/classify_realsense_fault.py" ]; then
+    python3 "${ROOT}/scripts/diagnostics/classify_realsense_fault.py" \
+        --readiness-log "${READINESS_LOG}" \
+        --bringup-log "${LOG}" \
+        --kernel-log "${KERNEL_LOG}" || true
+else
+    echo "WARN fault classifier: ${ROOT}/scripts/diagnostics/classify_realsense_fault.py not found"
 fi
 
 print_section "readiness summary"

@@ -176,14 +176,14 @@ bash scripts/logging/start_session.sh agv1 square_manual
 2. Waits for `/scan`, `/odom`, and camera streams to stabilise
 3. Runs the required RealSense live camera gate on that active bringup
 4. Starts `ros2 bag record` only after sensors are confirmed live
-5. On `Ctrl+C`, stops recording cleanly -> stops bringup -> runs post-run `rs-enumerate-devices` -> finalises manifest
+5. On `Ctrl+C`, stops recording cleanly -> stops bringup -> runs post-run `rs-enumerate-devices` -> writes a RealSense fault classification -> finalises manifest
 
 The ROS2 camera gate performs:
 
 ```text
 D455 USB reset -> launch bringup once -> 60-120 s live RGB-D/IMU stream test
 -> topic-rate validation -> start ros2 bag without restarting the camera
--> post-run rs-enumerate-devices after shutdown
+-> post-run rs-enumerate-devices after shutdown -> fault classification
 ```
 
 It is enabled by default in `start_session.sh`. For a shorter lab shakedown,
@@ -191,6 +191,29 @@ set `REALSENSE_CAMERA_GATE_SECONDS=60`. For a stricter run, set it to `120`.
 Do not collect publishable data if this gate fails. UVC/control timeout text
 is a warning when RGB-D and IMU rates pass; stream rate loss or camera
 disconnects are hard failures.
+
+The readiness and session tools write a RealSense fault classification from
+the readiness/camera-gate, bringup, hardware, and kernel logs. The classifier
+identifies the software/USB layer, for example:
+
+```text
+PASS
+PASS_WITH_LOW_LEVEL_WARNINGS
+HOST_POWER_OR_THERMAL
+USB_LINK_DEGRADED
+USB_DEVICE_DISCONNECT_OR_RESET
+REALSENSE_UVC_VIDEO_CONTROL_TIMEOUT
+REALSENSE_HID_IMU_TIMEOUT
+REALSENSE_DEVICE_CONTROL_TIMEOUT
+ROS_GRAPH_OR_DRIVER_STARTUP_FAILURE
+```
+
+This is enough to distinguish undervoltage, USB2 fallback, device disconnect,
+UVC video/control failure, HID/IMU failure, and ROS-only startup failures. It
+cannot always prove camera-vs-cable-vs-Pi ownership from one robot alone,
+because those physical faults surface to Linux as the same endpoint timeout.
+Use one controlled A/B swap with a known-good D455/cable and a failing robot
+when the classifier reports a RealSense USB control/HID class.
 
 RGB-D hardware stream FPS must stay at `15` FPS or higher. If processing or
 storage needs fewer frames, drop frames after capture; do not lower the D455
@@ -207,6 +230,7 @@ Each session writes hardware evidence alongside the bag:
 ```text
 <session>_hardware_pre.log
 <session>_hardware_post.log
+<session>_realsense_fault_classification.txt
 ```
 
 These logs capture Pi throttling state, USB autosuspend, WiFi power-save state,

@@ -57,6 +57,7 @@ CAMERA_GATE_PRE_LOG="${BAG_DIR}/${SESSION_ID}_camera_gate_pre.log"
 CAMERA_GATE_POST_LOG="${BAG_DIR}/${SESSION_ID}_camera_gate_post.log"
 HARDWARE_PRE_LOG="${BAG_DIR}/${SESSION_ID}_hardware_pre.log"
 HARDWARE_POST_LOG="${BAG_DIR}/${SESSION_ID}_hardware_post.log"
+FAULT_CLASSIFICATION_FILE="${BAG_DIR}/${SESSION_ID}_realsense_fault_classification.txt"
 
 mkdir -p "${BAG_DIR}"
 
@@ -322,6 +323,7 @@ rgbd_startup_timeout_sec: ${RGBD_STARTUP_TIMEOUT}
 imu_startup_timeout_sec: ${IMU_STARTUP_TIMEOUT}
 hardware_pre_log: ${SESSION_ID}_hardware_pre.log
 hardware_post_log: ${SESSION_ID}_hardware_post.log
+realsense_fault_classification_log: ${SESSION_ID}_realsense_fault_classification.txt
 
 camera_profile:
   color_width: ${CAMERA_COLOR_WIDTH}
@@ -542,6 +544,31 @@ run_camera_post_enumerate_gate() {
     fi
 }
 
+run_realsense_fault_classification() {
+    if [ "${ROS_VERSION}" != "2" ]; then
+        return 0
+    fi
+
+    if [ ! -f "${ROOT}/scripts/diagnostics/classify_realsense_fault.py" ]; then
+        {
+            echo "classification: INCONCLUSIVE"
+            echo "reason: classifier not found at ${ROOT}/scripts/diagnostics/classify_realsense_fault.py"
+        } > "${FAULT_CLASSIFICATION_FILE}"
+        return 0
+    fi
+
+    python3 "${ROOT}/scripts/diagnostics/classify_realsense_fault.py" \
+        --label "${SESSION_ID}" \
+        --readiness-log "${CAMERA_GATE_PRE_LOG}" \
+        --bringup-log "${BRINGUP_LOG}" \
+        --hardware-log "${HARDWARE_PRE_LOG}" \
+        --hardware-log "${HARDWARE_POST_LOG}" \
+        > "${FAULT_CLASSIFICATION_FILE}" 2>&1 || true
+
+    echo "  [i] RealSense fault classification: ${FAULT_CLASSIFICATION_FILE}"
+    sed -n '1,80p' "${FAULT_CLASSIFICATION_FILE}" || true
+}
+
 cleanup() {
     if [ "$CLEANED_UP" = true ]; then
         return
@@ -564,6 +591,7 @@ cleanup() {
 
     capture_hardware_snapshot "post-run" "${HARDWARE_POST_LOG}"
     run_camera_post_enumerate_gate
+    run_realsense_fault_classification
     finalise_manifest
 }
 
