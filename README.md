@@ -224,6 +224,9 @@ checks `/scan`, `/odom`, RGB-D, `/camera/imu`, and the mocap topic when
 `REQUIRE_GT=true`. If any required stream drops below its threshold during
 recording, the watchdog stops the bag and marks the session
 `FAIL_RUNTIME_WATCHDOG`; rerun that scenario instead of using the partial bag.
+For official validation, the watchdog status must show at least one completed
+runtime cycle, so very short shakedown bags are not mistaken for monitored
+dataset runs.
 
 `RGBD_STARTUP_TIMEOUT` defaults to `90` seconds so startup/reconnect jitter on
 Raspberry Pi + D455 does not cause a false early exit before the rate gate runs.
@@ -726,9 +729,10 @@ python3 scripts/logging/validate_bag.py ~/agv_data/<session_dir> \
 
 A bag with `PASS` or `PASS_WITH_LOW_LEVEL_WARNINGS` classification is acceptable
 if the topic-rate checks pass and the runtime watchdog status is
-`STOPPED_CLEANLY`. Any `REALSENSE_*`, `USB_*`, `HOST_POWER_OR_THERMAL`, or
-`FAIL_RUNTIME_WATCHDOG` result should be rejected for official dataset
-collection and diagnosed before the robot is used again.
+`STOPPED_CLEANLY cycles=<N>` with `N >= 1`. Any `REALSENSE_*`, `USB_*`,
+`HOST_POWER_OR_THERMAL`, `FAIL_RUNTIME_WATCHDOG`, or zero-cycle watchdog result
+should be rejected for official dataset collection and diagnosed before the
+robot is used again.
 
 ## Scaling To More Robots
 

@@ -955,8 +955,20 @@ def check_session_evidence(bag_path, require_hardware_logs=False):
             record(WARN, "runtime_watchdog",
                    "could not read {}: {}".format(watchdog_status_path, e))
         else:
-            if watchdog_status == "STOPPED_CLEANLY":
-                record(PASS, "runtime_watchdog", watchdog_status)
+            if watchdog_status.startswith("STOPPED_CLEANLY"):
+                cycle_match = re.search(r"\bcycles=(\d+)", watchdog_status)
+                cycles = int(cycle_match.group(1)) if cycle_match else None
+                if cycles is None:
+                    level = FAIL if require_hardware_logs else WARN
+                    record(level, "runtime_watchdog",
+                           "clean stop but cycle count missing")
+                elif cycles >= 1:
+                    record(PASS, "runtime_watchdog",
+                           "{} runtime cycle(s) completed".format(cycles))
+                else:
+                    level = FAIL if require_hardware_logs else WARN
+                    record(level, "runtime_watchdog",
+                           "0 runtime cycles completed; run was too short to exercise watchdog")
             elif watchdog_status == "FAIL_RUNTIME_WATCHDOG":
                 record(FAIL, "runtime_watchdog", watchdog_status)
             elif watchdog_status == "DISABLED":

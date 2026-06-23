@@ -646,9 +646,16 @@ run_runtime_watchdog() {
        grep -q "^FAIL_RUNTIME_WATCHDOG" "${RUNTIME_WATCHDOG_STATUS_FILE}"; then
         return 1
     fi
-    echo "STOPPED_CLEANLY" > "${RUNTIME_WATCHDOG_STATUS_FILE}"
+    echo "STOPPED_CLEANLY cycles=${cycle}" > "${RUNTIME_WATCHDOG_STATUS_FILE}"
     echo "STOPPED_CLEANLY: rosbag no longer running" >> "${RUNTIME_WATCHDOG_LOG}"
     return 0
+}
+
+write_watchdog_stopped_cleanly_status() {
+    local cycles
+
+    cycles="$(grep -c "^PASS watchdog cycle" "${RUNTIME_WATCHDOG_LOG}" 2>/dev/null || true)"
+    echo "STOPPED_CLEANLY cycles=${cycles:-0}" > "${RUNTIME_WATCHDOG_STATUS_FILE}"
 }
 
 start_runtime_watchdog() {
@@ -736,10 +743,10 @@ cleanup() {
         wait_or_kill "${WATCHDOG_PID}" "runtime watchdog" 10
     fi
     if [ ! -s "${RUNTIME_WATCHDOG_STATUS_FILE}" ]; then
-        echo "STOPPED_CLEANLY" > "${RUNTIME_WATCHDOG_STATUS_FILE}"
+        write_watchdog_stopped_cleanly_status
     elif ! grep -q "^FAIL_RUNTIME_WATCHDOG" "${RUNTIME_WATCHDOG_STATUS_FILE}" && \
          grep -q "^RUNNING" "${RUNTIME_WATCHDOG_STATUS_FILE}"; then
-        echo "STOPPED_CLEANLY" > "${RUNTIME_WATCHDOG_STATUS_FILE}"
+        write_watchdog_stopped_cleanly_status
     fi
 
     if [ -n "${BRINGUP_PID}" ] && kill -0 "${BRINGUP_PID}" 2>/dev/null; then
