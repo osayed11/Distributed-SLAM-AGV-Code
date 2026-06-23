@@ -175,7 +175,7 @@ bash scripts/logging/start_session.sh agv1 square_manual
 1. Launches `bringup.launch.py` (base driver, LiDAR, camera)
 2. Waits for `/scan`, `/odom`, and camera streams to stabilise
 3. Runs the required RealSense live camera gate on that active bringup
-4. Starts `ros2 bag record` only after sensors are confirmed live
+4. Starts `ros2 bag record` only after sensors are confirmed live, with a runtime watchdog checking sensor rates during the bag
 5. On `Ctrl+C`, stops recording cleanly -> stops bringup -> runs post-run `rs-enumerate-devices` -> writes a RealSense fault classification -> finalises manifest
 
 The ROS2 camera gate performs:
@@ -219,6 +219,12 @@ RGB-D hardware stream FPS must stay at `15` FPS or higher. If processing or
 storage needs fewer frames, drop frames after capture; do not lower the D455
 hardware stream below the dataset baseline.
 
+The runtime watchdog is enabled by default for ROS2 sessions. It periodically
+checks `/scan`, `/odom`, RGB-D, `/camera/imu`, and the mocap topic when
+`REQUIRE_GT=true`. If any required stream drops below its threshold during
+recording, the watchdog stops the bag and marks the session
+`FAIL_RUNTIME_WATCHDOG`; rerun that scenario instead of using the partial bag.
+
 `RGBD_STARTUP_TIMEOUT` defaults to `90` seconds so startup/reconnect jitter on
 Raspberry Pi + D455 does not cause a false early exit before the rate gate runs.
 
@@ -230,15 +236,17 @@ Each session writes hardware evidence alongside the bag:
 ```text
 <session>_hardware_pre.log
 <session>_hardware_post.log
+<session>_runtime_watchdog.log
+<session>_runtime_watchdog.status
 <session>_kernel_runtime.log
 <session>_realsense_fault_classification.txt
 ```
 
 These logs capture Pi throttling state, USB autosuspend, WiFi power-save state,
-USB topology, D455 serial/speed/power state, and recent USB/camera kernel log
-lines. The runtime kernel log starts after the intentional D455 USB reset and
-covers the actual bringup/recording window, so stale boot history does not drive
-the fault classification.
+USB topology, D455 serial/speed/power state, live topic rates during recording,
+and recent USB/camera kernel log lines. The runtime kernel log starts after the
+intentional D455 USB reset and covers the actual bringup/recording window, so
+stale boot history does not drive the fault classification.
 
 Drive manually in another terminal:
 
@@ -706,9 +714,9 @@ one sacrificial robot and a before/after 10-minute gate comparison. Do not mix a
 source-built RSUSB stack into the whole fleet until that comparison shows a real
 improvement over the pinned apt packages above.
 
-Post-run bag validation checks the hardware snapshots, runtime kernel log, and
-fault classification file. For publishable data, run validation with hardware
-evidence required:
+Post-run bag validation checks the hardware snapshots, runtime watchdog status,
+runtime kernel log, and fault classification file. For publishable data, run
+validation with hardware evidence required:
 
 ```bash
 python3 scripts/logging/validate_bag.py ~/agv_data/<session_dir> \
@@ -717,8 +725,9 @@ python3 scripts/logging/validate_bag.py ~/agv_data/<session_dir> \
 ```
 
 A bag with `PASS` or `PASS_WITH_LOW_LEVEL_WARNINGS` classification is acceptable
-if the topic-rate checks pass. Any `REALSENSE_*`, `USB_*`, or
-`HOST_POWER_OR_THERMAL` classification should be rejected for official dataset
+if the topic-rate checks pass and the runtime watchdog status is
+`STOPPED_CLEANLY`. Any `REALSENSE_*`, `USB_*`, `HOST_POWER_OR_THERMAL`, or
+`FAIL_RUNTIME_WATCHDOG` result should be rejected for official dataset
 collection and diagnosed before the robot is used again.
 
 ## Scaling To More Robots

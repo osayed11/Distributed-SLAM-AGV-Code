@@ -880,6 +880,8 @@ def check_session_evidence(bag_path, require_hardware_logs=False):
         ("chrony", prefix + "_chrony.txt"),
         ("hardware_pre", prefix + "_hardware_pre.log"),
         ("hardware_post", prefix + "_hardware_post.log"),
+        ("runtime_watchdog_log", prefix + "_runtime_watchdog.log"),
+        ("runtime_watchdog_status", prefix + "_runtime_watchdog.status"),
         ("kernel_runtime", prefix + "_kernel_runtime.log"),
         ("realsense_fault_classification", prefix + "_realsense_fault_classification.txt"),
     ]
@@ -889,6 +891,8 @@ def check_session_evidence(bag_path, require_hardware_logs=False):
             record(PASS, label, os.path.basename(path))
         else:
             required_evidence = label.startswith("hardware_") or label in (
+                "runtime_watchdog_log",
+                "runtime_watchdog_status",
                 "kernel_runtime",
                 "realsense_fault_classification",
             )
@@ -941,6 +945,32 @@ def check_session_evidence(bag_path, require_hardware_logs=False):
                     record(PASS, "realsense_fault_classification", classification)
                 else:
                     record(FAIL, "realsense_fault_classification", classification)
+
+    watchdog_status_path = prefix + "_runtime_watchdog.status"
+    if os.path.exists(watchdog_status_path):
+        try:
+            with open(watchdog_status_path, errors="replace") as f:
+                watchdog_status = f.readline().strip()
+        except Exception as e:
+            record(WARN, "runtime_watchdog",
+                   "could not read {}: {}".format(watchdog_status_path, e))
+        else:
+            if watchdog_status == "STOPPED_CLEANLY":
+                record(PASS, "runtime_watchdog", watchdog_status)
+            elif watchdog_status == "FAIL_RUNTIME_WATCHDOG":
+                record(FAIL, "runtime_watchdog", watchdog_status)
+            elif watchdog_status == "DISABLED":
+                level = FAIL if require_hardware_logs else WARN
+                record(level, "runtime_watchdog",
+                       "disabled; enable for publishable ROS2 dataset runs")
+            elif watchdog_status == "RUNNING":
+                record(FAIL, "runtime_watchdog",
+                       "still marked RUNNING; recording likely ended uncleanly")
+            elif watchdog_status:
+                record(WARN, "runtime_watchdog",
+                       "unrecognised status: {}".format(watchdog_status))
+            else:
+                record(WARN, "runtime_watchdog", "empty status file")
 
     kernel_path = prefix + "_kernel_runtime.log"
     if os.path.exists(kernel_path):

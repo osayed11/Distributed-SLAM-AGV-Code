@@ -36,8 +36,15 @@ ROSBAG2_MAX_CACHE_SIZE="${ROSBAG2_MAX_CACHE_SIZE:-536870912}"
 RUN_REALSENSE_CAMERA_GATE="${RUN_REALSENSE_CAMERA_GATE:-true}"
 REALSENSE_CAMERA_GATE_SECONDS="${REALSENSE_CAMERA_GATE_SECONDS:-90}"
 STRICT_REALSENSE_UVC_LOG="${STRICT_REALSENSE_UVC_LOG:-false}"
+ENABLE_RUNTIME_WATCHDOG="${ENABLE_RUNTIME_WATCHDOG:-true}"
+RUNTIME_WATCHDOG_STARTUP_DELAY="${RUNTIME_WATCHDOG_STARTUP_DELAY:-15}"
+RUNTIME_WATCHDOG_INTERVAL="${RUNTIME_WATCHDOG_INTERVAL:-20}"
+RUNTIME_WATCHDOG_HZ_TIMEOUT="${RUNTIME_WATCHDOG_HZ_TIMEOUT:-12}"
 MIN_RGBD_HZ="${MIN_RGBD_HZ:-12}"
 MIN_CAMERA_IMU_HZ="${MIN_CAMERA_IMU_HZ:-150}"
+MIN_SCAN_HZ="${MIN_SCAN_HZ:-5}"
+MIN_ODOM_HZ="${MIN_ODOM_HZ:-10}"
+MIN_GT_HZ="${MIN_GT_HZ:-5}"
 RGBD_STARTUP_TIMEOUT="${RGBD_STARTUP_TIMEOUT:-90}"
 IMU_STARTUP_TIMEOUT="${IMU_STARTUP_TIMEOUT:-30}"
 MIN_REALSENSE_FPS="${MIN_REALSENSE_FPS:-15}"
@@ -57,6 +64,8 @@ CAMERA_GATE_PRE_LOG="${BAG_DIR}/${SESSION_ID}_camera_gate_pre.log"
 CAMERA_GATE_POST_LOG="${BAG_DIR}/${SESSION_ID}_camera_gate_post.log"
 HARDWARE_PRE_LOG="${BAG_DIR}/${SESSION_ID}_hardware_pre.log"
 HARDWARE_POST_LOG="${BAG_DIR}/${SESSION_ID}_hardware_post.log"
+RUNTIME_WATCHDOG_LOG="${BAG_DIR}/${SESSION_ID}_runtime_watchdog.log"
+RUNTIME_WATCHDOG_STATUS_FILE="${BAG_DIR}/${SESSION_ID}_runtime_watchdog.status"
 KERNEL_RUNTIME_LOG="${BAG_DIR}/${SESSION_ID}_kernel_runtime.log"
 FAULT_CLASSIFICATION_FILE="${BAG_DIR}/${SESSION_ID}_realsense_fault_classification.txt"
 KERNEL_RUNTIME_START_LINE=""
@@ -348,6 +357,9 @@ realsense_camera_gate_seconds: ${REALSENSE_CAMERA_GATE_SECONDS}
 realsense_camera_gate_pre_log: ${SESSION_ID}_camera_gate_pre.log
 realsense_camera_gate_post_log: ${SESSION_ID}_camera_gate_post.log
 strict_realsense_uvc_log: ${STRICT_REALSENSE_UVC_LOG}
+runtime_watchdog_enabled: ${ENABLE_RUNTIME_WATCHDOG}
+runtime_watchdog_log: ${SESSION_ID}_runtime_watchdog.log
+runtime_watchdog_status: ~
 rgbd_startup_timeout_sec: ${RGBD_STARTUP_TIMEOUT}
 imu_startup_timeout_sec: ${IMU_STARTUP_TIMEOUT}
 hardware_pre_log: ${SESSION_ID}_hardware_pre.log
@@ -381,6 +393,7 @@ START_EPOCH=$(date +%s)
 BRINGUP_PID=""
 
 ROSBAG_PID=""
+WATCHDOG_PID=""
 CLEANED_UP=false
 
 wait_or_kill() {
@@ -416,6 +429,7 @@ finalise_manifest() {
     echo "=== Finalising manifest ==="
     END_EPOCH=$(date +%s)
     DURATION=$((END_EPOCH - START_EPOCH))
+    WATCHDOG_STATUS="not_started"
 
     if [ "${ROS_VERSION}" = "2" ]; then
         # ROS2 bag is a directory
@@ -437,12 +451,17 @@ finalise_manifest() {
     fi
 
     # Update manifest with final values
+    if [ -s "${RUNTIME_WATCHDOG_STATUS_FILE}" ]; then
+        WATCHDOG_STATUS="$(head -1 "${RUNTIME_WATCHDOG_STATUS_FILE}" | tr -cd 'A-Za-z0-9_ .:-' | sed 's/[[:space:]]*$//')"
+    fi
     sed -i "s/time_end: ~/time_end: $(date +%H:%M:%S)/" "${MANIFEST_FILE}"
     sed -i "s/bag_size_mb: ~/bag_size_mb: ${BAG_SIZE_MB:-unknown}/" "${MANIFEST_FILE}"
     sed -i "s/duration_sec: ~/duration_sec: ${DURATION}/" "${MANIFEST_FILE}"
+    sed -i "s/runtime_watchdog_status: ~/runtime_watchdog_status: \"${WATCHDOG_STATUS}\"/" "${MANIFEST_FILE}"
 
     echo "Duration: ${DURATION}s"
     echo "Bag size: ${BAG_SIZE_MB:-unknown} MB"
+    echo "Runtime watchdog: ${WATCHDOG_STATUS}"
     echo "Manifest written: ${MANIFEST_FILE}"
     echo ""
     echo "Run quality check:"
@@ -545,6 +564,104 @@ run_camera_pre_gate() {
     echo "  [OK] RealSense live pre-run gate passed."
 }
 
+watchdog_rate_check() {
+    local topic="$1"
+    local min_rate="$2"
+    local timeout_s="${3:-${RUNTIME_WATCHDOG_HZ_TIMEOUT}}"
+    local window="${4:-20}"
+    local out
+    local line
+    local rate
+
+    out=$(timeout "${timeout_s}" ros2 topic hz --window "${window}" "${topic}" 2>&1 || true)
+    line=$(printf "%s\n" "${out}" | grep "average rate" | tail -1 || true)
+    if [ -z "${line}" ]; then
+        {
+            echo "FAIL ${topic}: no average rate within ${timeout_s}s"
+            printf "%s\n" "${out}" | tail -5
+        } >> "${RUNTIME_WATCHDOG_LOG}"
+        return 1
+    fi
+
+    rate=$(printf "%s\n" "${line}" | awk -F': ' '{print $2}' | awk '{print $1}')
+    if awk -v rate="${rate}" -v min="${min_rate}" 'BEGIN { exit(rate >= min ? 0 : 1) }'; then
+        echo "PASS ${topic}: ${rate} Hz" >> "${RUNTIME_WATCHDOG_LOG}"
+        return 0
+    fi
+
+    echo "FAIL ${topic}: ${rate} Hz, expected >= ${min_rate} Hz" >> "${RUNTIME_WATCHDOG_LOG}"
+    return 1
+}
+
+run_runtime_watchdog() {
+    local cycle=0
+    local failures
+
+    {
+        echo "# Runtime sensor watchdog for ${SESSION_ID}"
+        echo "# Started: $(date --iso-8601=ns)"
+        echo "startup_delay_sec: ${RUNTIME_WATCHDOG_STARTUP_DELAY}"
+        echo "interval_sec: ${RUNTIME_WATCHDOG_INTERVAL}"
+        echo "hz_timeout_sec: ${RUNTIME_WATCHDOG_HZ_TIMEOUT}"
+        echo "min_scan_hz: ${MIN_SCAN_HZ}"
+        echo "min_odom_hz: ${MIN_ODOM_HZ}"
+        echo "min_rgbd_hz: ${MIN_RGBD_HZ}"
+        echo "min_camera_imu_hz: ${MIN_CAMERA_IMU_HZ}"
+        echo "require_gt: ${REQUIRE_GT}"
+        echo "mocap_topic: ${MOCAP_TOPIC}"
+        echo ""
+    } > "${RUNTIME_WATCHDOG_LOG}"
+    echo "RUNNING" > "${RUNTIME_WATCHDOG_STATUS_FILE}"
+
+    sleep "${RUNTIME_WATCHDOG_STARTUP_DELAY}"
+    while [ -n "${ROSBAG_PID}" ] && kill -0 "${ROSBAG_PID}" 2>/dev/null; do
+        cycle=$((cycle + 1))
+        failures=0
+        {
+            echo ""
+            echo "== watchdog cycle ${cycle}: $(date --iso-8601=seconds) =="
+        } >> "${RUNTIME_WATCHDOG_LOG}"
+
+        watchdog_rate_check /scan "${MIN_SCAN_HZ}" "${RUNTIME_WATCHDOG_HZ_TIMEOUT}" 20 || failures=$((failures + 1))
+        watchdog_rate_check /odom "${MIN_ODOM_HZ}" "${RUNTIME_WATCHDOG_HZ_TIMEOUT}" 20 || failures=$((failures + 1))
+        watchdog_rate_check /camera/color/image_raw "${MIN_RGBD_HZ}" "${RUNTIME_WATCHDOG_HZ_TIMEOUT}" 30 || failures=$((failures + 1))
+        watchdog_rate_check /camera/aligned_depth_to_color/image_raw "${MIN_RGBD_HZ}" "${RUNTIME_WATCHDOG_HZ_TIMEOUT}" 30 || failures=$((failures + 1))
+        watchdog_rate_check /camera/imu "${MIN_CAMERA_IMU_HZ}" "${RUNTIME_WATCHDOG_HZ_TIMEOUT}" 50 || failures=$((failures + 1))
+        if [ "${REQUIRE_GT}" = true ]; then
+            watchdog_rate_check "${MOCAP_TOPIC}" "${MIN_GT_HZ}" "${RUNTIME_WATCHDOG_HZ_TIMEOUT}" 20 || failures=$((failures + 1))
+        fi
+
+        if [ "${failures}" -ne 0 ]; then
+            echo "FAIL: ${failures} runtime watchdog check(s) failed; stopping recording." | tee -a "${RUNTIME_WATCHDOG_LOG}"
+            echo "FAIL_RUNTIME_WATCHDOG" > "${RUNTIME_WATCHDOG_STATUS_FILE}"
+            kill -INT "${ROSBAG_PID}" 2>/dev/null || true
+            return 1
+        fi
+
+        echo "PASS watchdog cycle ${cycle}" >> "${RUNTIME_WATCHDOG_LOG}"
+        sleep "${RUNTIME_WATCHDOG_INTERVAL}"
+    done
+
+    if [ -f "${RUNTIME_WATCHDOG_STATUS_FILE}" ] && \
+       grep -q "^FAIL_RUNTIME_WATCHDOG" "${RUNTIME_WATCHDOG_STATUS_FILE}"; then
+        return 1
+    fi
+    echo "STOPPED_CLEANLY" > "${RUNTIME_WATCHDOG_STATUS_FILE}"
+    echo "STOPPED_CLEANLY: rosbag no longer running" >> "${RUNTIME_WATCHDOG_LOG}"
+    return 0
+}
+
+start_runtime_watchdog() {
+    if [ "${ROS_VERSION}" != "2" ] || [ "${ENABLE_RUNTIME_WATCHDOG}" != "true" ]; then
+        echo "DISABLED" > "${RUNTIME_WATCHDOG_STATUS_FILE}"
+        return 0
+    fi
+
+    run_runtime_watchdog &
+    WATCHDOG_PID=$!
+    echo "Runtime watchdog started; log: ${RUNTIME_WATCHDOG_LOG}"
+}
+
 run_camera_post_enumerate_gate() {
     if [ "${ROS_VERSION}" != "2" ] || [ "${RUN_REALSENSE_CAMERA_GATE}" != "true" ]; then
         return 0
@@ -612,6 +729,17 @@ cleanup() {
         echo "Stopping rosbag..."
         kill -INT "${ROSBAG_PID}" 2>/dev/null || true
         wait_or_kill "${ROSBAG_PID}" "rosbag" 30
+    fi
+
+    if [ -n "${WATCHDOG_PID}" ] && kill -0 "${WATCHDOG_PID}" 2>/dev/null; then
+        kill -TERM "${WATCHDOG_PID}" 2>/dev/null || true
+        wait_or_kill "${WATCHDOG_PID}" "runtime watchdog" 10
+    fi
+    if [ ! -s "${RUNTIME_WATCHDOG_STATUS_FILE}" ]; then
+        echo "STOPPED_CLEANLY" > "${RUNTIME_WATCHDOG_STATUS_FILE}"
+    elif ! grep -q "^FAIL_RUNTIME_WATCHDOG" "${RUNTIME_WATCHDOG_STATUS_FILE}" && \
+         grep -q "^RUNNING" "${RUNTIME_WATCHDOG_STATUS_FILE}"; then
+        echo "STOPPED_CLEANLY" > "${RUNTIME_WATCHDOG_STATUS_FILE}"
     fi
 
     if [ -n "${BRINGUP_PID}" ] && kill -0 "${BRINGUP_PID}" 2>/dev/null; then
@@ -854,5 +982,20 @@ else
         /mocap &
 fi
 ROSBAG_PID=$!
+start_runtime_watchdog
+set +e
 wait "${ROSBAG_PID}"
+ROSBAG_RC=$?
+set -e
 ROSBAG_PID=""
+
+if [ -s "${RUNTIME_WATCHDOG_STATUS_FILE}" ] && \
+   grep -q "^FAIL_RUNTIME_WATCHDOG" "${RUNTIME_WATCHDOG_STATUS_FILE}"; then
+    echo "ERROR: runtime watchdog stopped this recording; do not use this bag as publishable data." >&2
+    exit 1
+fi
+
+if [ "${ROSBAG_RC}" -ne 0 ]; then
+    echo "ERROR: rosbag exited with status ${ROSBAG_RC}." >&2
+    exit "${ROSBAG_RC}"
+fi
