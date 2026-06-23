@@ -36,6 +36,8 @@ ROSBAG2_MAX_CACHE_SIZE="${ROSBAG2_MAX_CACHE_SIZE:-536870912}"
 RUN_REALSENSE_CAMERA_GATE="${RUN_REALSENSE_CAMERA_GATE:-true}"
 REALSENSE_CAMERA_GATE_SECONDS="${REALSENSE_CAMERA_GATE_SECONDS:-90}"
 STRICT_REALSENSE_UVC_LOG="${STRICT_REALSENSE_UVC_LOG:-false}"
+MIN_RGBD_HZ="${MIN_RGBD_HZ:-12}"
+MIN_CAMERA_IMU_HZ="${MIN_CAMERA_IMU_HZ:-150}"
 
 CAMERA_COLOR_WIDTH="${CAMERA_COLOR_WIDTH:-640}"
 CAMERA_COLOR_HEIGHT="${CAMERA_COLOR_HEIGHT:-480}"
@@ -348,36 +350,91 @@ run_camera_pre_gate() {
         return 0
     fi
 
-    local gate_script="${ROOT}/scripts/diagnostics/realsense_camera_gate_ros2.sh"
-    local gate_dir="${BAG_DIR}/${SESSION_ID}_camera_gate_pre"
-    if [ ! -f "${gate_script}" ]; then
-        echo "ERROR: required RealSense camera gate script is missing: ${gate_script}" >&2
-        exit 1
-    fi
+    local color_log="${BAG_DIR}/${SESSION_ID}_camera_gate_pre_color_hz.txt"
+    local depth_log="${BAG_DIR}/${SESSION_ID}_camera_gate_pre_aligned_depth_hz.txt"
+    local imu_log="${BAG_DIR}/${SESSION_ID}_camera_gate_pre_imu_hz.txt"
+    local failures=0
+    local rate
 
-    echo "Running required RealSense pre-run camera gate (${REALSENSE_CAMERA_GATE_SECONDS}s stream test)..."
+    echo "Running required RealSense live pre-run gate (${REALSENSE_CAMERA_GATE_SECONDS}s stream test on active bringup)..."
     echo "  log: ${CAMERA_GATE_PRE_LOG}"
-    echo "  dir: ${gate_dir}"
 
-    if STREAM_SECONDS="${REALSENSE_CAMERA_GATE_SECONDS}" \
-        RUN_DIR="${gate_dir}" \
-        SLAM_PROJECT_ROOT="${ROOT}" \
-        CAMERA_COLOR_WIDTH="${CAMERA_COLOR_WIDTH}" \
-        CAMERA_COLOR_HEIGHT="${CAMERA_COLOR_HEIGHT}" \
-        CAMERA_COLOR_FPS="${CAMERA_COLOR_FPS}" \
-        CAMERA_DEPTH_WIDTH="${CAMERA_DEPTH_WIDTH}" \
-        CAMERA_DEPTH_HEIGHT="${CAMERA_DEPTH_HEIGHT}" \
-        CAMERA_DEPTH_FPS="${CAMERA_DEPTH_FPS}" \
-        ENABLE_REALSENSE_SYNC="${ENABLE_REALSENSE_SYNC}" \
-        STRICT_UVC_LOG="${STRICT_REALSENSE_UVC_LOG}" \
-        bash "${gate_script}" > "${CAMERA_GATE_PRE_LOG}" 2>&1; then
-        echo "  [OK] RealSense pre-run gate passed."
+    {
+        echo "# RealSense live pre-run gate"
+        echo "# session: ${SESSION_ID}"
+        echo "# captured: $(date --iso-8601=seconds)"
+        echo "stream_seconds: ${REALSENSE_CAMERA_GATE_SECONDS}"
+        echo "min_rgbd_hz: ${MIN_RGBD_HZ}"
+        echo "min_camera_imu_hz: ${MIN_CAMERA_IMU_HZ}"
+        echo "color_log: $(basename "${color_log}")"
+        echo "aligned_depth_log: $(basename "${depth_log}")"
+        echo "imu_log: $(basename "${imu_log}")"
+        echo ""
+    } > "${CAMERA_GATE_PRE_LOG}"
+
+    timeout "${REALSENSE_CAMERA_GATE_SECONDS}" ros2 topic hz /camera/color/image_raw --window 40 \
+        > "${color_log}" 2>&1 &
+    local color_pid=$!
+    timeout "${REALSENSE_CAMERA_GATE_SECONDS}" ros2 topic hz /camera/aligned_depth_to_color/image_raw --window 40 \
+        > "${depth_log}" 2>&1 &
+    local depth_pid=$!
+    timeout "${REALSENSE_CAMERA_GATE_SECONDS}" ros2 topic hz /camera/imu --window 80 \
+        > "${imu_log}" 2>&1 &
+    local imu_pid=$!
+
+    wait "${color_pid}" 2>/dev/null || true
+    wait "${depth_pid}" 2>/dev/null || true
+    wait "${imu_pid}" 2>/dev/null || true
+
+    _camera_rate_from_log() {
+        grep "average rate" "$1" | tail -1 | awk -F': ' '{print $2}' | awk '{print $1}'
+    }
+
+    _camera_check_rate_log() {
+        local topic="$1"
+        local file="$2"
+        local min_rate="$3"
+        local label="$4"
+
+        rate="$(_camera_rate_from_log "${file}")"
+        if [ -z "${rate}" ]; then
+            echo "FAIL ${label}: no average rate for ${topic}; see ${file}" | tee -a "${CAMERA_GATE_PRE_LOG}"
+            failures=$((failures + 1))
+            return
+        fi
+        if awk -v rate="${rate}" -v min="${min_rate}" 'BEGIN { exit(rate >= min ? 0 : 1) }'; then
+            echo "PASS ${label}: ${topic} ${rate} Hz" | tee -a "${CAMERA_GATE_PRE_LOG}"
+        else
+            echo "FAIL ${label}: ${topic} ${rate} Hz, expected >= ${min_rate} Hz" | tee -a "${CAMERA_GATE_PRE_LOG}"
+            failures=$((failures + 1))
+        fi
+    }
+
+    _camera_check_rate_log /camera/color/image_raw "${color_log}" "${MIN_RGBD_HZ}" "color stream"
+    _camera_check_rate_log /camera/aligned_depth_to_color/image_raw "${depth_log}" "${MIN_RGBD_HZ}" "aligned depth stream"
+    _camera_check_rate_log /camera/imu "${imu_log}" "${MIN_CAMERA_IMU_HZ}" "camera imu stream"
+
+    if grep -Eiq "The device has been disconnected|USB disconnect|No such device|device removed" "${BRINGUP_LOG}" 2>/dev/null; then
+        echo "FAIL RealSense runtime log: camera disconnect/device-drop errors observed" | tee -a "${CAMERA_GATE_PRE_LOG}"
+        failures=$((failures + 1))
+    elif grep -Eiq "UVCIOC_CTRL_QUERY|VIDIOC_|Frames didn't arrived|control_transfer.*failed|Connection timed out|Failed to create device|set_xu" "${BRINGUP_LOG}" 2>/dev/null; then
+        if [ "${STRICT_REALSENSE_UVC_LOG}" = true ]; then
+            echo "FAIL RealSense runtime log: UVC/control timeout text observed" | tee -a "${CAMERA_GATE_PRE_LOG}"
+            failures=$((failures + 1))
+        else
+            echo "WARN RealSense runtime log: UVC/control timeout text observed; stream rates decide pass/fail" | tee -a "${CAMERA_GATE_PRE_LOG}"
+        fi
     else
-        echo "ERROR: RealSense pre-run gate failed. Not starting publishable data collection." >&2
-        echo "Gate log tail:"
-        tail -60 "${CAMERA_GATE_PRE_LOG}" 2>/dev/null || true
+        echo "PASS RealSense runtime log: no UVC/control timeout text observed" | tee -a "${CAMERA_GATE_PRE_LOG}"
+    fi
+
+    if [ "${failures}" -ne 0 ]; then
+        echo "ERROR: RealSense live pre-run gate failed. Not starting publishable data collection." >&2
+        tail -80 "${CAMERA_GATE_PRE_LOG}" 2>/dev/null || true
         exit 1
     fi
+
+    echo "  [OK] RealSense live pre-run gate passed."
 }
 
 run_camera_post_enumerate_gate() {
@@ -503,8 +560,6 @@ if [ -n "${STALE_PIDS}" ]; then
     sleep 3
 fi
 
-run_camera_pre_gate
-
 # Reset the D455 using USBDEVFS_RESET — resets only the camera at USB protocol
 # level, leaving the MCU and all other USB devices completely untouched.
 # Works for both the normal stale-UVC case and the stuck bConfigurationValue case.
@@ -608,7 +663,7 @@ if [ ${#FAILED_TOPICS[@]} -ne 0 ]; then
     exit 1
 fi
 
-
+run_camera_pre_gate
 
 echo "Sensors are live; starting bag recording."
 START_EPOCH=$(date +%s)

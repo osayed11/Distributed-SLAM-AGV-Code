@@ -181,8 +181,9 @@ bash scripts/logging/start_session.sh agv1 square_manual
 The ROS2 camera gate performs:
 
 ```text
-D455 USB reset -> rs-enumerate-devices -> 60-120 s RGB-D/IMU stream test
--> topic-rate validation -> stop camera -> post-stream rs-enumerate-devices
+D455 USB reset -> launch bringup once -> 60-120 s live RGB-D/IMU stream test
+-> topic-rate validation -> start ros2 bag without restarting the camera
+-> post-run rs-enumerate-devices after shutdown
 ```
 
 It is enabled by default in `start_session.sh`. For a shorter lab shakedown,
@@ -572,13 +573,17 @@ Base MCU IMU:        Optional /imu topic when exposed by the base driver
 
 ## RealSense Setup Gate
 
-Run this before collecting publishable data on any newly flashed robot, or let
-`start_session.sh` run it automatically:
+For setup diagnostics on a newly flashed robot, run the standalone camera gate:
 
 ```bash
 cd ~/slam_project
 ROS_DOMAIN_ID=78 STREAM_SECONDS=60 bash scripts/diagnostics/realsense_camera_gate_ros2.sh
 ```
+
+This standalone diagnostic starts and stops the camera, so use it for setup
+checks, not immediately before a publishable session. `start_session.sh` runs a
+live gate against the actual bringup process and then starts recording without
+restarting the camera.
 
 The gate must pass all of these checks:
 
