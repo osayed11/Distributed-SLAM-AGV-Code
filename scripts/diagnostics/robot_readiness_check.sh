@@ -368,6 +368,13 @@ node_list() {
     fi
 }
 
+sensor_node_pids() {
+    ps -eo pid=,cmd= | awk '
+        /\/opt\/ros\/.*\/lib\/(realsense2_camera|ydlidar_ros2_driver|myagv_odometry)\// {
+            print $1
+        }'
+}
+
 check_hz() {
     local topic="$1"
     local timeout_sec="${2:-12}"
@@ -519,9 +526,15 @@ cleanup() {
         kill -KILL "-${BRINGUP_PID}" 2>/dev/null || kill -KILL "${BRINGUP_PID}" 2>/dev/null || true
         sleep 1
     fi
-    pkill -TERM -f "realsense2_camera_node|ydlidar_ros2_driver_node|myagv_odometry_node" 2>/dev/null || true
+    remaining_sensor_pids="$(sensor_node_pids | tr '\n' ' ')"
+    if [ -n "${remaining_sensor_pids}" ]; then
+        kill -TERM ${remaining_sensor_pids} 2>/dev/null || true
+    fi
     sleep 2
-    pkill -KILL -f "realsense2_camera_node|ydlidar_ros2_driver_node|myagv_odometry_node" 2>/dev/null || true
+    remaining_sensor_pids="$(sensor_node_pids | tr '\n' ' ')"
+    if [ -n "${remaining_sensor_pids}" ]; then
+        kill -KILL ${remaining_sensor_pids} 2>/dev/null || true
+    fi
     echo "remaining_ros:"
     pgrep -fal "roslaunch|rosmaster|roscore|realsense|ydlidar|myagv|apriltag|ros2 launch" || true
 }
