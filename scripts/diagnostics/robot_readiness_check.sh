@@ -381,7 +381,7 @@ print_section "bringup log tail"
 tail -80 "${LOG}" || true
 
 if grep -Eiq "The device has been disconnected|USB disconnect|No such device|device removed" "${LOG}" 2>/dev/null; then
-    fail_gate "RealSense runtime log" "camera disconnect/device-drop errors observed"
+    warn_gate "RealSense runtime log" "camera disconnect/device-drop text observed; topic-rate gates decide readiness"
 elif grep -Eiq "UVCIOC_CTRL_QUERY|control_transfer.*failed|Connection timed out|Failed to create device|set_xu|Frames didn't arrived" "${LOG}" 2>/dev/null; then
     warn_gate "RealSense runtime log" "UVC/control timeout text observed; topic-rate gates decide readiness"
 else

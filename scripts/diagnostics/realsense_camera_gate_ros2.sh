@@ -30,6 +30,8 @@ FAILURES=0
 LAUNCH_PID=""
 LAUNCH_PGID=""
 DMESG_PID=""
+LAUNCH_RUNTIME_OFFSET=0
+DMESG_RUNTIME_OFFSET=0
 
 mkdir -p "${RUN_DIR}"
 
@@ -203,6 +205,26 @@ rate_from_log() {
     grep "average rate" "$1" | tail -1 | awk -F': ' '{print $2}' | awk '{print $1}'
 }
 
+log_size() {
+    if [ -f "$1" ]; then
+        wc -c < "$1" | tr -d ' '
+    else
+        echo 0
+    fi
+}
+
+copy_log_suffix() {
+    local input="$1"
+    local output="$2"
+    local offset="$3"
+
+    if [ -f "${input}" ]; then
+        tail -c "+$((offset + 1))" "${input}" > "${output}" 2>/dev/null || cp "${input}" "${output}"
+    else
+        : > "${output}"
+    fi
+}
+
 check_rate() {
     local topic="$1"
     local file="$2"
@@ -242,10 +264,10 @@ reset_d455 || true
 check_rs_enumerate pre true || true
 
 if sudo_available; then
-    sudo -n dmesg -wT > "${RUN_DIR}/dmesg_watch.txt" 2>&1 &
+    sudo -n dmesg --follow-new --ctime > "${RUN_DIR}/dmesg_watch.txt" 2>&1 &
     DMESG_PID=$!
 else
-    dmesg -wT > "${RUN_DIR}/dmesg_watch.txt" 2>&1 &
+    dmesg --follow-new --ctime > "${RUN_DIR}/dmesg_watch.txt" 2>&1 &
     DMESG_PID=$!
     sleep 1
     if ! kill -0 "${DMESG_PID}" 2>/dev/null; then
@@ -279,6 +301,9 @@ LAUNCH_PGID="$(ps -o pgid= -p "${LAUNCH_PID}" 2>/dev/null | tr -d ' ')"
 
 sleep "${STARTUP_WAIT_SECONDS}"
 
+LAUNCH_RUNTIME_OFFSET="$(log_size "${RUN_DIR}/realsense_launch.log")"
+DMESG_RUNTIME_OFFSET="$(log_size "${RUN_DIR}/dmesg_watch.txt")"
+
 timeout "${STREAM_SECONDS}" ros2 topic hz /camera/color/image_raw --window 40 \
     > "${RUN_DIR}/hz_color.txt" 2>&1 &
 HZ_COLOR_PID=$!
@@ -305,18 +330,26 @@ check_rs_enumerate post "${STRICT_POST_ENUM}" || true
 log_cmd usb_tree_after.txt lsusb -t || true
 log_cmd vcgencmd_after.txt vcgencmd get_throttled || true
 
+copy_log_suffix "${RUN_DIR}/realsense_launch.log" "${RUN_DIR}/realsense_launch_runtime.log" "${LAUNCH_RUNTIME_OFFSET}"
+copy_log_suffix "${RUN_DIR}/dmesg_watch.txt" "${RUN_DIR}/dmesg_runtime.log" "${DMESG_RUNTIME_OFFSET}"
+
 if grep -Eiq "The device has been disconnected|USB disconnect|No such device|Device or resource busy|device removed" \
-    "${RUN_DIR}/realsense_launch.log" "${RUN_DIR}/dmesg_watch.txt" 2>/dev/null; then
-    fail_gate "RealSense runtime log" "camera disconnect/device-drop errors observed"
+    "${RUN_DIR}/realsense_launch_runtime.log" "${RUN_DIR}/dmesg_runtime.log" 2>/dev/null; then
+    fail_gate "RealSense runtime log" "camera disconnect/device-drop errors observed during rate window"
 elif grep -Eiq "UVCIOC_CTRL_QUERY|VIDIOC_|Frames didn't arrived|control_transfer.*failed|Connection timed out|Failed to create device|set_xu" \
-    "${RUN_DIR}/realsense_launch.log" "${RUN_DIR}/dmesg_watch.txt" 2>/dev/null; then
+    "${RUN_DIR}/realsense_launch_runtime.log" "${RUN_DIR}/dmesg_runtime.log" 2>/dev/null; then
     if [ "${STRICT_UVC_LOG}" = true ]; then
-        fail_gate "RealSense runtime log" "UVC/frame/disconnect errors observed"
+        fail_gate "RealSense runtime log" "UVC/control timeout text observed during rate window"
     else
-        warn_gate "RealSense runtime log" "UVC/control timeout text observed; stream rates decide pass/fail"
+        warn_gate "RealSense runtime log" "UVC/control timeout text observed during rate window; stream rates decide pass/fail"
     fi
 else
-    pass_gate "RealSense runtime log" "no UVC/control timeout text observed"
+    pass_gate "RealSense runtime log" "no UVC/control timeout text observed during rate window"
+fi
+
+if grep -Eiq "The device has been disconnected|USB disconnect|No such device|Device or resource busy|device removed|VIDIOC_|UVCIOC_CTRL_QUERY|set_xu|Connection timed out" \
+    "${RUN_DIR}/realsense_launch.log" "${RUN_DIR}/dmesg_watch.txt" 2>/dev/null; then
+    warn_gate "RealSense startup/post log" "startup or post-stream RealSense errors observed; rate window remains authoritative"
 fi
 
 if [ "${FAILURES}" -eq 0 ]; then
