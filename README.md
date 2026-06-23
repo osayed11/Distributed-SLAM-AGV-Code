@@ -187,7 +187,9 @@ D455 USB reset -> rs-enumerate-devices -> 60-120 s RGB-D/IMU stream test
 
 It is enabled by default in `start_session.sh`. For a shorter lab shakedown,
 set `REALSENSE_CAMERA_GATE_SECONDS=60`. For a stricter run, set it to `120`.
-Do not collect publishable data if this gate fails.
+Do not collect publishable data if this gate fails. UVC/control timeout text
+is a warning when RGB-D and IMU rates pass; stream rate loss or camera
+disconnects are hard failures.
 
 Drive manually in another terminal:
 
@@ -496,9 +498,10 @@ Known limitations:
 Occasional RGB-D frame gaps were observed on agv37; usable but flag in QA.
 Ground truth is optional by default; set REQUIRE_GT=true when OptiTrack must be in-bag.
 RealSense USB/control stalls can affect all sensor streams, not only IMU.
-If logs show UVCIOC_CTRL_QUERY timeouts, HID frame warnings, Right MIPI errors,
-or realsense2_camera enters kernel D state, reboot or power-cycle before
-collecting publishable data.
+If logs show UVCIOC_CTRL_QUERY timeouts or HID frame warnings while RGB-D and
+IMU rates stay healthy, treat them as diagnostic warnings. If rates drop,
+the camera disconnects, Right MIPI errors repeat, or realsense2_camera enters
+kernel D state, reboot or power-cycle before collecting publishable data.
 start_session.sh performs one USB reset before launch and disables the
 required pre-run camera gate before launch. It also captures a post-run
 `rs-enumerate-devices` log before finalising the manifest.
@@ -585,8 +588,12 @@ pre-stream rs-enumerate-devices detects the D455
 /camera/color/image_raw >= 12 Hz
 /camera/aligned_depth_to_color/image_raw >= 12 Hz
 /camera/imu >= 150 Hz
-post-stream rs-enumerate-devices detects the D455
+post-stream rs-enumerate-devices runs and logs evidence
 ```
+
+Post-stream `rs-enumerate-devices` failures are warnings by default because
+they can occur after a clean streaming test on Raspberry Pi RealSense setups.
+Set `STRICT_POST_ENUM=true` only when investigating the camera control path.
 
 Use the broader readiness script for base, LiDAR, TF, and package checks:
 

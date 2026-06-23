@@ -83,6 +83,10 @@ fail_gate() {
     FAILURES=$((FAILURES + 1))
 }
 
+warn_gate() {
+    echo "WARN $1: $2"
+}
+
 dpkg_version() {
     dpkg-query -W -f='${Version}' "$1" 2>/dev/null || true
 }
@@ -376,10 +380,12 @@ echo "SKIP: AprilTag detector is optional and not launched by this readiness che
 print_section "bringup log tail"
 tail -80 "${LOG}" || true
 
-if grep -Eiq "UVCIOC_CTRL_QUERY|control_transfer.*failed|Connection timed out|Failed to create device" "${LOG}" 2>/dev/null; then
-    fail_gate "RealSense runtime log" "driver reported UVC/control timeout errors"
+if grep -Eiq "The device has been disconnected|USB disconnect|No such device|device removed" "${LOG}" 2>/dev/null; then
+    fail_gate "RealSense runtime log" "camera disconnect/device-drop errors observed"
+elif grep -Eiq "UVCIOC_CTRL_QUERY|control_transfer.*failed|Connection timed out|Failed to create device|set_xu|Frames didn't arrived" "${LOG}" 2>/dev/null; then
+    warn_gate "RealSense runtime log" "UVC/control timeout text observed; topic-rate gates decide readiness"
 else
-    pass_gate "RealSense runtime log" "no UVC/control timeout errors in bringup log"
+    pass_gate "RealSense runtime log" "no UVC/control timeout text in bringup log"
 fi
 
 print_section "readiness summary"

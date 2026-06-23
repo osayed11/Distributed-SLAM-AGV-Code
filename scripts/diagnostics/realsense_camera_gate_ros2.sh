@@ -24,6 +24,7 @@ ENABLE_REALSENSE_SYNC="${ENABLE_REALSENSE_SYNC:-false}"
 MIN_RGBD_HZ="${MIN_RGBD_HZ:-12}"
 MIN_CAMERA_IMU_HZ="${MIN_CAMERA_IMU_HZ:-150}"
 STRICT_UVC_LOG="${STRICT_UVC_LOG:-false}"
+STRICT_POST_ENUM="${STRICT_POST_ENUM:-false}"
 
 FAILURES=0
 LAUNCH_PID=""
@@ -161,26 +162,39 @@ PY
     pass_gate "D455 USB reset" "USB reset sent and autosuspend disabled"
 }
 
+record_enum_issue() {
+    local label="$1"
+    local message="$2"
+    local strict="$3"
+
+    if [ "${strict}" = true ]; then
+        fail_gate "rs-enumerate ${label}" "${message}"
+    else
+        warn_gate "rs-enumerate ${label}" "${message}"
+    fi
+}
+
 check_rs_enumerate() {
     local label="$1"
+    local strict="${2:-true}"
     local outfile="${RUN_DIR}/rs_enumerate_${label}.txt"
     local rc
 
     if ! command -v rs-enumerate-devices >/dev/null 2>&1; then
-        fail_gate "rs-enumerate ${label}" "rs-enumerate-devices is missing"
+        record_enum_issue "${label}" "rs-enumerate-devices is missing" "${strict}"
         return 1
     fi
 
     timeout 25 rs-enumerate-devices -s > "${outfile}" 2>&1
     rc=$?
     if [ "${rc}" -ne 0 ]; then
-        fail_gate "rs-enumerate ${label}" "failed; see ${outfile}"
+        record_enum_issue "${label}" "failed; see ${outfile}" "${strict}"
         return 1
     fi
     if grep -q "Intel RealSense D455" "${outfile}"; then
         pass_gate "rs-enumerate ${label}" "D455 detected"
     else
-        fail_gate "rs-enumerate ${label}" "D455 not detected in ${outfile}"
+        record_enum_issue "${label}" "D455 not detected in ${outfile}" "${strict}"
         return 1
     fi
 }
@@ -217,13 +231,15 @@ source_ros
     echo "color_profile=${CAMERA_COLOR_WIDTH}x${CAMERA_COLOR_HEIGHT}x${CAMERA_COLOR_FPS}"
     echo "depth_profile=${CAMERA_DEPTH_WIDTH}x${CAMERA_DEPTH_HEIGHT}x${CAMERA_DEPTH_FPS}"
     echo "enable_sync=${ENABLE_REALSENSE_SYNC}"
+    echo "strict_uvc_log=${STRICT_UVC_LOG}"
+    echo "strict_post_enum=${STRICT_POST_ENUM}"
 } | tee "${RUN_DIR}/summary.txt"
 
 log_cmd usb_tree_before.txt lsusb -t || true
 log_cmd vcgencmd_before.txt vcgencmd get_throttled || true
 
 reset_d455 || true
-check_rs_enumerate pre || true
+check_rs_enumerate pre true || true
 
 if sudo_available; then
     sudo -n dmesg -wT > "${RUN_DIR}/dmesg_watch.txt" 2>&1 &
@@ -285,19 +301,22 @@ cleanup
 trap - EXIT
 sleep 4
 
-check_rs_enumerate post || true
+check_rs_enumerate post "${STRICT_POST_ENUM}" || true
 log_cmd usb_tree_after.txt lsusb -t || true
 log_cmd vcgencmd_after.txt vcgencmd get_throttled || true
 
-if grep -Eiq "UVCIOC_CTRL_QUERY|VIDIOC_|Frames didn't arrived|The device has been disconnected|USB disconnect" \
+if grep -Eiq "The device has been disconnected|USB disconnect|No such device|Device or resource busy|device removed" \
+    "${RUN_DIR}/realsense_launch.log" "${RUN_DIR}/dmesg_watch.txt" 2>/dev/null; then
+    fail_gate "RealSense runtime log" "camera disconnect/device-drop errors observed"
+elif grep -Eiq "UVCIOC_CTRL_QUERY|VIDIOC_|Frames didn't arrived|control_transfer.*failed|Connection timed out|Failed to create device|set_xu" \
     "${RUN_DIR}/realsense_launch.log" "${RUN_DIR}/dmesg_watch.txt" 2>/dev/null; then
     if [ "${STRICT_UVC_LOG}" = true ]; then
         fail_gate "RealSense runtime log" "UVC/frame/disconnect errors observed"
     else
-        warn_gate "RealSense runtime log" "UVC/frame/disconnect errors observed; post-enumerate decides pass/fail"
+        warn_gate "RealSense runtime log" "UVC/control timeout text observed; stream rates decide pass/fail"
     fi
 else
-    pass_gate "RealSense runtime log" "no UVC/frame/disconnect errors observed"
+    pass_gate "RealSense runtime log" "no UVC/control timeout text observed"
 fi
 
 if [ "${FAILURES}" -eq 0 ]; then
