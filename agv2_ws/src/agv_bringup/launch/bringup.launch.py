@@ -10,17 +10,17 @@ from launch_ros.substitutions import FindPackageShare
 
 def generate_launch_description():
     serial_port_arg = DeclareLaunchArgument(
-        'serial_port',
+        'agv_serial_port',
         default_value='/dev/ttyACM0',
         description='Serial port for the AGV base')
 
     color_profile_arg = DeclareLaunchArgument(
-        'color_profile',
+        'agv_color_profile',
         default_value='640x480x15',
         description='RealSense color stream profile (WIDTHxHEIGHTxFPS)')
 
     depth_profile_arg = DeclareLaunchArgument(
-        'depth_profile',
+        'agv_depth_profile',
         default_value='640x480x15',
         description='RealSense depth stream profile (WIDTHxHEIGHTxFPS)')
 
@@ -35,7 +35,7 @@ def generate_launch_description():
         description='Reset the RealSense device during node startup')
 
     cmd_vel_topic_arg = DeclareLaunchArgument(
-        'cmd_vel_topic',
+        'agv_cmd_vel_topic',
         default_value='/cmd_vel',
         description='Topic that commands the AGV base')
 
@@ -48,10 +48,10 @@ def generate_launch_description():
         name='myagv_odometry_node',
         parameters=[
             base_ros2_yaml,
-            {'serial_port': LaunchConfiguration('serial_port')},
+            {'serial_port': LaunchConfiguration('agv_serial_port')},
         ],
         remappings=[
-            ('cmd_vel', LaunchConfiguration('cmd_vel_topic')),
+            ('cmd_vel', LaunchConfiguration('agv_cmd_vel_topic')),
         ],
         output='screen',
     )
@@ -123,9 +123,9 @@ def generate_launch_description():
             'align_depth.enable':               'true',
             'pointcloud.enable':                'false',
             'enable_sync':                      LaunchConfiguration('enable_sync'),
-            'rgb_camera.color_profile':         LaunchConfiguration('color_profile'),
-            'depth_module.depth_profile':       LaunchConfiguration('depth_profile'),
-            'depth_module.infra_profile':       LaunchConfiguration('depth_profile'),
+            'rgb_camera.color_profile':         LaunchConfiguration('agv_color_profile'),
+            'depth_module.depth_profile':       LaunchConfiguration('agv_depth_profile'),
+            'depth_module.infra_profile':       LaunchConfiguration('agv_depth_profile'),
             'enable_accel':                     'true',
             'enable_gyro':                      'true',
             'unite_imu_method':                 '2',

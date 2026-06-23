@@ -172,9 +172,9 @@ bash scripts/logging/start_session.sh agv1 square_manual
 ```
 
 `start_session.sh` manages the full lifecycle:
-1. Runs the required RealSense camera gate before publishable collection
-2. Launches `bringup.launch.py` (base driver, LiDAR, camera)
-3. Waits for `/scan`, `/odom`, and camera streams to stabilise
+1. Launches `bringup.launch.py` (base driver, LiDAR, camera)
+2. Waits for `/scan`, `/odom`, and camera streams to stabilise
+3. Runs the required RealSense live camera gate on that active bringup
 4. Starts `ros2 bag record` only after sensors are confirmed live
 5. On `Ctrl+C`, stops recording cleanly -> stops bringup -> runs post-run `rs-enumerate-devices` -> finalises manifest
 
@@ -191,6 +191,9 @@ set `REALSENSE_CAMERA_GATE_SECONDS=60`. For a stricter run, set it to `120`.
 Do not collect publishable data if this gate fails. UVC/control timeout text
 is a warning when RGB-D and IMU rates pass; stream rate loss or camera
 disconnects are hard failures.
+
+`RGBD_STARTUP_TIMEOUT` defaults to `90` seconds so startup/reconnect jitter on
+Raspberry Pi + D455 does not cause a false early exit before the rate gate runs.
 
 `ENABLE_REALSENSE_SYNC` defaults to `false`. Keep it off for the current
 single-D455 AGVs unless a hardware sync setup is deliberately added.
@@ -506,8 +509,9 @@ If logs show UVCIOC_CTRL_QUERY timeouts or HID frame warnings while RGB-D and
 IMU rates stay healthy, treat them as diagnostic warnings. If rates drop,
 the camera disconnects, Right MIPI errors repeat, or realsense2_camera enters
 kernel D state, reboot or power-cycle before collecting publishable data.
-start_session.sh performs one USB reset before launch and runs the
-required pre-run camera gate before launch. It also captures a post-run
+start_session.sh performs one USB reset, launches bringup once, runs the
+required live pre-run camera gate against that active bringup, then starts
+recording without restarting the camera. It also captures a post-run
 `rs-enumerate-devices` log before finalising the manifest.
 ```
 

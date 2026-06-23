@@ -38,6 +38,8 @@ REALSENSE_CAMERA_GATE_SECONDS="${REALSENSE_CAMERA_GATE_SECONDS:-90}"
 STRICT_REALSENSE_UVC_LOG="${STRICT_REALSENSE_UVC_LOG:-false}"
 MIN_RGBD_HZ="${MIN_RGBD_HZ:-12}"
 MIN_CAMERA_IMU_HZ="${MIN_CAMERA_IMU_HZ:-150}"
+RGBD_STARTUP_TIMEOUT="${RGBD_STARTUP_TIMEOUT:-90}"
+IMU_STARTUP_TIMEOUT="${IMU_STARTUP_TIMEOUT:-30}"
 
 CAMERA_COLOR_WIDTH="${CAMERA_COLOR_WIDTH:-640}"
 CAMERA_COLOR_HEIGHT="${CAMERA_COLOR_HEIGHT:-480}"
@@ -246,6 +248,8 @@ realsense_camera_gate_seconds: ${REALSENSE_CAMERA_GATE_SECONDS}
 realsense_camera_gate_pre_log: ${SESSION_ID}_camera_gate_pre.log
 realsense_camera_gate_post_log: ${SESSION_ID}_camera_gate_post.log
 strict_realsense_uvc_log: ${STRICT_REALSENSE_UVC_LOG}
+rgbd_startup_timeout_sec: ${RGBD_STARTUP_TIMEOUT}
+imu_startup_timeout_sec: ${IMU_STARTUP_TIMEOUT}
 
 camera_profile:
   color_width: ${CAMERA_COLOR_WIDTH}
@@ -513,6 +517,8 @@ export ROSBAG2_MAX_CACHE_SIZE="$ROSBAG2_MAX_CACHE_SIZE"
 export RUN_REALSENSE_CAMERA_GATE="$RUN_REALSENSE_CAMERA_GATE"
 export REALSENSE_CAMERA_GATE_SECONDS="$REALSENSE_CAMERA_GATE_SECONDS"
 export STRICT_REALSENSE_UVC_LOG="$STRICT_REALSENSE_UVC_LOG"
+export RGBD_STARTUP_TIMEOUT="$RGBD_STARTUP_TIMEOUT"
+export IMU_STARTUP_TIMEOUT="$IMU_STARTUP_TIMEOUT"
 
 export CAMERA_COLOR_WIDTH="$CAMERA_COLOR_WIDTH"
 export CAMERA_COLOR_HEIGHT="$CAMERA_COLOR_HEIGHT"
@@ -596,12 +602,12 @@ if [ "${ROS_VERSION}" = "2" ]; then
     COLOR_PROFILE="${CAMERA_COLOR_WIDTH}x${CAMERA_COLOR_HEIGHT}x${CAMERA_COLOR_FPS}"
     DEPTH_PROFILE="${CAMERA_DEPTH_WIDTH}x${CAMERA_DEPTH_HEIGHT}x${CAMERA_DEPTH_FPS}"
     ros2 launch agv_bringup bringup.launch.py \
-        serial_port:="/dev/ttyACM0" \
-        color_profile:="${COLOR_PROFILE}" \
-        depth_profile:="${DEPTH_PROFILE}" \
+        agv_serial_port:="/dev/ttyACM0" \
+        agv_color_profile:="${COLOR_PROFILE}" \
+        agv_depth_profile:="${DEPTH_PROFILE}" \
         enable_sync:="${ENABLE_REALSENSE_SYNC}" \
         initial_reset:="false" \
-        cmd_vel_topic:="${CMD_TOPIC}" \
+        agv_cmd_vel_topic:="${CMD_TOPIC}" \
         > "${BRINGUP_LOG}" 2>&1 &
 else
     roslaunch agv_bringup bringup.launch \
@@ -637,13 +643,13 @@ check_topic_silent() {
 
 check_topic_silent /scan 30 || FAILED_TOPICS+=("/scan")
 check_topic_silent /odom 20 || FAILED_TOPICS+=("/odom")
-check_topic_silent /camera/color/image_raw 45 || FAILED_TOPICS+=("/camera/color/image_raw")
-check_topic_silent /camera/aligned_depth_to_color/image_raw 25 || FAILED_TOPICS+=("/camera/aligned_depth_to_color/image_raw")
+check_topic_silent /camera/color/image_raw "${RGBD_STARTUP_TIMEOUT}" || FAILED_TOPICS+=("/camera/color/image_raw")
+check_topic_silent /camera/aligned_depth_to_color/image_raw "${RGBD_STARTUP_TIMEOUT}" || FAILED_TOPICS+=("/camera/aligned_depth_to_color/image_raw")
 
 if [ "$REQUIRE_IMU" = true ]; then
     IMU_OK=false
     for topic in $IMU_TOPICS; do
-        if check_topic_silent "$topic" 15; then
+        if check_topic_silent "$topic" "${IMU_STARTUP_TIMEOUT}"; then
             IMU_OK=true
             break
         fi
