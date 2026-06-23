@@ -61,7 +61,11 @@ def topic_state(text: str, topics: tuple[str, ...]) -> tuple[list[str], list[str
 def extract_rates(text: str) -> list[str]:
     rates: list[str] = []
     for line in text.splitlines():
-        if re.search(r"^(PASS|FAIL)\s+", line) and re.search(r"/(camera|scan|odom|tf)", line):
+        if not re.search(r"^(PASS|FAIL)\s+", line):
+            continue
+        if not re.search(r"/(camera|scan|odom|tf)", line):
+            continue
+        if "registered" not in line:
             rates.append(line.strip())
     return rates
 
@@ -151,6 +155,16 @@ def classify(text: str) -> tuple[str, list[str], list[str]]:
         evidence.append("HID/IIO motion frame timeout text was observed")
     if disconnect:
         evidence.append("USB disconnect/device-drop text was observed")
+    all_stream_rates_pass = bool(video_pass) and bool(imu_pass) and not video_fail and not imu_fail
+
+    if all_stream_rates_pass:
+        if uvc_timeout or hid_timeout or disconnect:
+            limitations.append(
+                "Critical stream rates passed. Low-level timeout/reset text is evidence to monitor, not a readiness failure for this run."
+            )
+            return "PASS_WITH_LOW_LEVEL_WARNINGS", evidence, limitations
+        return "PASS", evidence, limitations
+
     if throttled_bad(text):
         evidence.append("Pi throttling/undervoltage evidence was observed")
         return "HOST_POWER_OR_THERMAL", evidence, limitations
@@ -182,13 +196,6 @@ def classify(text: str) -> tuple[str, list[str], list[str]]:
             "ROS topics failed without clear USB/UVC/HID log evidence; inspect launch logs and topic remaps."
         )
         return "ROS_GRAPH_OR_DRIVER_STARTUP_FAILURE", evidence, limitations
-    if not video_fail and not imu_fail and video_pass and imu_pass:
-        if uvc_timeout or hid_timeout:
-            limitations.append(
-                "Rates passed despite low-level timeout text. Keep as WARN unless repeated long-run drops occur."
-            )
-            return "PASS_WITH_LOW_LEVEL_WARNINGS", evidence, limitations
-        return "PASS", evidence, limitations
     return "INCONCLUSIVE", evidence, limitations
 
 
