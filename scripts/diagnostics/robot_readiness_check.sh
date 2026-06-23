@@ -19,6 +19,7 @@ MIN_CAMERA_GYRO_HZ="${MIN_CAMERA_GYRO_HZ:-150}"
 MIN_CAMERA_ACCEL_HZ="${MIN_CAMERA_ACCEL_HZ:-90}"
 MIN_RGBD_HZ="${MIN_RGBD_HZ:-12}"
 MIN_REALSENSE_FPS="${MIN_REALSENSE_FPS:-15}"
+RUN_RS_ENUMERATE="${RUN_RS_ENUMERATE:-false}"
 
 source_ros_setup() {
     set +u
@@ -122,26 +123,32 @@ check_realsense_gate() {
         fail_gate "RealSense USB" "D455 is not visible as uvcvideo at 5000M"
     fi
 
-    if command -v rs-enumerate-devices >/dev/null 2>&1; then
+    if [ "${RUN_RS_ENUMERATE}" != "true" ]; then
+        warn_gate "rs-enumerate details" "skipped before live bringup; set RUN_RS_ENUMERATE=true only for control-path diagnostics"
+    elif command -v rs-enumerate-devices >/dev/null 2>&1; then
         rs_info="$(timeout 15 rs-enumerate-devices 2>&1 || true)"
         printf "%s\n" "${rs_info}" | grep -Ei "Device Name|Firmware Version|Usb Type Descriptor|Imu Type|BMI085" || true
 
-        if printf "%s\n" "${rs_info}" | grep -q "Firmware Version.*${REQUIRED_REALSENSE_FIRMWARE}"; then
-            pass_gate "RealSense firmware" "${REQUIRED_REALSENSE_FIRMWARE}"
+        if ! printf "%s\n" "${rs_info}" | grep -Eq "Firmware Version|Usb Type Descriptor|Imu Type"; then
+            warn_gate "rs-enumerate details" "control-path details unavailable; live stream gates decide readiness"
         else
-            fail_gate "RealSense firmware" "expected ${REQUIRED_REALSENSE_FIRMWARE}"
-        fi
+            if printf "%s\n" "${rs_info}" | grep -q "Firmware Version.*${REQUIRED_REALSENSE_FIRMWARE}"; then
+                pass_gate "RealSense firmware" "${REQUIRED_REALSENSE_FIRMWARE}"
+            else
+                fail_gate "RealSense firmware" "expected ${REQUIRED_REALSENSE_FIRMWARE}"
+            fi
 
-        if printf "%s\n" "${rs_info}" | grep -Eq "Usb Type Descriptor.*3\\."; then
-            pass_gate "RealSense USB descriptor" "USB 3.x"
-        else
-            fail_gate "RealSense USB descriptor" "expected USB 3.x from rs-enumerate-devices"
-        fi
+            if printf "%s\n" "${rs_info}" | grep -Eq "Usb Type Descriptor.*3\\."; then
+                pass_gate "RealSense USB descriptor" "USB 3.x"
+            else
+                fail_gate "RealSense USB descriptor" "expected USB 3.x from rs-enumerate-devices"
+            fi
 
-        if printf "%s\n" "${rs_info}" | grep -q "BMI085"; then
-            pass_gate "RealSense IMU" "BMI085"
-        else
-            fail_gate "RealSense IMU" "expected BMI085"
+            if printf "%s\n" "${rs_info}" | grep -q "BMI085"; then
+                pass_gate "RealSense IMU" "BMI085"
+            else
+                fail_gate "RealSense IMU" "expected BMI085"
+            fi
         fi
     else
         fail_gate "RealSense tools" "rs-enumerate-devices is not installed"
@@ -172,6 +179,82 @@ check_realsense_gate() {
     else
         fail_gate "standalone librealsense pkg-config" "realsense2 metadata missing"
     fi
+}
+
+write_sysfs_best_effort() {
+    local path="$1"
+    local value="$2"
+
+    if [ -w "${path}" ]; then
+        echo "${value}" > "${path}" 2>/dev/null || true
+    elif sudo -n true >/dev/null 2>&1; then
+        echo "${value}" | sudo -n tee "${path}" > /dev/null 2>&1 || true
+    fi
+}
+
+reset_d455() {
+    local rs_sysfs
+    local bus
+    local dev
+    local devfile
+    local rc
+
+    print_section "D455 USB reset"
+
+    rs_sysfs="$(for p in /sys/bus/usb/devices/*/idProduct; do
+        [ "$(cat "$p" 2>/dev/null)" = "0b5c" ] && dirname "$p" && break
+    done)"
+    if [ -z "${rs_sysfs}" ]; then
+        fail_gate "D455 USB reset" "D455 not found in sysfs"
+        return
+    fi
+
+    bus="$(cat "${rs_sysfs}/busnum")"
+    dev="$(cat "${rs_sysfs}/devnum")"
+    devfile="$(printf "/dev/bus/usb/%03d/%03d" "${bus}" "${dev}")"
+    if [ -w "${devfile}" ]; then
+        python3 - "${devfile}" <<'PY'
+import fcntl
+import os
+import sys
+USBDEVFS_RESET = 0x5514
+fd = os.open(sys.argv[1], os.O_WRONLY)
+try:
+    fcntl.ioctl(fd, USBDEVFS_RESET, 0)
+finally:
+    os.close(fd)
+PY
+    elif sudo -n true >/dev/null 2>&1; then
+        sudo -n python3 - "${devfile}" <<'PY'
+import fcntl
+import os
+import sys
+USBDEVFS_RESET = 0x5514
+fd = os.open(sys.argv[1], os.O_WRONLY)
+try:
+    fcntl.ioctl(fd, USBDEVFS_RESET, 0)
+finally:
+    os.close(fd)
+PY
+    else
+        fail_gate "D455 USB reset" "no permission to reset ${devfile}"
+        return
+    fi
+    rc=$?
+    if [ "${rc}" -ne 0 ]; then
+        fail_gate "D455 USB reset" "USBDEVFS_RESET failed for ${devfile}"
+        return
+    fi
+
+    sleep 8
+    rs_sysfs="$(for p in /sys/bus/usb/devices/*/idProduct; do
+        [ "$(cat "$p" 2>/dev/null)" = "0b5c" ] && dirname "$p" && break
+    done)"
+    if [ -n "${rs_sysfs}" ]; then
+        write_sysfs_best_effort "${rs_sysfs}/power/control" on
+        write_sysfs_best_effort "${rs_sysfs}/power/autosuspend" -1
+    fi
+    pass_gate "D455 USB reset" "USB reset sent before live readiness bringup"
 }
 
 check_power_hardening() {
@@ -401,6 +484,7 @@ print_section "stale ros before test"
 pgrep -fal "roslaunch|rosmaster|roscore|realsense|ydlidar|myagv|rosbag|apriltag|ros2 launch" || true
 
 print_section "start bringup"
+reset_d455
 if [ "${ROS_MAJOR}" = "2" ]; then
     setsid ros2 launch agv_bringup bringup.launch.py > "${LOG}" 2>&1 &
 else

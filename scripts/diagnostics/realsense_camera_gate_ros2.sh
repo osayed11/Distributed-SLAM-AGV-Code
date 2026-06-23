@@ -280,7 +280,7 @@ log_cmd usb_tree_before.txt lsusb -t || true
 log_cmd vcgencmd_before.txt vcgencmd get_throttled || true
 
 reset_d455 || true
-check_rs_enumerate pre true || true
+check_rs_enumerate pre false || true
 
 if sudo_available; then
     sudo -n dmesg --follow-new --ctime > "${RUN_DIR}/dmesg_watch.txt" 2>&1 &

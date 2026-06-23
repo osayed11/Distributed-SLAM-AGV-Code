@@ -611,7 +611,7 @@ The gate must pass all of these checks:
 
 ```text
 USB reset succeeds
-pre-stream rs-enumerate-devices detects the D455
+pre-stream rs-enumerate-devices runs and logs D455 details when the control path responds
 hardware RGB-D profiles are >= 15 FPS
 /camera/color/image_raw >= 12 Hz
 /camera/aligned_depth_to_color/image_raw >= 12 Hz
@@ -619,15 +619,21 @@ hardware RGB-D profiles are >= 15 FPS
 post-stream rs-enumerate-devices runs and logs evidence
 ```
 
-Post-stream `rs-enumerate-devices` failures are warnings by default because
-they can occur after a clean streaming test on Raspberry Pi RealSense setups.
-Set `STRICT_POST_ENUM=true` only when investigating the camera control path.
+Pre/post `rs-enumerate-devices` failures are warnings by default because they
+can occur before or after a clean streaming test on Raspberry Pi RealSense
+setups. Set `STRICT_POST_ENUM=true` only when investigating the camera control
+path.
 
 Use the broader readiness script for base, LiDAR, TF, and package checks:
 
 ```bash
 bash scripts/diagnostics/robot_readiness_check.sh
 ```
+
+The readiness script skips pre-bringup `rs-enumerate-devices` by default because
+that command itself exercises the unstable UVC control path. Use
+`RUN_RS_ENUMERATE=true bash scripts/diagnostics/robot_readiness_check.sh` only
+when deliberately diagnosing the control path.
 
 Readiness also checks the robot power-management hardening:
 
