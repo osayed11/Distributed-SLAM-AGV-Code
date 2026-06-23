@@ -155,6 +155,42 @@ configure_power_hardening() {
 ACTION=="add", SUBSYSTEM=="usb", ATTR{idVendor}=="8086", ATTR{idProduct}=="0b5c", TEST=="power/control", ATTR{power/control}:="on", TEST=="power/autosuspend", ATTR{power/autosuspend}:="-1"
 ACTION=="change", SUBSYSTEM=="usb", ATTR{idVendor}=="8086", ATTR{idProduct}=="0b5c", TEST=="power/control", ATTR{power/control}:="on", TEST=="power/autosuspend", ATTR{power/autosuspend}:="-1"
 EOF
+    sudo tee /usr/local/sbin/agv-realsense-power.sh > /dev/null <<'EOF'
+#!/usr/bin/env bash
+set -u
+
+for _ in $(seq 1 30); do
+    found=false
+    for p in /sys/bus/usb/devices/*/idProduct; do
+        if [ "$(cat "$p" 2>/dev/null)" = "0b5c" ]; then
+            found=true
+            d="$(dirname "$p")"
+            [ -e "${d}/power/control" ] && echo on > "${d}/power/control" 2>/dev/null || true
+            [ -e "${d}/power/autosuspend" ] && echo -1 > "${d}/power/autosuspend" 2>/dev/null || true
+        fi
+    done
+    [ "${found}" = true ] && exit 0
+    sleep 1
+done
+
+exit 0
+EOF
+    sudo chmod 755 /usr/local/sbin/agv-realsense-power.sh
+    sudo tee /etc/systemd/system/agv-realsense-power.service > /dev/null <<'EOF'
+[Unit]
+Description=Disable runtime power management for Intel RealSense D455
+After=systemd-udev-settle.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/agv-realsense-power.sh
+
+[Install]
+WantedBy=multi-user.target
+EOF
+    sudo systemctl daemon-reload
+    sudo systemctl enable agv-realsense-power.service >/dev/null 2>&1 || true
+    sudo systemctl start agv-realsense-power.service >/dev/null 2>&1 || true
 
     for p in /sys/bus/usb/devices/*/idProduct; do
         if [ "$(cat "$p" 2>/dev/null)" = "0b5c" ]; then

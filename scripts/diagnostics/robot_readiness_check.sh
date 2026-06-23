@@ -201,6 +201,12 @@ check_power_hardening() {
         fail_gate "boot usb autosuspend" "usbcore.autosuspend=-1 missing from Pi boot cmdline"
     fi
 
+    if systemctl is-enabled agv-realsense-power.service >/dev/null 2>&1; then
+        pass_gate "D455 power service" "agv-realsense-power.service enabled"
+    else
+        fail_gate "D455 power service" "agv-realsense-power.service is not enabled"
+    fi
+
     for p in /sys/bus/usb/devices/*/idProduct; do
         if [ "$(cat "$p" 2>/dev/null)" = "0b5c" ]; then
             d455_found=true
@@ -429,6 +435,9 @@ cleanup() {
         kill -KILL "-${BRINGUP_PID}" 2>/dev/null || kill -KILL "${BRINGUP_PID}" 2>/dev/null || true
         sleep 1
     fi
+    pkill -TERM -f "realsense2_camera_node|ydlidar_ros2_driver_node|myagv_odometry_node" 2>/dev/null || true
+    sleep 2
+    pkill -KILL -f "realsense2_camera_node|ydlidar_ros2_driver_node|myagv_odometry_node" 2>/dev/null || true
     echo "remaining_ros:"
     pgrep -fal "roslaunch|rosmaster|roscore|realsense|ydlidar|myagv|apriltag|ros2 launch" || true
 }

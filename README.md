@@ -633,6 +633,7 @@ Readiness also checks the robot power-management hardening:
 
 ```text
 usbcore.autosuspend=-1 active and present in the Pi boot cmdline
+D455 agv-realsense-power.service enabled
 D455 /sys/.../power/control = on
 D455 /sys/.../power/autosuspend = -1
 NetworkManager WiFi powersave disabled
