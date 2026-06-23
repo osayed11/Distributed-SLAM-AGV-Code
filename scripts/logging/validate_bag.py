@@ -25,6 +25,7 @@ import sqlite3
 import struct
 import yaml
 import math
+import re
 from collections import defaultdict
 
 # ---------------------------------------------------------------------------
@@ -879,13 +880,19 @@ def check_session_evidence(bag_path, require_hardware_logs=False):
         ("chrony", prefix + "_chrony.txt"),
         ("hardware_pre", prefix + "_hardware_pre.log"),
         ("hardware_post", prefix + "_hardware_post.log"),
+        ("kernel_runtime", prefix + "_kernel_runtime.log"),
+        ("realsense_fault_classification", prefix + "_realsense_fault_classification.txt"),
     ]
 
     for label, path in expected:
         if os.path.exists(path) and os.path.getsize(path) > 0:
             record(PASS, label, os.path.basename(path))
         else:
-            level = FAIL if require_hardware_logs and label.startswith("hardware_") else WARN
+            required_evidence = label.startswith("hardware_") or label in (
+                "kernel_runtime",
+                "realsense_fault_classification",
+            )
+            level = FAIL if require_hardware_logs and required_evidence else WARN
             record(level, label, "missing or empty: {}".format(path))
 
     for label in ("hardware_pre", "hardware_post"):
@@ -914,6 +921,41 @@ def check_session_evidence(bag_path, require_hardware_logs=False):
             record(PASS, label + "_usb3", "D455/USB topology evidence shows USB3")
         else:
             record(WARN, label + "_usb3", "USB3 evidence missing")
+
+    fault_path = prefix + "_realsense_fault_classification.txt"
+    if os.path.exists(fault_path):
+        try:
+            with open(fault_path, errors="replace") as f:
+                fault_text = f.read()
+        except Exception as e:
+            record(WARN, "realsense_fault_classification",
+                   "could not read {}: {}".format(fault_path, e))
+        else:
+            match = re.search(r"^classification:\s*(\S+)", fault_text, re.MULTILINE)
+            if not match:
+                record(WARN, "realsense_fault_classification",
+                       "classification line missing")
+            else:
+                classification = match.group(1)
+                if classification.startswith("PASS"):
+                    record(PASS, "realsense_fault_classification", classification)
+                else:
+                    record(FAIL, "realsense_fault_classification", classification)
+
+    kernel_path = prefix + "_kernel_runtime.log"
+    if os.path.exists(kernel_path):
+        try:
+            with open(kernel_path, errors="replace") as f:
+                kernel_text = f.read()
+        except Exception as e:
+            record(WARN, "kernel_runtime", "could not read {}: {}".format(kernel_path, e))
+        else:
+            if re.search(r"UVCIOC_CTRL_QUERY|Frames didn't arrived|USB disconnect|No such device|Failed to create device",
+                         kernel_text, re.IGNORECASE):
+                record(WARN, "kernel_runtime",
+                       "RealSense USB/UVC/HID text observed; inspect classification")
+            else:
+                record(PASS, "kernel_runtime", "no RealSense USB/UVC/HID fault text")
 
 
 def print_summary(bag_path, duration, bag_topics, strict):

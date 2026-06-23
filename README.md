@@ -230,12 +230,15 @@ Each session writes hardware evidence alongside the bag:
 ```text
 <session>_hardware_pre.log
 <session>_hardware_post.log
+<session>_kernel_runtime.log
 <session>_realsense_fault_classification.txt
 ```
 
 These logs capture Pi throttling state, USB autosuspend, WiFi power-save state,
 USB topology, D455 serial/speed/power state, and recent USB/camera kernel log
-lines.
+lines. The runtime kernel log starts after the intentional D455 USB reset and
+covers the actual bringup/recording window, so stale boot history does not drive
+the fault classification.
 
 Drive manually in another terminal:
 
@@ -702,6 +705,21 @@ live gate, the next controlled escalation is an RSUSB/libuvc RealSense build on
 one sacrificial robot and a before/after 10-minute gate comparison. Do not mix a
 source-built RSUSB stack into the whole fleet until that comparison shows a real
 improvement over the pinned apt packages above.
+
+Post-run bag validation checks the hardware snapshots, runtime kernel log, and
+fault classification file. For publishable data, run validation with hardware
+evidence required:
+
+```bash
+python3 scripts/logging/validate_bag.py ~/agv_data/<session_dir> \
+  --require-imu \
+  --require-hardware-logs
+```
+
+A bag with `PASS` or `PASS_WITH_LOW_LEVEL_WARNINGS` classification is acceptable
+if the topic-rate checks pass. Any `REALSENSE_*`, `USB_*`, or
+`HOST_POWER_OR_THERMAL` classification should be rejected for official dataset
+collection and diagnosed before the robot is used again.
 
 ## Scaling To More Robots
 

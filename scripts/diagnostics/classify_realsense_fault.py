@@ -18,10 +18,17 @@ VIDEO_TOPICS = (
     "/camera/aligned_depth_to_color/image_raw",
     "/camera/depth/image_rect_raw",
 )
+REQUIRED_VIDEO_TOPICS = (
+    "/camera/color/image_raw",
+    "/camera/aligned_depth_to_color/image_raw",
+)
 IMU_TOPICS = (
     "/camera/imu",
     "/camera/accel/sample",
     "/camera/gyro/sample",
+)
+REQUIRED_IMU_TOPICS = (
+    "/camera/imu",
 )
 CORE_TOPICS = (
     "/scan",
@@ -155,7 +162,9 @@ def classify(text: str) -> tuple[str, list[str], list[str]]:
         evidence.append("HID/IIO motion frame timeout text was observed")
     if disconnect:
         evidence.append("USB disconnect/device-drop text was observed")
-    all_stream_rates_pass = bool(video_pass) and bool(imu_pass) and not video_fail and not imu_fail
+    required_video_pass = all(topic in video_pass for topic in REQUIRED_VIDEO_TOPICS)
+    required_imu_pass = all(topic in imu_pass for topic in REQUIRED_IMU_TOPICS)
+    all_stream_rates_pass = required_video_pass and required_imu_pass and not video_fail and not imu_fail
 
     if all_stream_rates_pass:
         if uvc_timeout or hid_timeout or disconnect:
@@ -171,11 +180,6 @@ def classify(text: str) -> tuple[str, list[str], list[str]]:
     if usb2_or_slow:
         evidence.append("D455 is on USB2/480M or reported a USB2 descriptor")
         return "USB_LINK_DEGRADED", evidence, limitations
-    if disconnect:
-        limitations.append(
-            "Logs prove a USB device drop/reset, but not whether the owner is cable, camera, port, or power without A/B."
-        )
-        return "USB_DEVICE_DISCONNECT_OR_RESET", evidence, limitations
     if video_fail and imu_pass and uvc_timeout:
         limitations.append(
             "Software proves failure below ROS on the UVC video/control path. Camera/cable vs Pi/port requires A/B swap."
@@ -191,6 +195,11 @@ def classify(text: str) -> tuple[str, list[str], list[str]]:
             "Software proves D455 USB control-path failure, but physical ownership requires A/B swap."
         )
         return "REALSENSE_DEVICE_CONTROL_TIMEOUT", evidence, limitations
+    if disconnect:
+        limitations.append(
+            "Logs prove a USB device drop/reset, but not whether the owner is cable, camera, port, or power without A/B."
+        )
+        return "USB_DEVICE_DISCONNECT_OR_RESET", evidence, limitations
     if (video_fail or imu_fail) and not uvc_timeout and not hid_timeout:
         limitations.append(
             "ROS topics failed without clear USB/UVC/HID log evidence; inspect launch logs and topic remaps."

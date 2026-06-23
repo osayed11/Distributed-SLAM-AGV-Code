@@ -57,7 +57,9 @@ CAMERA_GATE_PRE_LOG="${BAG_DIR}/${SESSION_ID}_camera_gate_pre.log"
 CAMERA_GATE_POST_LOG="${BAG_DIR}/${SESSION_ID}_camera_gate_post.log"
 HARDWARE_PRE_LOG="${BAG_DIR}/${SESSION_ID}_hardware_pre.log"
 HARDWARE_POST_LOG="${BAG_DIR}/${SESSION_ID}_hardware_post.log"
+KERNEL_RUNTIME_LOG="${BAG_DIR}/${SESSION_ID}_kernel_runtime.log"
 FAULT_CLASSIFICATION_FILE="${BAG_DIR}/${SESSION_ID}_realsense_fault_classification.txt"
+KERNEL_RUNTIME_START_LINE=""
 
 mkdir -p "${BAG_DIR}"
 
@@ -175,6 +177,33 @@ capture_hardware_snapshot() {
             grep -Ei 'usb|uvc|video|hid|iio|realsense|under-voltage|voltage|reset|disconnect|timeout|error' | \
             tail -120 || true
     } > "${file}" 2>&1 || true
+}
+
+kernel_line_count() {
+    if sudo -n true >/dev/null 2>&1; then
+        sudo -n dmesg -T 2>/dev/null | wc -l | awk '{print $1}'
+    else
+        dmesg -T 2>/dev/null | wc -l | awk '{print $1}'
+    fi
+}
+
+capture_runtime_kernel_log() {
+    local all_log
+    all_log="${BAG_DIR}/${SESSION_ID}_kernel_all_after.log"
+
+    if sudo -n true >/dev/null 2>&1; then
+        sudo -n dmesg -T > "${all_log}" 2>&1 || true
+    else
+        dmesg -T > "${all_log}" 2>&1 || true
+    fi
+
+    if [ -n "${KERNEL_RUNTIME_START_LINE}" ] && \
+       printf "%s" "${KERNEL_RUNTIME_START_LINE}" | grep -Eq '^[0-9]+$'; then
+        tail -n "+$((KERNEL_RUNTIME_START_LINE + 1))" "${all_log}" > "${KERNEL_RUNTIME_LOG}" 2>/dev/null || \
+            cp "${all_log}" "${KERNEL_RUNTIME_LOG}" 2>/dev/null || true
+    else
+        cp "${all_log}" "${KERNEL_RUNTIME_LOG}" 2>/dev/null || true
+    fi
 }
 
 capture_hardware_snapshot "pre-run" "${HARDWARE_PRE_LOG}"
@@ -323,6 +352,7 @@ rgbd_startup_timeout_sec: ${RGBD_STARTUP_TIMEOUT}
 imu_startup_timeout_sec: ${IMU_STARTUP_TIMEOUT}
 hardware_pre_log: ${SESSION_ID}_hardware_pre.log
 hardware_post_log: ${SESSION_ID}_hardware_post.log
+kernel_runtime_log: ${SESSION_ID}_kernel_runtime.log
 realsense_fault_classification_log: ${SESSION_ID}_realsense_fault_classification.txt
 
 camera_profile:
@@ -561,6 +591,7 @@ run_realsense_fault_classification() {
         --label "${SESSION_ID}" \
         --readiness-log "${CAMERA_GATE_PRE_LOG}" \
         --bringup-log "${BRINGUP_LOG}" \
+        --kernel-log "${KERNEL_RUNTIME_LOG}" \
         --hardware-log "${HARDWARE_PRE_LOG}" \
         --hardware-log "${HARDWARE_POST_LOG}" \
         > "${FAULT_CLASSIFICATION_FILE}" 2>&1 || true
@@ -590,6 +621,7 @@ cleanup() {
     fi
 
     capture_hardware_snapshot "post-run" "${HARDWARE_POST_LOG}"
+    capture_runtime_kernel_log
     run_camera_post_enumerate_gate
     run_realsense_fault_classification
     finalise_manifest
@@ -698,6 +730,7 @@ else
     echo "  [WARN] D455 not found in sysfs — camera may not work"
 fi
 
+KERNEL_RUNTIME_START_LINE="$(kernel_line_count)"
 echo "Starting bringup; log: ${BRINGUP_LOG}"
 if [ "${ROS_VERSION}" = "2" ]; then
     COLOR_PROFILE="${CAMERA_COLOR_WIDTH}x${CAMERA_COLOR_HEIGHT}x${CAMERA_COLOR_FPS}"

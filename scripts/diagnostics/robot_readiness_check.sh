@@ -13,6 +13,7 @@ KERNEL_LOG="${RUN_DIR}/kernel_after.log"
 ROS_MAJOR=0
 ROS_DISTRO_USED=""
 FAILURES=0
+KERNEL_RUNTIME_START_LINE=""
 
 mkdir -p "${RUN_DIR}"
 exec > >(tee -a "${READINESS_LOG}") 2>&1
@@ -461,10 +462,27 @@ tf_echo() {
 }
 
 capture_kernel_snapshot() {
+    local all_log
+    all_log="${RUN_DIR}/kernel_all_after.log"
     if sudo -n true >/dev/null 2>&1; then
-        sudo -n dmesg -T > "${KERNEL_LOG}" 2>&1 || true
+        sudo -n dmesg -T > "${all_log}" 2>&1 || true
     else
-        dmesg -T > "${KERNEL_LOG}" 2>&1 || true
+        dmesg -T > "${all_log}" 2>&1 || true
+    fi
+    if [ -n "${KERNEL_RUNTIME_START_LINE}" ] && \
+       printf "%s" "${KERNEL_RUNTIME_START_LINE}" | grep -Eq '^[0-9]+$'; then
+        tail -n "+$((KERNEL_RUNTIME_START_LINE + 1))" "${all_log}" > "${KERNEL_LOG}" 2>/dev/null || \
+            cp "${all_log}" "${KERNEL_LOG}" 2>/dev/null || true
+    else
+        cp "${all_log}" "${KERNEL_LOG}" 2>/dev/null || true
+    fi
+}
+
+kernel_line_count() {
+    if sudo -n true >/dev/null 2>&1; then
+        sudo -n dmesg -T 2>/dev/null | wc -l | awk '{print $1}'
+    else
+        dmesg -T 2>/dev/null | wc -l | awk '{print $1}'
     fi
 }
 
@@ -511,6 +529,7 @@ pgrep -fal "roslaunch|rosmaster|roscore|realsense|ydlidar|myagv|rosbag|apriltag|
 
 print_section "start bringup"
 reset_d455
+KERNEL_RUNTIME_START_LINE="$(kernel_line_count)"
 if [ "${ROS_MAJOR}" = "2" ]; then
     setsid ros2 launch agv_bringup bringup.launch.py > "${LOG}" 2>&1 &
 else
