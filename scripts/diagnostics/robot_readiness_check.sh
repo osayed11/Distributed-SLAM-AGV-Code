@@ -463,9 +463,11 @@ ls -l /dev/ttyACM0 /dev/myAGV /dev/ttyS0 /dev/ydlidar 2>/dev/null || true
 
 print_section "usb"
 lsusb -t || true
-if command -v rs-enumerate-devices >/dev/null 2>&1; then
+if [ "${RUN_RS_ENUMERATE}" = "true" ] && command -v rs-enumerate-devices >/dev/null 2>&1; then
     echo ""
     timeout 15 rs-enumerate-devices 2>/dev/null | grep -E "Firmware Version|Usb Type Descriptor|Imu Type" || true
+elif [ "${RUN_RS_ENUMERATE}" != "true" ]; then
+    echo "rs-enumerate-devices skipped before live bringup; set RUN_RS_ENUMERATE=true only for RealSense control-path diagnostics."
 fi
 
 check_realsense_gate
