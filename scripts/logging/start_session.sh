@@ -33,6 +33,9 @@ REQUIRE_IMU="${REQUIRE_IMU:-false}"
 IMU_TOPICS="${IMU_TOPICS:-/camera/imu /imu}"
 ENABLE_REALSENSE_SYNC="${ENABLE_REALSENSE_SYNC:-true}"
 ROSBAG2_MAX_CACHE_SIZE="${ROSBAG2_MAX_CACHE_SIZE:-536870912}"
+RUN_REALSENSE_CAMERA_GATE="${RUN_REALSENSE_CAMERA_GATE:-true}"
+REALSENSE_CAMERA_GATE_SECONDS="${REALSENSE_CAMERA_GATE_SECONDS:-90}"
+STRICT_REALSENSE_UVC_LOG="${STRICT_REALSENSE_UVC_LOG:-false}"
 
 CAMERA_COLOR_WIDTH="${CAMERA_COLOR_WIDTH:-640}"
 CAMERA_COLOR_HEIGHT="${CAMERA_COLOR_HEIGHT:-480}"
@@ -45,6 +48,8 @@ BAG_DIR="${HOME}/agv_data"
 BAG_FILE="${BAG_DIR}/${SESSION_ID}.bag"
 MANIFEST_FILE="${BAG_DIR}/${SESSION_ID}_manifest.yaml"
 CHRONY_FILE="${BAG_DIR}/${SESSION_ID}_chrony.txt"
+CAMERA_GATE_PRE_LOG="${BAG_DIR}/${SESSION_ID}_camera_gate_pre.log"
+CAMERA_GATE_POST_LOG="${BAG_DIR}/${SESSION_ID}_camera_gate_post.log"
 
 mkdir -p "${BAG_DIR}"
 
@@ -234,6 +239,11 @@ imu_topics: "${IMU_TOPICS}"
 camera_imu: enabled
 enable_realsense_sync: ${ENABLE_REALSENSE_SYNC}
 rosbag2_max_cache_size_bytes: ${ROSBAG2_MAX_CACHE_SIZE}
+realsense_camera_gate_required: ${RUN_REALSENSE_CAMERA_GATE}
+realsense_camera_gate_seconds: ${REALSENSE_CAMERA_GATE_SECONDS}
+realsense_camera_gate_pre_log: ${SESSION_ID}_camera_gate_pre.log
+realsense_camera_gate_post_log: ${SESSION_ID}_camera_gate_post.log
+strict_realsense_uvc_log: ${STRICT_REALSENSE_UVC_LOG}
 
 camera_profile:
   color_width: ${CAMERA_COLOR_WIDTH}
@@ -333,6 +343,72 @@ finalise_manifest() {
     fi
 }
 
+run_camera_pre_gate() {
+    if [ "${ROS_VERSION}" != "2" ] || [ "${RUN_REALSENSE_CAMERA_GATE}" != "true" ]; then
+        return 0
+    fi
+
+    local gate_script="${ROOT}/scripts/diagnostics/realsense_camera_gate_ros2.sh"
+    local gate_dir="${BAG_DIR}/${SESSION_ID}_camera_gate_pre"
+    if [ ! -f "${gate_script}" ]; then
+        echo "ERROR: required RealSense camera gate script is missing: ${gate_script}" >&2
+        exit 1
+    fi
+
+    echo "Running required RealSense pre-run camera gate (${REALSENSE_CAMERA_GATE_SECONDS}s stream test)..."
+    echo "  log: ${CAMERA_GATE_PRE_LOG}"
+    echo "  dir: ${gate_dir}"
+
+    if STREAM_SECONDS="${REALSENSE_CAMERA_GATE_SECONDS}" \
+        RUN_DIR="${gate_dir}" \
+        SLAM_PROJECT_ROOT="${ROOT}" \
+        CAMERA_COLOR_WIDTH="${CAMERA_COLOR_WIDTH}" \
+        CAMERA_COLOR_HEIGHT="${CAMERA_COLOR_HEIGHT}" \
+        CAMERA_COLOR_FPS="${CAMERA_COLOR_FPS}" \
+        CAMERA_DEPTH_WIDTH="${CAMERA_DEPTH_WIDTH}" \
+        CAMERA_DEPTH_HEIGHT="${CAMERA_DEPTH_HEIGHT}" \
+        CAMERA_DEPTH_FPS="${CAMERA_DEPTH_FPS}" \
+        ENABLE_REALSENSE_SYNC="${ENABLE_REALSENSE_SYNC}" \
+        STRICT_UVC_LOG="${STRICT_REALSENSE_UVC_LOG}" \
+        bash "${gate_script}" > "${CAMERA_GATE_PRE_LOG}" 2>&1; then
+        echo "  [OK] RealSense pre-run gate passed."
+    else
+        echo "ERROR: RealSense pre-run gate failed. Not starting publishable data collection." >&2
+        echo "Gate log tail:"
+        tail -60 "${CAMERA_GATE_PRE_LOG}" 2>/dev/null || true
+        exit 1
+    fi
+}
+
+run_camera_post_enumerate_gate() {
+    if [ "${ROS_VERSION}" != "2" ] || [ "${RUN_REALSENSE_CAMERA_GATE}" != "true" ]; then
+        return 0
+    fi
+
+    {
+        echo "# post-run rs-enumerate-devices"
+        echo "# session: ${SESSION_ID}"
+        echo "# captured: $(date --iso-8601=seconds)"
+        echo "# command: timeout 25 rs-enumerate-devices -s"
+        rc=0
+        if command -v rs-enumerate-devices >/dev/null 2>&1; then
+            timeout 25 rs-enumerate-devices -s || rc=$?
+        else
+            echo "rs-enumerate-devices missing"
+            rc=127
+        fi
+        echo "# exit: ${rc}"
+    } > "${CAMERA_GATE_POST_LOG}" 2>&1
+
+    if grep -q "Intel RealSense D455" "${CAMERA_GATE_POST_LOG}" && \
+       grep -q "# exit: 0" "${CAMERA_GATE_POST_LOG}"; then
+        echo "  [OK] post-run rs-enumerate-devices detected D455."
+    else
+        echo "  [WARN] post-run rs-enumerate-devices did not cleanly detect D455."
+        echo "         log: ${CAMERA_GATE_POST_LOG}"
+    fi
+}
+
 cleanup() {
     if [ "$CLEANED_UP" = true ]; then
         return
@@ -353,6 +429,7 @@ cleanup() {
         wait_or_kill "${BRINGUP_PID}" "bringup" 30
     fi
 
+    run_camera_post_enumerate_gate
     finalise_manifest
 }
 
@@ -376,6 +453,9 @@ export IMU_TOPICS="$IMU_TOPICS"
 
 export ENABLE_REALSENSE_SYNC="$ENABLE_REALSENSE_SYNC"
 export ROSBAG2_MAX_CACHE_SIZE="$ROSBAG2_MAX_CACHE_SIZE"
+export RUN_REALSENSE_CAMERA_GATE="$RUN_REALSENSE_CAMERA_GATE"
+export REALSENSE_CAMERA_GATE_SECONDS="$REALSENSE_CAMERA_GATE_SECONDS"
+export STRICT_REALSENSE_UVC_LOG="$STRICT_REALSENSE_UVC_LOG"
 
 export CAMERA_COLOR_WIDTH="$CAMERA_COLOR_WIDTH"
 export CAMERA_COLOR_HEIGHT="$CAMERA_COLOR_HEIGHT"
@@ -399,6 +479,17 @@ wait_for_topic_rate() {
     return 1
 }
 
+write_sysfs_best_effort() {
+    local path="$1"
+    local value="$2"
+
+    if [ -w "${path}" ]; then
+        echo "${value}" > "${path}" 2>/dev/null || true
+    elif sudo -n true >/dev/null 2>&1; then
+        echo "${value}" | sudo -n tee "${path}" > /dev/null 2>&1 || true
+    fi
+}
+
 BRINGUP_LOG="${BAG_DIR}/${SESSION_ID}_bringup.log"
 
 # Kill any stale bringup from a previous session before starting a new one.
@@ -411,6 +502,8 @@ if [ -n "${STALE_PIDS}" ]; then
     kill ${STALE_PIDS} 2>/dev/null || true
     sleep 3
 fi
+
+run_camera_pre_gate
 
 # Reset the D455 using USBDEVFS_RESET — resets only the camera at USB protocol
 # level, leaving the MCU and all other USB devices completely untouched.
@@ -436,8 +529,8 @@ except Exception as e:
 "
     sleep 6
     # Disable autosuspend after re-enumeration
-    echo on | sudo tee "${RS_SYSFS}/power/control"     > /dev/null 2>&1 || true
-    echo -1 | sudo tee "${RS_SYSFS}/power/autosuspend" > /dev/null 2>&1 || true
+    write_sysfs_best_effort "${RS_SYSFS}/power/control" on
+    write_sysfs_best_effort "${RS_SYSFS}/power/autosuspend" -1
     echo "  D455 autosuspend disabled"
 else
     echo "  [WARN] D455 not found in sysfs — camera may not work"

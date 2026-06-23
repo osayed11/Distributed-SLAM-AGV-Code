@@ -144,6 +144,15 @@ ensure_swap() {
 
 check_realsense_version() {
     section "realsense sdk"
+    if ! command -v rs-enumerate-devices >/dev/null 2>&1; then
+        echo "WARN: rs-enumerate-devices not found."
+        echo "      Need librealsense2-utils ${REQUIRED_LIBREALSENSE_VERSION}."
+        return 1
+    fi
+    if ! dpkg-query -W librealsense2-utils >/dev/null 2>&1; then
+        echo "WARN: librealsense2-utils package is not installed."
+        return 1
+    fi
     if command -v pkg-config >/dev/null 2>&1 && pkg-config --exists realsense2; then
         local version
         version="$(pkg-config --modversion realsense2)"
@@ -329,8 +338,10 @@ if [ "$INSTALL_SYSTEM" = true ]; then
 
     # --- Permissions ---
     echo "Ensuring user permissions for hardware..."
-    sudo usermod -a -G dialout $USER || true
-    sudo usermod -a -G video $USER || true
+    sudo usermod -a -G dialout "$USER" || true
+    sudo usermod -a -G video "$USER" || true
+    sudo usermod -a -G plugdev "$USER" || true
+    sudo usermod -a -G input "$USER" || true
 
     sudo systemctl enable --now chrony 2>/dev/null || sudo service chrony restart || true
 fi
@@ -355,17 +366,50 @@ fi
 echo "Installing AGV base controller rules..."
 echo 'KERNEL=="ttyACM*", ATTRS{idVendor}=="0483", ATTRS{idProduct}=="5740", MODE:="0666", SYMLINK+="myAGV"' | sudo tee /etc/udev/rules.d/99-myagv-base.rules > /dev/null
 
-# YDLidar X2 (Pi GPIO UART = ttyS0 = serial0)
-# ttyS0 is owned by group 'tty' by default; set 0666 so dialout user can read it.
-echo "Setting permissions for YDLidar on /dev/ttyS0..."
-echo 'KERNEL=="ttyS0", MODE:="0666"' | sudo tee /etc/udev/rules.d/99-ydlidar.rules > /dev/null
+# YDLidar X2 (Pi GPIO UART = ttyS0 = serial0).
+# Dataset robots must not run a login console/getty on the same UART that the
+# LiDAR driver opens. Keep this deterministic across reflashed SD cards.
+echo "Configuring YDLidar UART on /dev/ttyS0..."
+for cmdline in /boot/firmware/cmdline.txt /boot/cmdline.txt; do
+    if [ -f "${cmdline}" ]; then
+        sudo cp "${cmdline}" "${cmdline}.agv-backup" 2>/dev/null || true
+        sudo sed -i -E \
+            -e 's/(^| )console=(serial0|ttyS0|ttyAMA0),[^ ]+//g' \
+            -e 's/  +/ /g' \
+            -e 's/^ //' \
+            -e 's/ $//' \
+            "${cmdline}"
+    fi
+done
+
+UART_CONFIGURED=false
+for config in /boot/firmware/config.txt /boot/config.txt; do
+    if [ -f "${config}" ]; then
+        UART_CONFIGURED=true
+        if grep -q '^enable_uart=' "${config}"; then
+            sudo sed -i 's/^enable_uart=.*/enable_uart=1/' "${config}"
+        else
+            echo 'enable_uart=1' | sudo tee -a "${config}" > /dev/null
+        fi
+    fi
+done
+if [ "${UART_CONFIGURED}" = false ]; then
+    echo "WARN: no Raspberry Pi boot config found; could not persist enable_uart=1."
+fi
+
+sudo systemctl stop serial-getty@ttyS0.service serial-getty@serial0.service 2>/dev/null || true
+sudo systemctl disable serial-getty@ttyS0.service serial-getty@serial0.service 2>/dev/null || true
+sudo systemctl mask serial-getty@ttyS0.service serial-getty@serial0.service 2>/dev/null || true
+
+echo 'KERNEL=="ttyS0", GROUP="dialout", MODE:="0666", SYMLINK+="ydlidar"' | sudo tee /etc/udev/rules.d/99-ydlidar.rules > /dev/null
 # On Raspberry Pi UART devices, the udev rule is not always reapplied to the
 # already-created ttyS0 node after reboot. tmpfiles gives us a persistent boot
 # time chmod and the direct chmod fixes the current session immediately.
-echo 'z /dev/ttyS0 0666 root tty - -' | sudo tee /etc/tmpfiles.d/agv-hardware.conf > /dev/null
+echo 'z /dev/ttyS0 0666 root dialout - -' | sudo tee /etc/tmpfiles.d/agv-hardware.conf > /dev/null
 
 sudo udevadm control --reload-rules && sudo udevadm trigger
 sudo systemd-tmpfiles --create /etc/tmpfiles.d/agv-hardware.conf || true
+sudo chgrp dialout /dev/ttyS0 2>/dev/null || true
 sudo chmod 666 /dev/ttyS0 2>/dev/null || true
 
 # ---------------------------------------------------------------------------

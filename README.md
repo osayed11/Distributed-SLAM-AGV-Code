@@ -172,10 +172,22 @@ bash scripts/logging/start_session.sh agv1 square_manual
 ```
 
 `start_session.sh` manages the full lifecycle:
-1. Launches `bringup.launch.py` (base driver, LiDAR, camera)
-2. Waits for `/scan`, `/odom`, and camera streams to stabilise
-3. Starts `ros2 bag record` only after sensors are confirmed live
-4. On `Ctrl+C`, stops recording cleanly → stops bringup → finalises manifest
+1. Runs the required RealSense camera gate before publishable collection
+2. Launches `bringup.launch.py` (base driver, LiDAR, camera)
+3. Waits for `/scan`, `/odom`, and camera streams to stabilise
+4. Starts `ros2 bag record` only after sensors are confirmed live
+5. On `Ctrl+C`, stops recording cleanly -> stops bringup -> runs post-run `rs-enumerate-devices` -> finalises manifest
+
+The ROS2 camera gate performs:
+
+```text
+D455 USB reset -> rs-enumerate-devices -> 60-120 s RGB-D/IMU stream test
+-> topic-rate validation -> stop camera -> post-stream rs-enumerate-devices
+```
+
+It is enabled by default in `start_session.sh`. For a shorter lab shakedown,
+set `REALSENSE_CAMERA_GATE_SECONDS=60`. For a stricter run, set it to `120`.
+Do not collect publishable data if this gate fails.
 
 Drive manually in another terminal:
 
@@ -488,7 +500,8 @@ If logs show UVCIOC_CTRL_QUERY timeouts, HID frame warnings, Right MIPI errors,
 or realsense2_camera enters kernel D state, reboot or power-cycle before
 collecting publishable data.
 start_session.sh performs one USB reset before launch and disables the
-RealSense launch initial_reset to avoid double-resetting the D455.
+required pre-run camera gate before launch. It also captures a post-run
+`rs-enumerate-devices` log before finalising the manifest.
 ```
 
 RealSense baseline checked on agv37 at home on 2026-06-16:
@@ -549,14 +562,33 @@ rm -f ~/agv_data/*_manifest.yaml ~/agv_data/*_chrony.txt ~/agv_data/*_bringup.lo
 
 ```text
 AGV base controller: /dev/ttyACM0 (symlink /dev/myAGV via udev)
-YDLiDAR X2:          /dev/ydlidar (symlink via udev, native /dev/ttyUSB0)
+YDLiDAR X2:          /dev/ydlidar (symlink via udev, native /dev/ttyS0)
 RealSense D455:      USB 3.x, RGB-D 640x480 @ 15 Hz plus /camera/imu
 Base MCU IMU:        Optional /imu topic when exposed by the base driver
 ```
 
 ## RealSense Setup Gate
 
-Run this before collecting publishable data on any newly flashed robot:
+Run this before collecting publishable data on any newly flashed robot, or let
+`start_session.sh` run it automatically:
+
+```bash
+cd ~/slam_project
+ROS_DOMAIN_ID=78 STREAM_SECONDS=60 bash scripts/diagnostics/realsense_camera_gate_ros2.sh
+```
+
+The gate must pass all of these checks:
+
+```text
+USB reset succeeds
+pre-stream rs-enumerate-devices detects the D455
+/camera/color/image_raw >= 12 Hz
+/camera/aligned_depth_to_color/image_raw >= 12 Hz
+/camera/imu >= 150 Hz
+post-stream rs-enumerate-devices detects the D455
+```
+
+Use the broader readiness script for base, LiDAR, TF, and package checks:
 
 ```bash
 bash scripts/diagnostics/robot_readiness_check.sh
