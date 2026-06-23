@@ -971,6 +971,9 @@ def check_session_evidence(bag_path, require_hardware_logs=False):
                            "0 runtime cycles completed; run was too short to exercise watchdog")
             elif watchdog_status == "FAIL_RUNTIME_WATCHDOG":
                 record(FAIL, "runtime_watchdog", watchdog_status)
+            elif watchdog_status == "PRE_RECORDING_ABORT":
+                record(FAIL, "runtime_watchdog",
+                       "session aborted before rosbag recording started")
             elif watchdog_status == "DISABLED":
                 level = FAIL if require_hardware_logs else WARN
                 record(level, "runtime_watchdog",

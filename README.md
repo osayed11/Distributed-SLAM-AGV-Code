@@ -191,6 +191,11 @@ set `REALSENSE_CAMERA_GATE_SECONDS=60`. For a stricter run, set it to `120`.
 Do not collect publishable data if this gate fails. UVC/control timeout text
 is a warning when RGB-D and IMU rates pass; stream rate loss or camera
 disconnects are hard failures.
+The gate evaluates disconnects only during the live gate window, so expected
+startup/reset reconnect messages are not treated as runtime failures. It also
+checks maximum observed topic gaps, not just the final average rate, because a
+camera can look healthy at the end of a test while still producing a publishable
+data gap during the test.
 
 The readiness and session tools write a RealSense fault classification from
 the readiness/camera-gate, bringup, hardware, and kernel logs. The classifier

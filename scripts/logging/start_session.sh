@@ -45,6 +45,8 @@ MIN_CAMERA_IMU_HZ="${MIN_CAMERA_IMU_HZ:-150}"
 MIN_SCAN_HZ="${MIN_SCAN_HZ:-5}"
 MIN_ODOM_HZ="${MIN_ODOM_HZ:-10}"
 MIN_GT_HZ="${MIN_GT_HZ:-5}"
+MAX_RGBD_GATE_GAP_SEC="${MAX_RGBD_GATE_GAP_SEC:-0.25}"
+MAX_CAMERA_IMU_GATE_GAP_SEC="${MAX_CAMERA_IMU_GATE_GAP_SEC:-0.10}"
 RGBD_STARTUP_TIMEOUT="${RGBD_STARTUP_TIMEOUT:-90}"
 IMU_STARTUP_TIMEOUT="${IMU_STARTUP_TIMEOUT:-30}"
 MIN_REALSENSE_FPS="${MIN_REALSENSE_FPS:-15}"
@@ -394,6 +396,7 @@ BRINGUP_PID=""
 
 ROSBAG_PID=""
 WATCHDOG_PID=""
+RECORDING_STARTED=false
 CLEANED_UP=false
 
 wait_or_kill() {
@@ -480,6 +483,8 @@ run_camera_pre_gate() {
     local color_log="${BAG_DIR}/${SESSION_ID}_camera_gate_pre_color_hz.txt"
     local depth_log="${BAG_DIR}/${SESSION_ID}_camera_gate_pre_aligned_depth_hz.txt"
     local imu_log="${BAG_DIR}/${SESSION_ID}_camera_gate_pre_imu_hz.txt"
+    local gate_bringup_log="${BAG_DIR}/${SESSION_ID}_camera_gate_bringup_window.log"
+    local gate_start_line=0
     local failures=0
     local rate
 
@@ -493,12 +498,16 @@ run_camera_pre_gate() {
         echo "stream_seconds: ${REALSENSE_CAMERA_GATE_SECONDS}"
         echo "min_rgbd_hz: ${MIN_RGBD_HZ}"
         echo "min_camera_imu_hz: ${MIN_CAMERA_IMU_HZ}"
+        echo "max_rgbd_gate_gap_sec: ${MAX_RGBD_GATE_GAP_SEC}"
+        echo "max_camera_imu_gate_gap_sec: ${MAX_CAMERA_IMU_GATE_GAP_SEC}"
         echo "color_log: $(basename "${color_log}")"
         echo "aligned_depth_log: $(basename "${depth_log}")"
         echo "imu_log: $(basename "${imu_log}")"
+        echo "bringup_window_log: $(basename "${gate_bringup_log}")"
         echo ""
     } > "${CAMERA_GATE_PRE_LOG}"
 
+    gate_start_line="$(wc -l < "${BRINGUP_LOG}" 2>/dev/null || echo 0)"
     timeout "${REALSENSE_CAMERA_GATE_SECONDS}" ros2 topic hz /camera/color/image_raw --window 40 \
         > "${color_log}" 2>&1 &
     local color_pid=$!
@@ -513,8 +522,20 @@ run_camera_pre_gate() {
     wait "${depth_pid}" 2>/dev/null || true
     wait "${imu_pid}" 2>/dev/null || true
 
+    if printf "%s" "${gate_start_line}" | grep -Eq '^[0-9]+$'; then
+        tail -n "+$((gate_start_line + 1))" "${BRINGUP_LOG}" > "${gate_bringup_log}" 2>/dev/null || \
+            cp "${BRINGUP_LOG}" "${gate_bringup_log}" 2>/dev/null || true
+    else
+        cp "${BRINGUP_LOG}" "${gate_bringup_log}" 2>/dev/null || true
+    fi
+
     _camera_rate_from_log() {
         grep "average rate" "$1" | tail -1 | awk -F': ' '{print $2}' | awk '{print $1}'
+    }
+
+    _camera_max_gap_from_log() {
+        grep -oE 'max: [0-9.]+s' "$1" | \
+            awk '{gsub("s", "", $2); if ($2 + 0 > max) max = $2 + 0} END {if (max != "") print max}'
     }
 
     _camera_check_rate_log() {
@@ -522,6 +543,8 @@ run_camera_pre_gate() {
         local file="$2"
         local min_rate="$3"
         local label="$4"
+        local max_gap_limit="$5"
+        local max_gap
 
         rate="$(_camera_rate_from_log "${file}")"
         if [ -z "${rate}" ]; then
@@ -535,16 +558,26 @@ run_camera_pre_gate() {
             echo "FAIL ${label}: ${topic} ${rate} Hz, expected >= ${min_rate} Hz" | tee -a "${CAMERA_GATE_PRE_LOG}"
             failures=$((failures + 1))
         fi
+
+        max_gap="$(_camera_max_gap_from_log "${file}")"
+        if [ -z "${max_gap}" ]; then
+            echo "WARN ${label}: no max-gap data found for ${topic}" | tee -a "${CAMERA_GATE_PRE_LOG}"
+        elif awk -v gap="${max_gap}" -v limit="${max_gap_limit}" 'BEGIN { exit(gap <= limit ? 0 : 1) }'; then
+            echo "PASS ${label} max gap: ${max_gap}s <= ${max_gap_limit}s" | tee -a "${CAMERA_GATE_PRE_LOG}"
+        else
+            echo "FAIL ${label} max gap: ${max_gap}s exceeds ${max_gap_limit}s" | tee -a "${CAMERA_GATE_PRE_LOG}"
+            failures=$((failures + 1))
+        fi
     }
 
-    _camera_check_rate_log /camera/color/image_raw "${color_log}" "${MIN_RGBD_HZ}" "color stream"
-    _camera_check_rate_log /camera/aligned_depth_to_color/image_raw "${depth_log}" "${MIN_RGBD_HZ}" "aligned depth stream"
-    _camera_check_rate_log /camera/imu "${imu_log}" "${MIN_CAMERA_IMU_HZ}" "camera imu stream"
+    _camera_check_rate_log /camera/color/image_raw "${color_log}" "${MIN_RGBD_HZ}" "color stream" "${MAX_RGBD_GATE_GAP_SEC}"
+    _camera_check_rate_log /camera/aligned_depth_to_color/image_raw "${depth_log}" "${MIN_RGBD_HZ}" "aligned depth stream" "${MAX_RGBD_GATE_GAP_SEC}"
+    _camera_check_rate_log /camera/imu "${imu_log}" "${MIN_CAMERA_IMU_HZ}" "camera imu stream" "${MAX_CAMERA_IMU_GATE_GAP_SEC}"
 
-    if grep -Eiq "The device has been disconnected|USB disconnect|No such device|device removed" "${BRINGUP_LOG}" 2>/dev/null; then
+    if grep -Eiq "The device has been disconnected|USB disconnect|No such device|device removed" "${gate_bringup_log}" 2>/dev/null; then
         echo "FAIL RealSense runtime log: camera disconnect/device-drop errors observed" | tee -a "${CAMERA_GATE_PRE_LOG}"
         failures=$((failures + 1))
-    elif grep -Eiq "UVCIOC_CTRL_QUERY|VIDIOC_|Frames didn't arrived|control_transfer.*failed|Connection timed out|Failed to create device|set_xu" "${BRINGUP_LOG}" 2>/dev/null; then
+    elif grep -Eiq "UVCIOC_CTRL_QUERY|VIDIOC_|Frames didn't arrived|control_transfer.*failed|Connection timed out|Failed to create device|set_xu" "${gate_bringup_log}" 2>/dev/null; then
         if [ "${STRICT_REALSENSE_UVC_LOG}" = true ]; then
             echo "FAIL RealSense runtime log: UVC/control timeout text observed" | tee -a "${CAMERA_GATE_PRE_LOG}"
             failures=$((failures + 1))
@@ -743,10 +776,18 @@ cleanup() {
         wait_or_kill "${WATCHDOG_PID}" "runtime watchdog" 10
     fi
     if [ ! -s "${RUNTIME_WATCHDOG_STATUS_FILE}" ]; then
-        write_watchdog_stopped_cleanly_status
+        if [ "${RECORDING_STARTED}" = true ]; then
+            write_watchdog_stopped_cleanly_status
+        else
+            echo "PRE_RECORDING_ABORT" > "${RUNTIME_WATCHDOG_STATUS_FILE}"
+        fi
     elif ! grep -q "^FAIL_RUNTIME_WATCHDOG" "${RUNTIME_WATCHDOG_STATUS_FILE}" && \
          grep -q "^RUNNING" "${RUNTIME_WATCHDOG_STATUS_FILE}"; then
-        write_watchdog_stopped_cleanly_status
+        if [ "${RECORDING_STARTED}" = true ]; then
+            write_watchdog_stopped_cleanly_status
+        else
+            echo "PRE_RECORDING_ABORT" > "${RUNTIME_WATCHDOG_STATUS_FILE}"
+        fi
     fi
 
     if [ -n "${BRINGUP_PID}" ] && kill -0 "${BRINGUP_PID}" 2>/dev/null; then
@@ -989,6 +1030,7 @@ else
         /mocap &
 fi
 ROSBAG_PID=$!
+RECORDING_STARTED=true
 start_runtime_watchdog
 set +e
 wait "${ROSBAG_PID}"
