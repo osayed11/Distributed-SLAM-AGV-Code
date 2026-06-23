@@ -192,11 +192,26 @@ Do not collect publishable data if this gate fails. UVC/control timeout text
 is a warning when RGB-D and IMU rates pass; stream rate loss or camera
 disconnects are hard failures.
 
+RGB-D hardware stream FPS must stay at `15` FPS or higher. If processing or
+storage needs fewer frames, drop frames after capture; do not lower the D455
+hardware stream below the dataset baseline.
+
 `RGBD_STARTUP_TIMEOUT` defaults to `90` seconds so startup/reconnect jitter on
 Raspberry Pi + D455 does not cause a false early exit before the rate gate runs.
 
 `ENABLE_REALSENSE_SYNC` defaults to `false`. Keep it off for the current
 single-D455 AGVs unless a hardware sync setup is deliberately added.
+
+Each session writes hardware evidence alongside the bag:
+
+```text
+<session>_hardware_pre.log
+<session>_hardware_post.log
+```
+
+These logs capture Pi throttling state, USB autosuspend, WiFi power-save state,
+USB topology, D455 serial/speed/power state, and recent USB/camera kernel log
+lines.
 
 Drive manually in another terminal:
 
@@ -597,6 +612,7 @@ The gate must pass all of these checks:
 ```text
 USB reset succeeds
 pre-stream rs-enumerate-devices detects the D455
+hardware RGB-D profiles are >= 15 FPS
 /camera/color/image_raw >= 12 Hz
 /camera/aligned_depth_to_color/image_raw >= 12 Hz
 /camera/imu >= 150 Hz
@@ -611,6 +627,16 @@ Use the broader readiness script for base, LiDAR, TF, and package checks:
 
 ```bash
 bash scripts/diagnostics/robot_readiness_check.sh
+```
+
+Readiness also checks the robot power-management hardening:
+
+```text
+usbcore.autosuspend=-1 active and present in the Pi boot cmdline
+D455 /sys/.../power/control = on
+D455 /sys/.../power/autosuspend = -1
+NetworkManager WiFi powersave disabled
+wlan0 power_save off when wlan0 is available
 ```
 
 For a manual spot check:
@@ -639,6 +665,12 @@ standalone librealsense tools: 2.58.1
 /camera/accel/sample: near 100 Hz
 RGB-D image topics: near 15 Hz
 ```
+
+If a robot repeatedly passes USB3/package checks but still wedges under the
+live gate, the next controlled escalation is an RSUSB/libuvc RealSense build on
+one sacrificial robot and a before/after 10-minute gate comparison. Do not mix a
+source-built RSUSB stack into the whole fleet until that comparison shows a real
+improvement over the pinned apt packages above.
 
 ## Scaling To More Robots
 

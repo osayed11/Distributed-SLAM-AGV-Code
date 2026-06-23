@@ -40,6 +40,7 @@ MIN_RGBD_HZ="${MIN_RGBD_HZ:-12}"
 MIN_CAMERA_IMU_HZ="${MIN_CAMERA_IMU_HZ:-150}"
 RGBD_STARTUP_TIMEOUT="${RGBD_STARTUP_TIMEOUT:-90}"
 IMU_STARTUP_TIMEOUT="${IMU_STARTUP_TIMEOUT:-30}"
+MIN_REALSENSE_FPS="${MIN_REALSENSE_FPS:-15}"
 
 CAMERA_COLOR_WIDTH="${CAMERA_COLOR_WIDTH:-640}"
 CAMERA_COLOR_HEIGHT="${CAMERA_COLOR_HEIGHT:-480}"
@@ -48,14 +49,34 @@ CAMERA_DEPTH_WIDTH="${CAMERA_DEPTH_WIDTH:-640}"
 CAMERA_DEPTH_HEIGHT="${CAMERA_DEPTH_HEIGHT:-480}"
 CAMERA_DEPTH_FPS="${CAMERA_DEPTH_FPS:-15}"
 SESSION_ID="${ROBOT_NAME}_${SCENARIO}_${DATESTAMP}"
-BAG_DIR="${HOME}/agv_data"
+BAG_DIR="${BAG_DIR:-${HOME}/agv_data}"
 BAG_FILE="${BAG_DIR}/${SESSION_ID}.bag"
 MANIFEST_FILE="${BAG_DIR}/${SESSION_ID}_manifest.yaml"
 CHRONY_FILE="${BAG_DIR}/${SESSION_ID}_chrony.txt"
 CAMERA_GATE_PRE_LOG="${BAG_DIR}/${SESSION_ID}_camera_gate_pre.log"
 CAMERA_GATE_POST_LOG="${BAG_DIR}/${SESSION_ID}_camera_gate_post.log"
+HARDWARE_PRE_LOG="${BAG_DIR}/${SESSION_ID}_hardware_pre.log"
+HARDWARE_POST_LOG="${BAG_DIR}/${SESSION_ID}_hardware_post.log"
 
 mkdir -p "${BAG_DIR}"
+
+require_min_fps() {
+    local value="$1"
+    local name="$2"
+
+    if ! printf "%s" "${value}" | grep -Eq '^[0-9]+([.][0-9]+)?$'; then
+        echo "ERROR: ${name} must be numeric, got '${value}'." >&2
+        exit 1
+    fi
+    if ! awk -v fps="${value}" -v min="${MIN_REALSENSE_FPS}" 'BEGIN { exit(fps >= min ? 0 : 1) }'; then
+        echo "ERROR: ${name}=${value} is below ${MIN_REALSENSE_FPS} FPS." >&2
+        echo "       Keep D455 hardware streams at >=${MIN_REALSENSE_FPS} FPS; drop frames downstream if needed." >&2
+        exit 1
+    fi
+}
+
+require_min_fps "${CAMERA_COLOR_FPS}" "CAMERA_COLOR_FPS"
+require_min_fps "${CAMERA_DEPTH_FPS}" "CAMERA_DEPTH_FPS"
 
 # ---------------------------------------------------------------------------
 # Source ROS
@@ -108,6 +129,55 @@ echo "=== Pre-flight checks ==="
     fi
 } > "${CHRONY_FILE}"
 echo "  [i] chrony snapshot: ${CHRONY_FILE}"
+
+capture_hardware_snapshot() {
+    local label="$1"
+    local file="$2"
+
+    {
+        echo "# Hardware snapshot (${label}) for ${SESSION_ID}"
+        echo "# Captured: $(date --iso-8601=ns)"
+        echo ""
+        echo "## host"
+        hostname
+        hostname -I 2>/dev/null || true
+        uname -a
+        echo ""
+        echo "## Pi power/throttle"
+        command -v vcgencmd >/dev/null 2>&1 && vcgencmd get_throttled || echo "vcgencmd unavailable"
+        command -v vcgencmd >/dev/null 2>&1 && vcgencmd measure_volts core || true
+        echo ""
+        echo "## USB autosuspend"
+        [ -r /sys/module/usbcore/parameters/autosuspend ] && \
+            cat /sys/module/usbcore/parameters/autosuspend || true
+        echo ""
+        echo "## WiFi power save"
+        command -v iw >/dev/null 2>&1 && iw dev wlan0 get power_save 2>&1 || true
+        echo ""
+        echo "## USB topology"
+        lsusb -t 2>&1 || true
+        echo ""
+        echo "## D455 sysfs"
+        for p in /sys/bus/usb/devices/*/idProduct; do
+            if [ "$(cat "$p" 2>/dev/null)" = "0b5c" ]; then
+                local d
+                d="$(dirname "$p")"
+                echo "device=${d}"
+                for f in product manufacturer serial speed busnum devnum bMaxPower power/control power/autosuspend; do
+                    [ -e "${d}/${f}" ] && printf "%s=" "${f}" && cat "${d}/${f}"
+                done
+            fi
+        done
+        echo ""
+        echo "## recent USB/camera kernel log"
+        dmesg -T 2>/dev/null | \
+            grep -Ei 'usb|uvc|video|hid|iio|realsense|under-voltage|voltage|reset|disconnect|timeout|error' | \
+            tail -120 || true
+    } > "${file}" 2>&1 || true
+}
+
+capture_hardware_snapshot "pre-run" "${HARDWARE_PRE_LOG}"
+echo "  [i] hardware snapshot: ${HARDWARE_PRE_LOG}"
 
 # Check required topics are publishing (best-effort, bounded timeout).
 # If logging.launch is allowed to start bringup itself these checks may warn
@@ -250,6 +320,8 @@ realsense_camera_gate_post_log: ${SESSION_ID}_camera_gate_post.log
 strict_realsense_uvc_log: ${STRICT_REALSENSE_UVC_LOG}
 rgbd_startup_timeout_sec: ${RGBD_STARTUP_TIMEOUT}
 imu_startup_timeout_sec: ${IMU_STARTUP_TIMEOUT}
+hardware_pre_log: ${SESSION_ID}_hardware_pre.log
+hardware_post_log: ${SESSION_ID}_hardware_post.log
 
 camera_profile:
   color_width: ${CAMERA_COLOR_WIDTH}
@@ -490,6 +562,7 @@ cleanup() {
         wait_or_kill "${BRINGUP_PID}" "bringup" 30
     fi
 
+    capture_hardware_snapshot "post-run" "${HARDWARE_POST_LOG}"
     run_camera_post_enumerate_gate
     finalise_manifest
 }

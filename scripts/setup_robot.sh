@@ -123,6 +123,67 @@ require_file() {
     fi
 }
 
+append_kernel_arg_once() {
+    local file="$1"
+    local arg="$2"
+
+    if [ ! -f "${file}" ]; then
+        return
+    fi
+    if grep -qw -- "${arg}" "${file}"; then
+        return
+    fi
+
+    sudo cp "${file}" "${file}.agv-backup" 2>/dev/null || true
+    sudo sed -i -e "1 s/$/ ${arg}/" -e 's/  */ /g' "${file}"
+}
+
+configure_power_hardening() {
+    section "power management hardening"
+
+    echo "Disabling USB autosuspend persistently for dataset robots..."
+    for cmdline in /boot/firmware/cmdline.txt /boot/cmdline.txt; do
+        append_kernel_arg_once "${cmdline}" "usbcore.autosuspend=-1"
+    done
+    echo "options usbcore autosuspend=-1" | \
+        sudo tee /etc/modprobe.d/agv-usb-autosuspend.conf > /dev/null
+
+    # Keep D455 runtime power management disabled even before the next reboot.
+    # Vendor/product is Intel D455 (8086:0b5c). This is deliberately scoped to
+    # the camera, not all USB devices.
+    sudo tee /etc/udev/rules.d/99-agv-realsense-power.rules > /dev/null <<'EOF'
+ACTION=="add", SUBSYSTEM=="usb", ATTR{idVendor}=="8086", ATTR{idProduct}=="0b5c", TEST=="power/control", ATTR{power/control}:="on", TEST=="power/autosuspend", ATTR{power/autosuspend}:="-1"
+ACTION=="change", SUBSYSTEM=="usb", ATTR{idVendor}=="8086", ATTR{idProduct}=="0b5c", TEST=="power/control", ATTR{power/control}:="on", TEST=="power/autosuspend", ATTR{power/autosuspend}:="-1"
+EOF
+
+    for p in /sys/bus/usb/devices/*/idProduct; do
+        if [ "$(cat "$p" 2>/dev/null)" = "0b5c" ]; then
+            local d
+            d="$(dirname "$p")"
+            echo on | sudo tee "${d}/power/control" >/dev/null 2>&1 || true
+            echo -1 | sudo tee "${d}/power/autosuspend" >/dev/null 2>&1 || true
+            echo "D455 power: ${d}"
+            for f in serial speed power/control power/autosuspend; do
+                [ -e "${d}/${f}" ] && printf "  %s=" "${f}" && cat "${d}/${f}"
+            done
+        fi
+    done
+
+    echo "Disabling NetworkManager WiFi powersave for SSH stability..."
+    sudo mkdir -p /etc/NetworkManager/conf.d
+    sudo tee /etc/NetworkManager/conf.d/90-agv-wifi-powersave-off.conf > /dev/null <<'EOF'
+[connection]
+wifi.powersave=2
+EOF
+    if command -v iw >/dev/null 2>&1; then
+        sudo iw dev wlan0 set power_save off 2>/dev/null || true
+    fi
+    if systemctl list-unit-files NetworkManager.service >/dev/null 2>&1; then
+        sudo systemctl reload NetworkManager 2>/dev/null || true
+    fi
+    echo "Power hardening installed. Reboot once after setup so kernel usbcore.autosuspend=-1 is active."
+}
+
 ensure_swap() {
     section "swap check"
     current_swap=$(free -m | grep -i swap | awk '{print $2}')
@@ -245,6 +306,7 @@ if [ "$INSTALL_SYSTEM" = true ]; then
         cmake \
         git \
         gnupg2 \
+        iw \
         libboost-dev \
         libboost-system-dev \
         lsb-release \
@@ -361,6 +423,8 @@ if [ ! -f "/etc/udev/rules.d/99-realsense-libusb.rules" ]; then
         echo "[!] WARN: Could not reach GitHub to download camera rules. Skipping..."
     fi
 fi
+
+configure_power_hardening
 
 # AGV Base Controller Rule (/dev/myAGV)
 echo "Installing AGV base controller rules..."

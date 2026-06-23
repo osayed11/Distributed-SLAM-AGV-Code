@@ -859,6 +859,63 @@ def check_imu_data(bag_path, bag_topics):
                "All gyro axes reporting non-zero values ({} msgs)".format(n))
 
 
+def _session_prefix_from_bag_path(bag_path):
+    if _is_ros2_bag(bag_path):
+        parent = os.path.dirname(bag_path.rstrip("/"))
+        session = os.path.basename(bag_path.rstrip("/"))
+        return os.path.join(parent, session)
+    base = bag_path
+    if base.endswith(".bag"):
+        base = base[:-4]
+    return base
+
+
+def check_session_evidence(bag_path, require_hardware_logs=False):
+    print("\n--- Session evidence files ---")
+
+    prefix = _session_prefix_from_bag_path(bag_path)
+    expected = [
+        ("manifest", prefix + "_manifest.yaml"),
+        ("chrony", prefix + "_chrony.txt"),
+        ("hardware_pre", prefix + "_hardware_pre.log"),
+        ("hardware_post", prefix + "_hardware_post.log"),
+    ]
+
+    for label, path in expected:
+        if os.path.exists(path) and os.path.getsize(path) > 0:
+            record(PASS, label, os.path.basename(path))
+        else:
+            level = FAIL if require_hardware_logs and label.startswith("hardware_") else WARN
+            record(level, label, "missing or empty: {}".format(path))
+
+    for label in ("hardware_pre", "hardware_post"):
+        path = prefix + "_" + label + ".log"
+        if not os.path.exists(path):
+            continue
+        try:
+            with open(path, errors="replace") as f:
+                text = f.read()
+        except Exception as e:
+            record(WARN, label, "could not read {}: {}".format(path, e))
+            continue
+
+        if "throttled=0x0" in text:
+            record(PASS, label + "_power", "Pi throttling state clean")
+        elif "throttled=" in text:
+            record(WARN, label + "_power", "Pi throttling was nonzero; inspect {}".format(path))
+
+        if "power/control=on" in text and "power/autosuspend=-1" in text:
+            record(PASS, label + "_d455_power", "D455 runtime power management disabled")
+        else:
+            record(WARN, label + "_d455_power",
+                   "D455 power/control or autosuspend evidence missing")
+
+        if "Driver=uvcvideo, 5000M" in text or "speed=5000" in text:
+            record(PASS, label + "_usb3", "D455/USB topology evidence shows USB3")
+        else:
+            record(WARN, label + "_usb3", "USB3 evidence missing")
+
+
 def print_summary(bag_path, duration, bag_topics, strict):
     print("\n" + "=" * 60)
     print("VALIDATION SUMMARY: {}".format(os.path.basename(bag_path.rstrip("/"))))
@@ -914,6 +971,8 @@ def main():
                         help="Require a ground-truth/mocap topic")
     parser.add_argument("--require-imu", action="store_true",
                         help="Require an IMU topic")
+    parser.add_argument("--require-hardware-logs", action="store_true",
+                        help="Fail if start_session hardware evidence logs are missing")
     args = parser.parse_args()
 
     bag_path = args.bag.rstrip("/")
@@ -948,6 +1007,10 @@ def main():
     check_frame_drops(bag_path, bag_topics, duration)
     check_colour_depth_sync(bag_path, bag_topics)
     check_imu_data(bag_path, bag_topics)
+    check_session_evidence(
+        bag_path,
+        args.require_hardware_logs or os.environ.get("REQUIRE_HARDWARE_LOGS") == "true",
+    )
 
     exit_code = print_summary(bag_path, duration, bag_topics, args.strict)
     sys.exit(exit_code)

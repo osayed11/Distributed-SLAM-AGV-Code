@@ -18,6 +18,7 @@ MIN_CAMERA_IMU_HZ="${MIN_CAMERA_IMU_HZ:-150}"
 MIN_CAMERA_GYRO_HZ="${MIN_CAMERA_GYRO_HZ:-150}"
 MIN_CAMERA_ACCEL_HZ="${MIN_CAMERA_ACCEL_HZ:-90}"
 MIN_RGBD_HZ="${MIN_RGBD_HZ:-12}"
+MIN_REALSENSE_FPS="${MIN_REALSENSE_FPS:-15}"
 
 source_ros_setup() {
     set +u
@@ -173,6 +174,95 @@ check_realsense_gate() {
     fi
 }
 
+check_power_hardening() {
+    local usb_autosuspend
+    local d455_found=false
+    local d
+    local control
+    local autosuspend
+    local wifi_save
+
+    print_section "power hardening"
+
+    if [ -r /sys/module/usbcore/parameters/autosuspend ]; then
+        usb_autosuspend="$(cat /sys/module/usbcore/parameters/autosuspend)"
+        if [ "${usb_autosuspend}" = "-1" ]; then
+            pass_gate "usbcore autosuspend" "disabled globally"
+        else
+            fail_gate "usbcore autosuspend" "current value ${usb_autosuspend}; run setup_robot.sh and reboot"
+        fi
+    else
+        warn_gate "usbcore autosuspend" "could not read /sys/module/usbcore/parameters/autosuspend"
+    fi
+
+    if grep -Rqs "usbcore.autosuspend=-1" /boot/firmware/cmdline.txt /boot/cmdline.txt 2>/dev/null; then
+        pass_gate "boot usb autosuspend" "usbcore.autosuspend=-1 present"
+    else
+        fail_gate "boot usb autosuspend" "usbcore.autosuspend=-1 missing from Pi boot cmdline"
+    fi
+
+    for p in /sys/bus/usb/devices/*/idProduct; do
+        if [ "$(cat "$p" 2>/dev/null)" = "0b5c" ]; then
+            d455_found=true
+            d="$(dirname "$p")"
+            echo "D455 sysfs: ${d}"
+            for f in serial speed busnum devnum power/control power/autosuspend; do
+                [ -e "${d}/${f}" ] && printf "  %s=" "${f}" && cat "${d}/${f}"
+            done
+            control="$(cat "${d}/power/control" 2>/dev/null || true)"
+            autosuspend="$(cat "${d}/power/autosuspend" 2>/dev/null || true)"
+            if [ "${control}" = "on" ]; then
+                pass_gate "D455 power/control" "on"
+            else
+                fail_gate "D455 power/control" "expected on, found ${control:-unknown}"
+            fi
+            if [ "${autosuspend}" = "-1" ]; then
+                pass_gate "D455 power/autosuspend" "-1"
+            else
+                fail_gate "D455 power/autosuspend" "expected -1, found ${autosuspend:-unknown}"
+            fi
+        fi
+    done
+    if [ "${d455_found}" = false ]; then
+        fail_gate "D455 sysfs" "camera not found as USB product 0b5c"
+    fi
+
+    if [ -f /etc/NetworkManager/conf.d/90-agv-wifi-powersave-off.conf ] && \
+       grep -Eq 'wifi\.powersave *= *2' /etc/NetworkManager/conf.d/90-agv-wifi-powersave-off.conf; then
+        pass_gate "WiFi powersave config" "NetworkManager default disables powersave"
+    else
+        warn_gate "WiFi powersave config" "AGV NetworkManager powersave-off config missing"
+    fi
+
+    if command -v iw >/dev/null 2>&1 && iw dev wlan0 info >/dev/null 2>&1; then
+        wifi_save="$(iw dev wlan0 get power_save 2>/dev/null || true)"
+        if printf "%s\n" "${wifi_save}" | grep -qi "off"; then
+            pass_gate "wlan0 power_save" "off"
+        else
+            fail_gate "wlan0 power_save" "${wifi_save:-unknown}; expected off"
+        fi
+    else
+        warn_gate "wlan0 power_save" "iw missing or wlan0 unavailable"
+    fi
+}
+
+validate_realsense_profile_floor() {
+    local profile="$1"
+    local label="$2"
+    local fps
+
+    fps="$(printf "%s" "${profile}" | awk -Fx '{print $3}')"
+    if ! printf "%s" "${fps}" | grep -Eq '^[0-9]+([.][0-9]+)?$'; then
+        fail_gate "${label} profile" "invalid profile '${profile}'"
+        return
+    fi
+    if awk -v fps="${fps}" -v min="${MIN_REALSENSE_FPS}" 'BEGIN { exit(fps >= min ? 0 : 1) }'; then
+        pass_gate "${label} profile" "${profile}"
+    else
+        fail_gate "${label} profile" "${profile}; hardware stream FPS must be >= ${MIN_REALSENSE_FPS}"
+    fi
+}
+
 topic_list() {
     if [ "${ROS_MAJOR}" = "2" ]; then
         ros2 topic list 2>/dev/null
@@ -283,6 +373,11 @@ if command -v rs-enumerate-devices >/dev/null 2>&1; then
 fi
 
 check_realsense_gate
+check_power_hardening
+
+print_section "configured camera profiles"
+validate_realsense_profile_floor "640x480x15" "default color"
+validate_realsense_profile_floor "640x480x15" "default depth"
 
 print_section "packages"
 if [ "${ROS_MAJOR}" = "2" ]; then

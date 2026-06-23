@@ -23,6 +23,7 @@ CAMERA_DEPTH_FPS="${CAMERA_DEPTH_FPS:-15}"
 ENABLE_REALSENSE_SYNC="${ENABLE_REALSENSE_SYNC:-false}"
 MIN_RGBD_HZ="${MIN_RGBD_HZ:-12}"
 MIN_CAMERA_IMU_HZ="${MIN_CAMERA_IMU_HZ:-150}"
+MIN_REALSENSE_FPS="${MIN_REALSENSE_FPS:-15}"
 STRICT_UVC_LOG="${STRICT_UVC_LOG:-false}"
 STRICT_POST_ENUM="${STRICT_POST_ENUM:-false}"
 
@@ -34,6 +35,23 @@ LAUNCH_RUNTIME_OFFSET=0
 DMESG_RUNTIME_OFFSET=0
 
 mkdir -p "${RUN_DIR}"
+
+require_min_fps() {
+    local value="$1"
+    local name="$2"
+
+    if ! printf "%s" "${value}" | grep -Eq '^[0-9]+([.][0-9]+)?$'; then
+        echo "FAIL ${name}: must be numeric, got '${value}'" | tee -a "${RUN_DIR}/summary.txt"
+        exit 1
+    fi
+    if ! awk -v fps="${value}" -v min="${MIN_REALSENSE_FPS}" 'BEGIN { exit(fps >= min ? 0 : 1) }'; then
+        echo "FAIL ${name}: ${value} FPS is below ${MIN_REALSENSE_FPS}; keep hardware stream FPS >= ${MIN_REALSENSE_FPS}" | tee -a "${RUN_DIR}/summary.txt"
+        exit 1
+    fi
+}
+
+require_min_fps "${CAMERA_COLOR_FPS}" "CAMERA_COLOR_FPS"
+require_min_fps "${CAMERA_DEPTH_FPS}" "CAMERA_DEPTH_FPS"
 
 source_ros() {
     set +u
@@ -252,6 +270,7 @@ source_ros
     echo "ros_domain_id=${ROS_DOMAIN_ID:-unset}"
     echo "color_profile=${CAMERA_COLOR_WIDTH}x${CAMERA_COLOR_HEIGHT}x${CAMERA_COLOR_FPS}"
     echo "depth_profile=${CAMERA_DEPTH_WIDTH}x${CAMERA_DEPTH_HEIGHT}x${CAMERA_DEPTH_FPS}"
+    echo "min_realsense_fps=${MIN_REALSENSE_FPS}"
     echo "enable_sync=${ENABLE_REALSENSE_SYNC}"
     echo "strict_uvc_log=${STRICT_UVC_LOG}"
     echo "strict_post_enum=${STRICT_POST_ENUM}"
