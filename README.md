@@ -192,6 +192,9 @@ Do not collect publishable data if this gate fails. UVC/control timeout text
 is a warning when RGB-D and IMU rates pass; stream rate loss or camera
 disconnects are hard failures.
 
+`ENABLE_REALSENSE_SYNC` defaults to `false`. Keep it off for the current
+single-D455 AGVs unless a hardware sync setup is deliberately added.
+
 Drive manually in another terminal:
 
 ```bash
