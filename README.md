@@ -502,7 +502,7 @@ If logs show UVCIOC_CTRL_QUERY timeouts or HID frame warnings while RGB-D and
 IMU rates stay healthy, treat them as diagnostic warnings. If rates drop,
 the camera disconnects, Right MIPI errors repeat, or realsense2_camera enters
 kernel D state, reboot or power-cycle before collecting publishable data.
-start_session.sh performs one USB reset before launch and disables the
+start_session.sh performs one USB reset before launch and runs the
 required pre-run camera gate before launch. It also captures a post-run
 `rs-enumerate-devices` log before finalising the manifest.
 ```
