@@ -481,6 +481,12 @@ class RobotDoctorParserTests(unittest.TestCase):
         self.assertIn(("2.1", "WARN", "d455_usb_autosuspend", "D455 USB autosuspend is enabled (power/control=auto)", "disable autosuspend for the D455 before long dataset runs"), results)
         self.assertTrue(any(item[0:3] == ("1.2", "FAIL", "d455_usb_autosuspend_delay") for item in results))
 
+    def test_usb_power_classifier_accepts_negative_delay_with_auto_control(self) -> None:
+        text = "USB_DEVICE=/sys/bus/usb/devices/2-1\nidVendor=8086\nidProduct=0b5c\nproduct=Intel RealSense D455\nspeed=5000\npower_control=auto\npower_autosuspend_delay_ms=-1\nCMDLINE\nusbcore.quirks=8086:0b5c:kn\n"
+        results = Doctor.classify_usb_power_policy(text, "dataset")
+        self.assertIn(("2.1", "PASS", "d455_usb_autosuspend", "D455 USB autosuspend disabled (power/control=auto, autosuspend_delay_ms=-1)", ""), results)
+        self.assertTrue(any(item[0:3] == ("1.2", "PASS", "d455_usb_autosuspend_delay") for item in results))
+
     def test_usb_power_classifier_accepts_d455_power_on_and_quirk(self) -> None:
         text = "USB_DEVICE=/sys/bus/usb/devices/2-1\nidVendor=8086\nidProduct=0b5c\nproduct=Intel RealSense D455\nspeed=5000\npower_control=on\npower_autosuspend_delay_ms=-1\nCMDLINE\nusbcore.quirks=8086:0b5c:kn\n"
         results = Doctor.classify_usb_power_policy(text)

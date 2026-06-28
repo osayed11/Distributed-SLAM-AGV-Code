@@ -30,7 +30,7 @@ Options:
   --bringup                  Launch standard ROS2 bringup only for this gate
                              using initial_reset:=false and the configured cmd topic.
   --bringup-cmd CMD          Launch this bringup command only for this gate.
-  --bringup-wait SECONDS     Wait after bringup before probing. Default: 90.
+  --bringup-wait SECONDS     Max wait for required bringup topics. Default: 90.
   --confirm-mechanical       Operator confirms mounts/chassis/slip checklist.
   --confirm-mocap            Operator confirms rigid body and marker visibility.
   --confirm-anchors          Operator confirms anchors/obstacles were surveyed.

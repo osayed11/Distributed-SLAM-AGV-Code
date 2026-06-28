@@ -559,7 +559,40 @@ class Doctor:
             f"started bringup command pid={self.bringup_process.pid}",
             [str(self.bringup_log)],
         )
-        time.sleep(self.args.bringup_wait)
+        self.wait_for_bringup_topics()
+
+    def wait_for_bringup_topics(self) -> None:
+        deadline = time.time() + max(0, int(self.args.bringup_wait))
+        required = ["/scan", "/odom", "/tf"]
+        required.extend(topic for topic in self.args.required_topic if topic not in required)
+        required = list(dict.fromkeys(required))
+        last_seen: Dict[str, str] = {}
+        while time.time() < deadline:
+            result = self.ros_cmd(
+                "(ros2 topic list -t --no-daemon --spin-time 2 2>&1 || ros2 topic list -t 2>&1)",
+                timeout=8,
+                label="bringup_wait_topic_list",
+            )
+            last_seen = self.parse_topic_list(self.command_output(result))
+            missing = [topic for topic in required if topic not in last_seen]
+            if not missing:
+                self.add(
+                    "2.2",
+                    PASS,
+                    "bringup_wait",
+                    f"required bringup topics visible: {', '.join(required)}",
+                    [result.log],
+                )
+                return
+            time.sleep(2.0)
+        missing = [topic for topic in required if topic not in last_seen]
+        self.add(
+            "2.2",
+            WARN,
+            "bringup_wait",
+            f"bringup wait reached {self.args.bringup_wait}s; still missing: {', '.join(missing)}",
+            next_action="inspect bringup_command.log if required topics are still missing in later ROS graph checks",
+        )
 
     def stop_bringup(self) -> None:
         if self.bringup_process is None:
@@ -1047,10 +1080,14 @@ class Doctor:
             results.append(("2.1", INFO, "d455_usb_power_policy", "D455 sysfs power policy not found", ""))
             return results
 
+        delay_match = re.search(r"power_autosuspend_delay_ms=([^\n]+)", d455_block)
+        delay = delay_match.group(1).strip() if delay_match else "unknown"
         control_match = re.search(r"power_control=([^\n]+)", d455_block)
         control = control_match.group(1).strip() if control_match else "unknown"
         if control == "on":
             results.append(("2.1", PASS, "d455_usb_autosuspend", "D455 USB autosuspend disabled (power/control=on)", ""))
+        elif control == "auto" and delay == "-1":
+            results.append(("2.1", PASS, "d455_usb_autosuspend", "D455 USB autosuspend disabled (power/control=auto, autosuspend_delay_ms=-1)", ""))
         elif control == "auto":
             results.append(
                 (
@@ -1071,9 +1108,6 @@ class Doctor:
                     "inspect /sys/bus/usb/devices/*/power/control for the D455 and disable autosuspend if uncertain",
                 )
             )
-
-        delay_match = re.search(r"power_autosuspend_delay_ms=([^\n]+)", d455_block)
-        delay = delay_match.group(1).strip() if delay_match else "unknown"
         if delay == "-1":
             results.append(("1.2", PASS, "d455_usb_autosuspend_delay", "D455 autosuspend_delay_ms=-1", ""))
         elif delay in {"", "unknown"}:
@@ -2830,8 +2864,9 @@ PY
             self.add("2.2", PASS, "d455_infra_fps_cap", f"{topic} measured {rate:.1f} Hz")
 
     def measure_topic_rate(self, topic: str, seconds: int) -> Optional[float]:
-        cmd = f"timeout {seconds + 8} ros2 topic hz {topic} --window 20 2>&1"
-        result = self.ros_cmd(cmd, timeout=seconds + 12, label=f"hz_{topic.strip('/').replace('/', '_')}")
+        window = max(5, min(10, seconds * 2))
+        cmd = f"timeout {seconds + 5} ros2 topic hz {topic} --window {window} 2>&1"
+        result = self.ros_cmd(cmd, timeout=seconds + 8, label=f"hz_{topic.strip('/').replace('/', '_')}")
         return self.parse_topic_hz(self.command_output(result))
 
     @staticmethod
