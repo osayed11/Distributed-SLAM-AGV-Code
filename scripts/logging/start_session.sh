@@ -42,6 +42,8 @@ if [ -z "${REQUIRE_CLOCK_SYNC+x}" ]; then
 fi
 REQUIRE_IMU="${REQUIRE_IMU:-false}"
 IMU_TOPICS="${IMU_TOPICS:-/camera/imu /imu}"
+ENABLE_IMU_RECORDING_KEEPALIVE="${ENABLE_IMU_RECORDING_KEEPALIVE:-true}"
+IMU_RECORDING_KEEPALIVE_SECONDS="${IMU_RECORDING_KEEPALIVE_SECONDS:-30}"
 ENABLE_REALSENSE_SYNC="${ENABLE_REALSENSE_SYNC:-false}"
 ROSBAG2_MAX_CACHE_SIZE="${ROSBAG2_MAX_CACHE_SIZE:-268435456}"
 ROSBAG2_MAX_BAG_SIZE="${ROSBAG2_MAX_BAG_SIZE:-2147483648}"
@@ -390,6 +392,8 @@ clock_sync_timeout_sec: ${CLOCK_SYNC_TIMEOUT}
 clock_sync_required: ${REQUIRE_CLOCK_SYNC}
 imu_required: ${REQUIRE_IMU}
 imu_topics: "${IMU_TOPICS}"
+imu_recording_keepalive_enabled: ${ENABLE_IMU_RECORDING_KEEPALIVE}
+imu_recording_keepalive_seconds: ${IMU_RECORDING_KEEPALIVE_SECONDS}
 camera_imu: enabled
 enable_realsense_sync: ${ENABLE_REALSENSE_SYNC}
 rosbag2_max_cache_size_bytes: ${ROSBAG2_MAX_CACHE_SIZE}
@@ -452,6 +456,7 @@ BRINGUP_PGID=""
 
 ROSBAG_PID=""
 WATCHDOG_PID=""
+IMU_KEEPALIVE_PID=""
 RECORDING_STARTED=false
 CLEANED_UP=false
 
@@ -942,6 +947,11 @@ cleanup() {
         kill -TERM "${WATCHDOG_PID}" 2>/dev/null || true
         wait_or_kill "${WATCHDOG_PID}" "runtime watchdog" "${WATCHDOG_STOP_TIMEOUT}"
     fi
+
+    if [ -n "${IMU_KEEPALIVE_PID}" ] && kill -0 "${IMU_KEEPALIVE_PID}" 2>/dev/null; then
+        kill -TERM "${IMU_KEEPALIVE_PID}" 2>/dev/null || true
+        wait_or_kill "${IMU_KEEPALIVE_PID}" "IMU recording keepalive" 5
+    fi
     if [ ! -s "${RUNTIME_WATCHDOG_STATUS_FILE}" ]; then
         if [ "${RECORDING_STARTED}" = true ]; then
             write_watchdog_stopped_cleanly_status
@@ -992,6 +1002,8 @@ export CMD_TOPIC="$CMD_TOPIC"
 export REQUIRE_GT="$REQUIRE_GT"
 export REQUIRE_IMU="$REQUIRE_IMU"
 export IMU_TOPICS="$IMU_TOPICS"
+export ENABLE_IMU_RECORDING_KEEPALIVE="$ENABLE_IMU_RECORDING_KEEPALIVE"
+export IMU_RECORDING_KEEPALIVE_SECONDS="$IMU_RECORDING_KEEPALIVE_SECONDS"
 
 export ENABLE_REALSENSE_SYNC="$ENABLE_REALSENSE_SYNC"
 export ROSBAG2_MAX_CACHE_SIZE="$ROSBAG2_MAX_CACHE_SIZE"
@@ -1206,6 +1218,16 @@ fi
 if [ -n "${ROSBAG2_MAX_BAG_SIZE}" ] && [ "${ROSBAG2_MAX_BAG_SIZE}" != "0" ]; then
     ROS2_STORAGE_ARGS+=(--max-bag-size "${ROSBAG2_MAX_BAG_SIZE}")
 fi
+
+if [ "${REQUIRE_IMU}" = true ] && [ "${ENABLE_IMU_RECORDING_KEEPALIVE}" = true ]; then
+    echo "Starting bounded IMU recording keepalive (${IMU_RECORDING_KEEPALIVE_SECONDS}s on /camera/imu)..."
+    timeout "${IMU_RECORDING_KEEPALIVE_SECONDS}" \
+        ros2 topic echo --qos-reliability best_effort /camera/imu \
+        > /dev/null 2>&1 &
+    IMU_KEEPALIVE_PID=$!
+    sleep 1
+fi
+
 ros2 bag record \
     --max-cache-size "${ROSBAG2_MAX_CACHE_SIZE}" \
     "${ROS2_STORAGE_ARGS[@]}" \
