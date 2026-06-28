@@ -25,10 +25,18 @@ ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 # ---------------------------------------------------------------------------
 ROBOT_NAME="${1:-agv_unknown}"
 SCENARIO="${2:-unknown_scenario}"
-DATESTAMP=$(date +%Y%m%d_%H%M%S)
 MOCAP_TOPIC="${MOCAP_TOPIC:-/optitrack/rigid_bodies/orkar_agv1}"
 CMD_TOPIC="${CMD_TOPIC:-/cmd_vel}"
 REQUIRE_GT="${REQUIRE_GT:-false}"
+WAIT_FOR_CLOCK_SYNC="${WAIT_FOR_CLOCK_SYNC:-true}"
+CLOCK_SYNC_TIMEOUT="${CLOCK_SYNC_TIMEOUT:-120}"
+if [ -z "${REQUIRE_CLOCK_SYNC+x}" ]; then
+    if [ "${REQUIRE_GT}" = true ]; then
+        REQUIRE_CLOCK_SYNC=true
+    else
+        REQUIRE_CLOCK_SYNC=false
+    fi
+fi
 REQUIRE_IMU="${REQUIRE_IMU:-false}"
 IMU_TOPICS="${IMU_TOPICS:-/camera/imu /imu}"
 ENABLE_REALSENSE_SYNC="${ENABLE_REALSENSE_SYNC:-false}"
@@ -72,6 +80,81 @@ CAMERA_COLOR_FPS="${CAMERA_COLOR_FPS:-15}"
 CAMERA_DEPTH_WIDTH="${CAMERA_DEPTH_WIDTH:-640}"
 CAMERA_DEPTH_HEIGHT="${CAMERA_DEPTH_HEIGHT:-480}"
 CAMERA_DEPTH_FPS="${CAMERA_DEPTH_FPS:-15}"
+
+clock_is_synced() {
+    local timedate_synced
+    local chrony_text
+
+    if command -v timedatectl >/dev/null 2>&1; then
+        timedate_synced="$(timedatectl show -p NTPSynchronized --value 2>/dev/null || true)"
+        if [ "${timedate_synced}" = "yes" ]; then
+            return 0
+        fi
+        timedate_synced="$(timedatectl show -p SystemClockSynchronized --value 2>/dev/null || true)"
+        if [ "${timedate_synced}" = "yes" ]; then
+            return 0
+        fi
+    fi
+
+    if command -v chronyc >/dev/null 2>&1; then
+        chrony_text="$(chronyc tracking 2>/dev/null || true)"
+        printf "%s\n" "${chrony_text}" | grep -q "Leap status[[:space:]]*: Normal" || return 1
+        printf "%s\n" "${chrony_text}" | awk -F: '
+            /System time/ {
+                value = $2
+                gsub(/^[[:space:]]+/, "", value)
+                split(value, parts, " ")
+                offset = parts[1] + 0
+                if (offset < 0) {
+                    offset = -offset
+                }
+                exit(offset <= 0.100 ? 0 : 1)
+            }
+            END {
+                if (NR == 0) {
+                    exit 1
+                }
+            }
+        ' && return 0
+    fi
+
+    return 1
+}
+
+wait_for_clock_sync_before_session_id() {
+    local end
+
+    if [ "${WAIT_FOR_CLOCK_SYNC}" != true ]; then
+        echo "  [i] clock sync wait disabled before session naming."
+        return 0
+    fi
+
+    if clock_is_synced; then
+        echo "  [OK] clock is synced before session naming."
+        return 0
+    fi
+
+    echo "  [i] waiting up to ${CLOCK_SYNC_TIMEOUT}s for clock sync before session naming..."
+    end=$((SECONDS + CLOCK_SYNC_TIMEOUT))
+    while [ "${SECONDS}" -lt "${end}" ]; do
+        sleep 2
+        if clock_is_synced; then
+            echo "  [OK] clock synced before session naming."
+            return 0
+        fi
+    done
+
+    if [ "${REQUIRE_CLOCK_SYNC}" = true ]; then
+        echo "ERROR: clock did not sync within ${CLOCK_SYNC_TIMEOUT}s; refusing dataset session." >&2
+        echo "       Check chrony/NTP/network before recording multi-robot data." >&2
+        exit 1
+    fi
+
+    echo "  [WARN] clock did not sync within ${CLOCK_SYNC_TIMEOUT}s; continuing because REQUIRE_CLOCK_SYNC=false." >&2
+}
+
+wait_for_clock_sync_before_session_id
+DATESTAMP=$(date +%Y%m%d_%H%M%S)
 SESSION_ID="${ROBOT_NAME}_${SCENARIO}_${DATESTAMP}"
 BAG_DIR="${BAG_DIR:-${HOME}/agv_data}"
 BAG_FILE="${BAG_DIR}/${SESSION_ID}.bag"
@@ -376,6 +459,9 @@ calibration_hash: "sha256:${CALIB_HASH}"
 mocap_topic: "${MOCAP_TOPIC}"
 cmd_topic: "${CMD_TOPIC}"
 ground_truth_required: ${REQUIRE_GT}
+wait_for_clock_sync: ${WAIT_FOR_CLOCK_SYNC}
+clock_sync_timeout_sec: ${CLOCK_SYNC_TIMEOUT}
+clock_sync_required: ${REQUIRE_CLOCK_SYNC}
 imu_required: ${REQUIRE_IMU}
 imu_topics: "${IMU_TOPICS}"
 camera_imu: enabled
