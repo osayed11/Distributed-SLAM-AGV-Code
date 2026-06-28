@@ -17,6 +17,7 @@ import os
 import re
 import shutil
 import signal
+import statistics
 import subprocess
 import sys
 import time
@@ -2831,12 +2832,15 @@ PY
     def measure_topic_rate(self, topic: str, seconds: int) -> Optional[float]:
         cmd = f"timeout {seconds + 8} ros2 topic hz {topic} --window 20 2>&1"
         result = self.ros_cmd(cmd, timeout=seconds + 12, label=f"hz_{topic.strip('/').replace('/', '_')}")
-        text = self.command_output(result)
+        return self.parse_topic_hz(self.command_output(result))
+
+    @staticmethod
+    def parse_topic_hz(text: str) -> Optional[float]:
         matches = re.findall(r"average rate:\s*([0-9.]+)", text)
         if not matches:
             return None
         try:
-            return float(matches[-1])
+            return float(statistics.median(float(item) for item in matches))
         except Exception:
             return None
 

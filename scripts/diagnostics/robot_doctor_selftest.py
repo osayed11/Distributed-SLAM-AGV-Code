@@ -804,6 +804,17 @@ class RobotDoctorParserTests(unittest.TestCase):
             self.assertEqual((matches[-1].code, matches[-1].status), ("2.2", "FAIL"))
             self.assertIn("depth_module.enable_auto_exposure", matches[-1].next_action)
 
+    def test_topic_hz_parser_uses_median_not_shutdown_tail(self) -> None:
+        text = """
+average rate: 14.996
+average rate: 14.974
+average rate: 14.983
+average rate: 14.999
+average rate: 14.985
+average rate: 10.696
+"""
+        self.assertAlmostEqual(Doctor.parse_topic_hz(text) or 0.0, 14.984, places=3)
+
 
 class RealSenseFaultClassifierTests(unittest.TestCase):
     def test_bounded_rgbd_gap_is_pass_with_stream_warnings(self) -> None:
