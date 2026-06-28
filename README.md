@@ -1,753 +1,505 @@
-# AGV On-Board Stack
+# Distributed SLAM AGV On-Board Stack
 
-Robot-side ROS2 Humble stack for AGV data collection in the multi-robot SLAM dataset project.
+This repository is the robot-side stack for repeatable ROS 2 AGV data
+collection in the multi-robot SLAM dataset project.
 
-The goal of this repo is repeatable deployment: clone or pull it on a robot, run one setup script, then collect bags with a single session command.
+The current production branch is:
 
-## Post-Flash Robot Setup
+```text
+repository: https://github.com/osayed11/Distributed-SLAM-AGV-Code.git
+branch:     ros2-migration
+robot OS:   Ubuntu 22.04 on Raspberry Pi
+ROS:        ROS 2 Humble
+```
 
-After flashing Ubuntu onto the Raspberry Pi, do the following before anything else.
+The design goal is simple: after a robot is flashed and provisioned, an
+operator should be able to switch it on, run one readiness gate, record one
+session, and validate one bag. If the robot is not ready, the tools should say
+which branch failed, show the evidence, and give the next action.
 
-### 1. Set the hostname
+## Operating Model
+
+Every publishable run follows four gates:
+
+```text
+1. Provision robot once
+   -> scripts/setup_robot_ros2.sh
+
+2. Prove robot is ready before motion
+   -> scripts/diagnostics/dataset_ready_gate.sh
+
+3. Record with managed bringup and logging
+   -> scripts/logging/start_session.sh
+
+4. Prove the recorded artifact is usable
+   -> scripts/logging/validate_ros2_bag.py
+   -> scripts/diagnostics/dataset_run_audit.py for copied fleet artifacts
+```
+
+Do not treat a bag as publishable until the post-run validator/audit passes.
+Pre-run readiness proves the robot state before motion; it does not prove the
+bag that was later recorded.
+
+## New Robot Setup
+
+Run these commands on a freshly flashed robot.
+
+### 1. Set hostname
+
+Use the physical robot label, for example `agv110`.
 
 ```bash
-sudo hostnamectl set-hostname agv<N>   # e.g. agv37
+sudo hostnamectl set-hostname agv110
 sudo reboot
 ```
 
-### 2. Connect to WiFi
+After reboot:
 
 ```bash
-sudo nmcli device wifi connect "<SSID>" password "<PASSWORD>"
+hostname
+hostname -I
 ```
 
-Verify:
+### 2. Connect Wi-Fi cleanly
+
+Use NetworkManager. Do not manually run repeated `wpa_supplicant -B` and
+`dhclient` commands; duplicate Wi-Fi/DHCP processes make SSH and ROS discovery
+unreliable.
 
 ```bash
-ip addr show wlan0   # confirm an IP is assigned
-ping -c 3 8.8.8.8   # confirm internet access
+sudo nmcli device wifi connect "DELTA_FLIGHT_ARENA" password "ucl_delta_123"
+nmcli -t -f DEVICE,STATE,CONNECTION device
+ip addr show wlan0
+ping -c 3 8.8.8.8
 ```
 
-### 3. Enable hostname-based SSH (no IP needed)
-
-Install `avahi-daemon` on the robot so it advertises `agv<N>.local` over mDNS:
+Optional hostname-based SSH:
 
 ```bash
 sudo apt update
 sudo apt install -y avahi-daemon
-sudo systemctl enable avahi-daemon
-sudo systemctl start avahi-daemon
+sudo systemctl enable --now avahi-daemon
 ```
 
-On your **laptop** (run once):
+Then from the laptop:
 
 ```bash
-sudo apt install -y libnss-mdns        # Linux
-# macOS already supports .local via Bonjour — no install needed
+ssh ubuntu@agv110.local
 ```
 
-You can now SSH using either the hostname or IP:
+### 3. Clone the ROS 2 branch
 
 ```bash
-ssh ubuntu@agv37.local     # hostname (preferred)
-ssh ubuntu@<robot-ip>      # fallback if mDNS is unavailable
-```
-
----
-
-## 🚀 Quick Start
-
-On a new robot:
-
-### 1. Installation
-On a fresh or updated robot, use one of the following methods to retrieve the stack.
-
-```bash
-git clone https://github.com/osayed11/Distributed-SLAM-AGV-Code.git ~/slam_project
+git clone -b ros2-migration https://github.com/osayed11/Distributed-SLAM-AGV-Code.git ~/slam_project
 cd ~/slam_project
-git checkout ros2-migration
-bash scripts/setup_robot.sh
 ```
 
-On an updated robot:
+For an existing robot:
 
 ```bash
 cd ~/slam_project
 git checkout ros2-migration
-git pull
-bash scripts/setup_robot.sh
+git pull --ff-only origin ros2-migration
 ```
 
-`setup_robot.sh` installs expected system dependencies by default, including
-`chrony`, `apriltag_ros`, ROS2 message packages, and build tools (`colcon`).
-After building it validates all critical packages with `ros2 pkg list`. Use
-`bash scripts/setup_robot.sh --skip-system` only when the robot is already
-provisioned or has no internet access.
-
-### 2. Ground Truth (OptiTrack)
-
-The lab uses OptiTrack motion capture via a VRPN server on the Motive machine (`192.168.50.200:3883`).
-
-Verify the OptiTrack stream is live before recording. The OptiTrack system publishes on ROS2 — on macOS start a pixi shell first:
-
-```bash
-pixi shell
-```
-
-Then check the topic is publishing:
-
-```bash
-ros2 topic echo /optitrack/rigid_bodies/orkar_agv1
-```
-
-If the topic is silent, check that:
-1. The robot is within the OptiTrack camera capture volume
-2. The rigid body is actively tracked in Motive (green indicator)
-
-To visualise the ground truth trajectory in RViz2:
-
-```bash
-rviz2
-```
-
-In RViz2:
-1. Set **Fixed Frame** to `world`
-2. Click **Add → By topic → /optitrack/rigid_bodies/orkar_agv1 → Path**
-3. The path will trace the robot's trajectory at ~100 Hz as it moves
-
-**ROS2 (current)**
-
-The mocap topic is recorded automatically. The default is `/optitrack/rigid_bodies/orkar_agv1`. Set `MOCAP_TOPIC` in the environment to override it for a different robot:
-
-```bash
-export MOCAP_TOPIC=/optitrack/rigid_bodies/orkar_agv2
-```
-
-**ROS1 (legacy)**
-
-Install the VRPN client once per robot:
-
-```bash
-sudo apt install ros-noetic-vrpn-client-ros
-```
-
-Run it alongside `bringup.launch` in a separate terminal:
-
-```bash
-source /opt/ros/noetic/setup.bash
-source ~/slam_project/agv_ws/devel/setup.bash
-roslaunch vrpn_client_ros sample.launch server:=192.168.50.200
-```
-
-Verify the stream:
-
-```bash
-rostopic echo /optitrack/rigid_bodies/orkar_agv1
-```
-
-If the topic is silent, check that:
-1. The robot is within the OptiTrack camera capture volume
-2. The rigid body is actively tracked in Motive (green indicator)
-3. VRPN streaming is enabled in Motive under **View → Data Streaming**
-
-> The VRPN version mismatch warning (`07.33` vs `07.34`) is benign.
-
-**Rigid body naming convention**
-
-| Robot | Motive rigid body name | Topic |
-|-------|----------------------|-------|
-| AGV1  | `orkar_agv1`         | `/optitrack/rigid_bodies/orkar_agv1` |
-| AGV2  | `orkar_agv2`         | `/optitrack/rigid_bodies/orkar_agv2` |
-| AGV3  | `orkar_agv3`         | `/optitrack/rigid_bodies/orkar_agv3` |
-| AGV4  | `orkar_agv4`         | `/optitrack/rigid_bodies/orkar_agv4` |
-
-### 3. Record a session
-
-Start a data collection session:
+### 4. Provision the robot
 
 ```bash
 cd ~/slam_project
-export REQUIRE_IMU=true
-bash scripts/logging/start_session.sh agv1 square_manual
+SUDO_PASSWORD=ubuntu bash scripts/setup_robot_ros2.sh agv110
 ```
 
-`start_session.sh` manages the full lifecycle:
-1. Launches `bringup.launch.py` (base driver, LiDAR, camera)
-2. Waits for `/scan`, `/odom`, and camera streams to stabilise
-3. Runs the required RealSense live camera gate on that active bringup
-4. Starts `ros2 bag record` only after sensors are confirmed live, with a runtime watchdog checking sensor rates during the bag
-5. On `Ctrl+C`, stops recording cleanly -> stops bringup -> runs post-run `rs-enumerate-devices` -> writes a RealSense fault classification -> finalises manifest
+The setup script installs ROS 2 dependencies, RealSense tools, MCAP rosbag
+storage, Python MCAP parsing, udev rules, LiDAR/base permissions, and builds
+`agv2_ws`. It also runs a static diagnostic report at the end.
 
-The ROS2 camera gate performs:
-
-```text
-D455 USB reset -> launch bringup once -> 60-120 s live RGB-D/IMU stream test
--> topic-rate validation -> start ros2 bag without restarting the camera
--> post-run rs-enumerate-devices after shutdown -> fault classification
-```
-
-It is enabled by default in `start_session.sh`. For a shorter lab shakedown,
-set `REALSENSE_CAMERA_GATE_SECONDS=60`. For a stricter run, set it to `120`.
-Do not collect publishable data if this gate fails. UVC/control timeout text
-is a warning when RGB-D and IMU rates pass; stream rate loss or camera
-disconnects are hard failures.
-The gate evaluates disconnects only during the live gate window, so expected
-startup/reset reconnect messages are not treated as runtime failures. It also
-checks maximum observed topic gaps, not just the final average rate, because a
-camera can look healthy at the end of a test while still producing a publishable
-data gap during the test.
-
-The readiness and session tools write a RealSense fault classification from
-the readiness/camera-gate, bringup, hardware, and kernel logs. The classifier
-identifies the software/USB layer, for example:
-
-```text
-PASS
-PASS_WITH_LOW_LEVEL_WARNINGS
-HOST_POWER_OR_THERMAL
-USB_LINK_DEGRADED
-USB_DEVICE_DISCONNECT_OR_RESET
-REALSENSE_UVC_VIDEO_CONTROL_TIMEOUT
-REALSENSE_HID_IMU_TIMEOUT
-REALSENSE_DEVICE_CONTROL_TIMEOUT
-ROS_GRAPH_OR_DRIVER_STARTUP_FAILURE
-```
-
-This is enough to distinguish undervoltage, USB2 fallback, device disconnect,
-UVC video/control failure, HID/IMU failure, and ROS-only startup failures. It
-cannot always prove camera-vs-cable-vs-Pi ownership from one robot alone,
-because those physical faults surface to Linux as the same endpoint timeout.
-Use one controlled A/B swap with a known-good D455/cable and a failing robot
-when the classifier reports a RealSense USB control/HID class.
-
-RGB-D hardware stream FPS must stay at `15` FPS or higher. If processing or
-storage needs fewer frames, drop frames after capture; do not lower the D455
-hardware stream below the dataset baseline.
-
-The runtime watchdog is enabled by default for ROS2 sessions. It periodically
-checks `/scan`, `/odom`, RGB-D, `/camera/imu`, and the mocap topic when
-`REQUIRE_GT=true`. If any required stream drops below its threshold during
-recording, the watchdog stops the bag and marks the session
-`FAIL_RUNTIME_WATCHDOG`; rerun that scenario instead of using the partial bag.
-For official validation, the watchdog status must show at least one completed
-runtime cycle, so very short shakedown bags are not mistaken for monitored
-dataset runs.
-
-`RGBD_STARTUP_TIMEOUT` defaults to `90` seconds so startup/reconnect jitter on
-Raspberry Pi + D455 does not cause a false early exit before the rate gate runs.
-
-`ENABLE_REALSENSE_SYNC` defaults to `false`. Keep it off for the current
-single-D455 AGVs unless a hardware sync setup is deliberately added.
-
-Each session writes hardware evidence alongside the bag:
-
-```text
-<session>_hardware_pre.log
-<session>_hardware_post.log
-<session>_runtime_watchdog.log
-<session>_runtime_watchdog.status
-<session>_kernel_runtime.log
-<session>_realsense_fault_classification.txt
-```
-
-These logs capture Pi throttling state, USB autosuspend, WiFi power-save state,
-USB topology, D455 serial/speed/power state, live topic rates during recording,
-and recent USB/camera kernel log lines. The runtime kernel log starts after the
-intentional D455 USB reset and covers the actual bringup/recording window, so
-stale boot history does not drive the fault classification.
-
-Drive manually in another terminal:
+Use these only for special cases:
 
 ```bash
-ssh ubuntu@agv37.local          # or ssh ubuntu@<robot-ip>
+bash scripts/setup_robot_ros2.sh agv110 --skip-system
+bash scripts/setup_robot_ros2.sh agv110 --skip-build
+bash scripts/setup_robot_ros2.sh agv110 --no-doctor
+```
+
+## Fleet Hardware Standard
+
+All dataset robots should match this standard before collection:
+
+```text
+Camera:                         Intel RealSense D455
+D455 firmware:                  5.17.0.10
+USB link:                       USB 3.x / 5000 Mb/s
+D455 IMU:                       BMI085
+Standalone librealsense tools:  2.58.1
+ROS driver package:             realsense2_camera 4.57.7
+ROS node LibRealSense runtime:  2.57.7
+RGB-D profile:                  640x480 at 15 Hz
+D455 IMU rate:                  about 200 Hz live, >=150 Hz in recorded bags
+Gyro raw topic:                 /camera/gyro/sample at about 200 Hz
+Accel raw topic:                /camera/accel/sample at about 100 Hz
+Bag storage:                    MCAP preferred; SQLite only with resilient evidence
+```
+
+The standard is encoded in:
+
+```text
+configs/robot_doctor_dataset_gate.json
+configs/rosbag2_sensor_qos.yaml
+configs/sqlite_resilient.yaml
+```
+
+## Pre-Run Readiness Gate
+
+Run this after switching on a robot and before collecting a dataset.
+
+```bash
+cd ~/slam_project
+bash scripts/diagnostics/dataset_ready_gate.sh agv110 \
+  --expected-d455-serial <assigned_d455_serial> \
+  --mocap-topic /optitrack/rigid_bodies/orkar_agv110 \
+  --cmd-topic /agv110/cmd_vel \
+  --strict-ops \
+  --confirm-mechanical \
+  --confirm-mocap \
+  --confirm-anchors
+```
+
+Expected healthy decision:
+
+```text
+READY_TO_RECORD: true
+POST_RUN_DATASET_READY: false
+STATE: ready_to_record
+FAILED_STAGE: none
+CAUSE: pre-run gate passed; no blocking failures or pre-run warnings
+```
+
+`POST_RUN_DATASET_READY: false` is normal before recording because no bag exists
+yet. If `READY_TO_RECORD` is false, do not collect publishable data. Use the
+printed `FAILED_STAGE`, `CAUSE`, `EVIDENCE`, and `NEXT_ACTION`.
+
+The report is written under:
+
+```text
+~/agv_data/diagnostics/<robot_id>_<timestamp>/
+```
+
+Keep this folder with the dataset notes.
+
+## Recording A Session
+
+Start recording on the robot:
+
+```bash
+cd ~/slam_project
+REQUIRE_IMU=true \
+REQUIRE_GT=true \
+MOCAP_TOPIC=/optitrack/rigid_bodies/orkar_agv110 \
+CMD_TOPIC=/agv110/cmd_vel \
+bash scripts/logging/start_session.sh agv110 <scenario_name>
+```
+
+For a home test without OptiTrack:
+
+```bash
+cd ~/slam_project
+REQUIRE_IMU=true \
+REQUIRE_GT=false \
+CMD_TOPIC=/agv110/cmd_vel \
+bash scripts/logging/start_session.sh agv110 home_test
+```
+
+`start_session.sh` does this lifecycle:
+
+```text
+1. waits for clock sync before naming the session
+2. records chrony and hardware snapshots
+3. stops stale bringup/recording processes
+4. resets only the D455 USB device and disables D455 autosuspend
+5. launches ROS 2 bringup once
+6. waits for /scan, /odom, RGB-D, and IMU topics
+7. runs the required live RealSense gate on the active bringup
+8. starts ros2 bag record with MCAP, sensor QoS overrides, and large cache
+9. runs a runtime watchdog for low-bandwidth liveness checks
+10. stops rosbag cleanly, stops bringup, checks post-run D455 enumeration
+11. writes the manifest and RealSense fault classification
+```
+
+Session artifacts are written to `~/agv_data`:
+
+```text
+<session>/                                      ROS 2 bag directory
+<session>_manifest.yaml                        run metadata and recorder settings
+<session>_chrony.txt                           clock evidence
+<session>_bringup.log                          launch and driver logs
+<session>_hardware_pre.log                     pre-run hardware snapshot
+<session>_hardware_post.log                    post-run hardware snapshot
+<session>_camera_gate_pre.log                  RealSense live gate evidence
+<session>_runtime_watchdog.log                 runtime liveness evidence
+<session>_kernel_runtime.log                   USB/kernel evidence for this run
+<session>_realsense_fault_classification.txt   camera fault classification
+```
+
+Stop recording with `Ctrl+C`. Let the script finalize; do not kill the terminal
+unless the robot is unsafe.
+
+## Post-Run Validation
+
+Validate the newest ROS 2 bag on the robot:
+
+```bash
+cd ~/slam_project
+latest_bag="$(find ~/agv_data -maxdepth 1 -type d -name 'agv110_*' | sort | tail -1)"
+CMD_TOPIC=/agv110/cmd_vel \
+MOCAP_TOPIC=/optitrack/rigid_bodies/orkar_agv110 \
+REQUIRE_IMU=true \
+REQUIRE_GT=true \
+python3 scripts/logging/validate_ros2_bag.py "$latest_bag" --require-resilient-storage
+```
+
+For a home test without OptiTrack:
+
+```bash
+CMD_TOPIC=/agv110/cmd_vel \
+REQUIRE_IMU=true \
+REQUIRE_GT=false \
+python3 scripts/logging/validate_ros2_bag.py "$latest_bag" --require-resilient-storage
+```
+
+Interpreting the result:
+
+```text
+FAIL 0, WARN 0       ideal
+FAIL 0, WARN >0      review warnings; often acceptable for home/non-GT tests
+FAIL >0              not publishable; fix the failed branch and rerun
+```
+
+For final copied dataset artifacts on the laptop:
+
+```bash
+python3 scripts/diagnostics/dataset_run_audit.py \
+  --report 'diagnostic_reports/agv*/agv*/summary.json' \
+  --bag '/path/to/copied/bags/*' \
+  --manifest '/path/to/copied/manifests/*_manifest.yaml' \
+  --mocap-topic /optitrack/rigid_bodies/<rigid_body_name> \
+  --cmd-topic /<robot_name>/cmd_vel \
+  --require-gt \
+  --require-imu \
+  --strict \
+  --json-out diagnostic_reports/dataset_run_audits/latest/summary.json
+```
+
+## Copy Data To Laptop
+
+ROS 2 bags are directories. Copy the whole directory plus manifest/logs.
+
+```bash
+rsync -avz ubuntu@agv110.local:/home/ubuntu/agv_data/ ~/Desktop/slam_data/agv110/
+```
+
+IP fallback:
+
+```bash
+rsync -avz ubuntu@<robot-ip>:/home/ubuntu/agv_data/ ~/Desktop/slam_data/agv110/
+```
+
+## Failure Model
+
+The debugging pipeline is top-down and MECE. Every blocker should land in one
+of these branches:
+
+```text
+1. Robot Platform
+   1.1 Sensor device health
+   1.2 Physical infrastructure
+   1.3 Mechanical setup
+
+2. Robot Data Stack
+   2.1 OS / kernel / USB
+   2.2 Drivers / launch config
+   2.3 ROS data quality
+
+3. Experiment Dataset
+   3.1 Recording pipeline
+   3.2 Validation pipeline
+   3.3 Experiment execution
+```
+
+The diagram version is `robot_failure_modes_v3.png`.
+
+Detailed documentation:
+
+```text
+docs/ROBOT_DIAGNOSTIC_PIPELINE.md
+docs/ROBOT_DEBUG_PIPELINE_COVERAGE_AUDIT.md
+docs/PUBLISHABILITY_CHECKLIST.md
+docs/STAGE_1_CALIBRATION_SOP.md
+```
+
+## Common Decisions
+
+### D455 warning but rates pass
+
+If RealSense logs contain low-level UVC/control warning text but RGB-D and IMU
+rates pass, the gate can classify it as a warning. The post-run bag validator is
+authoritative for publishability.
+
+### D455 stream or control path fails
+
+Run the targeted fix once:
+
+```bash
+cd ~/slam_project
+SUDO_PASSWORD=ubuntu bash scripts/diagnostics/apply_robot_doctor_fix.sh --apply \
+  --fix d455-usb-reset \
+  --fix d455-authorize-cycle
+```
+
+Then rerun the readiness gate. If the same physical-path failure repeats, use
+the generated D455 A/B swap checklist to decide whether the fault follows the
+camera, cable, host USB3 port, or power path.
+
+### Wi-Fi is unstable
+
+Check for manual Wi-Fi processes:
+
+```bash
+ps aux | grep -E 'wpa_supplicant|dhclient' | grep -v grep
+nmcli -t -f DEVICE,STATE,CONNECTION device
+```
+
+Use one persistent NetworkManager connection. Reboot-test SSH before collecting
+data.
+
+### Bag has shutdown-edge gaps
+
+The ROS 2 validator ignores a small start/stop edge window for gap checks while
+still enforcing coverage and mid-run continuity. This avoids rejecting bags just
+because rosbag and drivers shut down at different speeds after `Ctrl+C`.
+
+Mid-run gaps still fail.
+
+## Motion Helpers
+
+Run motion only after the recorder is active and the arena is clear.
+
+Manual teleop:
+
+```bash
 source /opt/ros/humble/setup.bash
 source ~/slam_project/agv2_ws/install/setup.bash
 ros2 run myagv_teleop myagv_teleop.py
 ```
 
-Or run an automatic motion pattern:
+Mocap straight-line test:
 
 ```bash
-# Lawnmower (straight-line shuttle)
-python3 scripts/logging/drive_lawnmower.py --duration 20 --linear 0.15 --cycles 3
-
-# Circle (for concentric-circle scenarios)
-python3 scripts/logging/drive_circle.py --radius 0.50 --linear 0.16 --duration 60 --no-prompt --verbose
-```
-
-ROS2 mocap-feedback driving at Here East:
-
-```bash
-cd ~/slam_project
-source /opt/ros/humble/setup.bash
-source ~/slam_project/agv2_ws/install/setup.bash
-
-# Confirm this robot can see its OptiTrack rigid body.
-ros2 topic hz /optitrack/rigid_bodies/orkar_agv1
-
-# Non-moving controller check.
 python3 scripts/logging/drive_mocap_straight_ros2.py \
-  --pose-topic /optitrack/rigid_bodies/orkar_agv1 \
-  --distance 0.5 \
-  --line-yaw-offset-deg 90 \
-  --dry-run \
-  --verbose
-
-# First moving test.
-python3 scripts/logging/drive_mocap_straight_ros2.py \
-  --pose-topic /optitrack/rigid_bodies/orkar_agv1 \
+  --pose-topic /optitrack/rigid_bodies/orkar_agv110 \
+  --cmd-topic /agv110/cmd_vel \
   --distance 1.0 \
-  --linear 0.08 \
-  --line-yaw-offset-deg 90 \
-  --max-lateral-error 0.15 \
+  --linear 0.12 \
+  --line-yaw-offset-deg 0 \
+  --max-lateral-error 0.20 \
   --yes \
   --verbose
 ```
 
-For other robots, change both `orkar_agv1` instances to `orkar_agv2`,
-`orkar_agv3`, etc. Run only one robot first, then scale to the fleet.
-
-Stop recording with `Ctrl+C`. Bags and manifests are written to `~/agv_data`.
-
-## Scenario 1: Concentric Circles
-
-For multi-robot concentric-circle runs, use the fleet launcher from the parent directory:
+Mocap square:
 
 ```bash
-./launch_fleet.sh
+python3 scripts/logging/drive_mocap_square_ros2.py \
+  --pose-topic /optitrack/rigid_bodies/orkar_agv110 \
+  --cmd-topic /agv110/cmd_vel \
+  --side-length 1.0 \
+  --linear 0.18 \
+  --yes \
+  --verbose
 ```
 
-Or run a single robot with epoch-based stagger timing:
+Circle scenario helper:
 
 ```bash
-T0=$(($(date +%s)+300))
-python3 scripts/logging/drive_circle.py --radius 0.50 --linear 0.16 --duration 600 --start-at-epoch $T0 --start-delay 0 --no-prompt --verbose
+python3 scripts/logging/drive_circle.py \
+  --radius 0.50 \
+  --linear 0.16 \
+  --duration 600 \
+  --no-prompt \
+  --verbose
 ```
 
-Robot assignments for S1:
+## Code Map
+
+Production paths:
 
 ```text
-agv1 -> radius 0.50 m -> starts at T0 +   0 s
-agv2 -> radius 0.75 m -> starts at T0 +  30 s
-agv3 -> radius 1.00 m -> starts at T0 +  60 s
-agv4 -> radius 1.25 m -> starts at T0 +  90 s
-agv5 -> radius 1.50 m -> starts at T0 + 120 s
+scripts/setup_robot_ros2.sh                    one-time ROS 2 robot provisioning
+scripts/logging/start_session.sh               managed bringup, gate, recording, manifest
+scripts/logging/validate_ros2_bag.py           ROS 2 .mcap/.db3 post-run validator
+scripts/diagnostics/dataset_ready_gate.sh      read-only pre-run dataset gate
+scripts/diagnostics/robot_doctor.py            evidence engine and failure classifier
+scripts/diagnostics/apply_robot_doctor_fix.sh  targeted fixes, dry-run unless --apply
+scripts/diagnostics/dataset_run_audit.py       final report/bag/manifest audit
+scripts/diagnostics/fleet_doctor_summary.py    fleet-level report comparison
+scripts/diagnostics/run_robot_doctor_remote.sh run diagnostics over SSH
+scripts/diagnostics/run_fleet_doctor_remote.sh run diagnostics over SSH for many robots
+scripts/diagnostics/robot_doctor_selftest.py   no-hardware regression tests
+scripts/diagnostics/diagnostic_pipeline_audit.py repo coverage audit
+configs/robot_doctor_dataset_gate.json         dataset gate values
+configs/rosbag2_sensor_qos.yaml                rosbag2 sensor QoS overrides
+configs/sqlite_resilient.yaml                  SQLite fallback storage profile
+agv2_ws/src/agv_bringup/launch/bringup.launch.py ROS 2 bringup
 ```
 
-## Validation
-
-Quick ROS2 setup validation on a newly flashed robot:
-
-```bash
-cd ~/slam_project
-source /opt/ros/humble/setup.bash
-source ~/slam_project/agv2_ws/install/setup.bash
-
-export REQUIRE_IMU=true
-export REQUIRE_GT=false
-
-# Include a command stream in the validation bag without moving the robot.
-ros2 topic pub -r 5 /cmd_vel geometry_msgs/msg/Twist \
-  "{linear: {x: 0.0, y: 0.0, z: 0.0}, angular: {x: 0.0, y: 0.0, z: 0.0}}" \
-  >/tmp/cmd_vel_zero.log 2>&1 &
-CMD_PID=$!
-
-timeout -s INT 160 bash scripts/logging/start_session.sh agv1 ros2_validation
-kill "$CMD_PID" 2>/dev/null || true
-```
-
-Select the newest ROS2 bag directory. Use `find -type d` so the command does
-not accidentally select the manifest YAML:
-
-```bash
-latest_bag="$(find ~/agv_data -maxdepth 1 -type d -name 'agv1_ros2_validation_*' | sort | tail -1)"
-echo "$latest_bag"
-```
-
-Fast audit:
-
-```bash
-cd ~/slam_project
-source /opt/ros/humble/setup.bash
-source ~/slam_project/agv2_ws/install/setup.bash
-python3 scripts/logging/audit_bag_fast.py "$latest_bag"
-```
-
-Full validator:
-
-```bash
-python3 scripts/logging/validate_bag.py "$latest_bag"
-```
-
-Exit codes:
-
-```text
-0 = pass
-1 = fail
-2 = warning
-```
-
-## Copy Bags To Laptop
-
-ROS2 bags are directories (containing `.db3` and `metadata.yaml`). Copy the whole directory from the laptop:
-
-```bash
-# Using hostname
-scp -r ubuntu@agv37.local:/home/ubuntu/agv_data/<bag_dir>/ ~/Desktop/slam_data/
-scp ubuntu@agv37.local:/home/ubuntu/agv_data/*_manifest.yaml ~/Desktop/slam_data/
-scp ubuntu@agv37.local:/home/ubuntu/agv_data/*_chrony.txt ~/Desktop/slam_data/
-
-# Using IP
-scp -r ubuntu@<robot-ip>:/home/ubuntu/agv_data/<bag_dir>/ ~/Desktop/slam_data/
-scp ubuntu@<robot-ip>:/home/ubuntu/agv_data/*_manifest.yaml ~/Desktop/slam_data/
-scp ubuntu@<robot-ip>:/home/ubuntu/agv_data/*_chrony.txt ~/Desktop/slam_data/
-```
-
-To copy all bags at once:
-
-```bash
-rsync -avz ubuntu@agv37.local:/home/ubuntu/agv_data/ ~/Desktop/slam_data/
-```
-
-## What Is Production
-
-Use these paths for normal robot operation:
-
-```text
-scripts/setup_robot.sh                     Build/check workspaces after clone or pull
-scripts/logging/start_session.sh           Managed bringup + sensor gate + ros2 bag + manifest
-scripts/logging/validate_bag.py            Full post-run publishability check
-scripts/logging/audit_bag_fast.py          Fast topic/rate/gap/sync audit
-scripts/logging/drive_circle.py            Concentric-circle motion controller
-scripts/logging/drive_lawnmower.py         Straight-line shuttle motion controller
-scripts/logging/drive_square.py            Odom-bounded square motion helper
-scripts/scenarios/run_s1_concentric_robot.sh  Single-robot S1 runner with epoch stagger
-agv2_ws/src/agv_bringup/launch/bringup.launch.py
-agv2_ws/src/agv_bringup/launch/apriltag.launch.py
-agv2_ws/src/agv_bringup/calibration/
-```
-
-Diagnostic and hardware-investigation scripts live under:
-
-```text
-scripts/diagnostics/
-```
-
-## Repository Layout
+Repository layout:
 
 ```text
 slam_project/
-├── agv2_ws/                 <-- ROS2 workspace (active)
-│   └── src/
-│       ├── agv_bringup/     <-- Master launch files + config + calibration
-│       ├── myagv_odometry/  <-- Encoder/Motor feedback + base IMU
-│       ├── myagv_teleop/    <-- Keyboard/PS2 control
-│       └── ydlidar_ros2_driver/ <-- LiDAR drivers
-├── agv_ws/                  <-- ROS1 workspace (legacy)
-│   └── src/
-│       ├── agv_bringup/     <-- ROS1 launch files
-│       ├── myagv_odometry/  <-- ROS1 odometry
-│       ├── ydlidar_ros_driver/ <-- ROS1 LiDAR driver
-│       ├── realsense-ros/   <-- Camera drivers
-│       ├── myagv_teleop/    <-- Keyboard/PS2 control
-│       ├── myagv_navigation/<-- Navigation stack
-│       ├── myagv_ps2/       <-- PS2 controller support
-│       ├── myagv_urdf/      <-- Robot model
-│       └── charging/        <-- Charging dock support
-├── scripts/                 <-- Automation & Utility
-│   ├── setup_robot.sh       <-- One-click installer (with swap, chrony, udev)
-│   ├── logging/             <-- Data collection scripts
-│   │   ├── start_session.sh <-- Managed lifecycle: bringup → sensor gate → ros2 bag
-│   │   ├── drive_circle.py  <-- Concentric-circle motion controller
-│   │   ├── drive_lawnmower.py <-- Straight-line shuttle motion controller
-│   │   ├── drive_square.py  <-- Square motion controller
-│   │   ├── validate_bag.py  <-- Full bag quality validator
-│   │   └── audit_bag_fast.py<-- Fast topic/rate auditor
-│   ├── diagnostics/         <-- Health check scripts
-│   ├── calibration/         <-- Sensor calibration tools
-│   └── scenarios/           <-- Scenario runner scripts
-├── drivers/                 <-- Vendored SDKs
-│   ├── YDLidar-SDK/         <-- YDLidar native SDK
-│   └── robot_pose_ekf/      <-- EKF for sensor fusion
-├── configs/                 <-- RViz configs
-├── docs/                    <-- SOPs and Manuals
+├── agv2_ws/                  active ROS 2 workspace
+├── agv_ws/                   legacy ROS 1 workspace, kept for reference/older robots
+├── scripts/
+│   ├── diagnostics/          readiness gates, failure classification, audits
+│   ├── logging/              session recording, validators, motion helpers
+│   ├── mocap/                NatNet/OptiTrack helper tools
+│   ├── scenarios/            scenario launch helpers
+│   └── calibration/          calibration extraction and static tests
+├── configs/                  dataset gate, recorder, RViz configs
+├── docs/                     SOPs and diagnostic documentation
+├── drivers/                  vendored hardware SDKs
 └── README.md
 ```
 
-## Robot Runtime
+## Development Checks
 
-Source order matters:
-
-```bash
-source /opt/ros/humble/setup.bash
-source ~/slam_project/agv2_ws/install/setup.bash
-```
-
-Manual bringup without recording:
+Run these before pushing diagnostic/logging changes:
 
 ```bash
-ros2 launch agv_bringup bringup.launch.py
+python3 scripts/diagnostics/robot_doctor_selftest.py
+python3 scripts/diagnostics/diagnostic_pipeline_audit.py
+bash -n scripts/logging/start_session.sh
+bash -n scripts/setup_robot_ros2.sh
+bash -n scripts/diagnostics/dataset_ready_gate.sh
 ```
 
-AprilTag detector (optional, for offline loop-closure injection):
-
-```bash
-ENABLE_APRILTAG=true bash scripts/logging/start_session.sh agv1 corridor_loop
-```
-
-Production recording:
-
-```bash
-bash scripts/logging/start_session.sh <robot_name> <scenario_name>
-```
-
-`start_session.sh` writes:
+Expected result:
 
 ```text
-~/agv_data/<robot>_<scenario>_<timestamp>/             ROS2 bag directory
-~/agv_data/<robot>_<scenario>_<timestamp>_manifest.yaml
-~/agv_data/<robot>_<scenario>_<timestamp>_chrony.txt
-~/agv_data/<robot>_<scenario>_<timestamp>_bringup.log
+robot_doctor_selftest.py: OK
+diagnostic_pipeline_audit.py: all rows PASS
+shell syntax checks: no output
 ```
 
-## Recorded Topics
+## Legacy ROS 1 Notes
 
-Default robot bag topics:
+The repository still contains the older ROS 1/catkin stack and validator for
+previous robots:
 
 ```text
-/scan                                    YDLidar X2 2D laser scans
-/odom                                    Wheel odometry from base MCU
-/cmd_vel                                 Velocity commands sent to base
-/tf                                      Dynamic transform tree
-/tf_static                               Static transforms
-/camera/color/image_raw                  D455 RGB image
-/camera/color/camera_info                RGB camera intrinsics
-/camera/depth/camera_info                Depth camera intrinsics
-/camera/aligned_depth_to_color/image_raw D455 aligned depth image
-/camera/aligned_depth_to_color/camera_info Aligned depth intrinsics
-/camera/extrinsics/depth_to_color        Depth-to-color extrinsics
-/camera/imu                              D455 camera IMU (accel + gyro)
+scripts/setup_robot.sh
+scripts/logging/validate_bag.py
+agv_ws/
+myagv_ros/
 ```
 
-Optional topics (recorded when detectors are enabled or ground truth is present):
-
-```text
-/imu                                                   Base MCU IMU, when published
-/diagnostics                                           ROS diagnostics, when published
-/tag_detections                                        AprilTag detections (ENABLE_APRILTAG=true)
-${MOCAP_TOPIC:-/optitrack/rigid_bodies/orkar_agv1}     OptiTrack ground truth (set MOCAP_TOPIC per robot)
-```
-
-> **Note:** On the ROS2 Humble stack, `/camera/imu` is the validated IMU stream
-> and should be required for new dataset runs with `REQUIRE_IMU=true`.
-
-## Current Validated Baseline
-
-Live robot bag checked on 2026-04-29:
-
-```text
-bag: agv37_ros2_20260611_153804
-duration: 68.7 s
-/scan: 17.2 Hz
-/odom: 12.7 Hz
-/camera/color/image_raw: 14.9 Hz
-/camera/aligned_depth_to_color/image_raw: 14.6 Hz
-/camera/imu: 192.4 Hz
-/tf: 12.7 Hz
-overall validation: WARN, no hard failures
-```
-
-Known limitations:
-
-```text
-Occasional RGB-D frame gaps were observed on agv37; usable but flag in QA.
-Ground truth is optional by default; set REQUIRE_GT=true when OptiTrack must be in-bag.
-RealSense USB/control stalls can affect all sensor streams, not only IMU.
-If logs show UVCIOC_CTRL_QUERY timeouts or HID frame warnings while RGB-D and
-IMU rates stay healthy, treat them as diagnostic warnings. If rates drop,
-the camera disconnects, Right MIPI errors repeat, or realsense2_camera enters
-kernel D state, reboot or power-cycle before collecting publishable data.
-start_session.sh performs one USB reset, launches bringup once, runs the
-required live pre-run camera gate against that active bringup, then starts
-recording without restarting the camera. It also captures a post-run
-`rs-enumerate-devices` log before finalising the manifest.
-```
-
-RealSense baseline checked on agv37 at home on 2026-06-16:
-
-```text
-camera: Intel RealSense D455
-firmware: 5.17.0.10
-USB: 3.2 descriptor, 5000 Mb/s link
-IMU: BMI085
-ROS driver package: realsense2_camera 4.57.7
-ROS node LibRealSense: 2.57.7
-standalone librealsense tools: 2.58.1
-live /camera/imu: about 200 Hz
-static recording-load /camera/imu: about 173 Hz over 63.5 s
-```
-
-## Transform Tree
-
-```text
-odom
-└── base_footprint
-    ├── base_link          static alias, colocated
-    ├── imu_link           base MCU IMU frame
-    ├── laser_frame        z=0.100 m measured
-    └── camera_link        CAD extrinsic from original mount
-        ├── camera_color_frame
-        ├── camera_depth_frame
-        └── camera_aligned_depth_to_color_frame
-```
-
-Important static transforms:
-
-```text
-base_footprint -> base_link:
-  xyz=(0, 0, 0), rpy=(0, 0, 0)
-
-base_footprint -> imu_link:
-  xyz=(0, 0, 0), rpy=(0, pi, pi)
-
-base_footprint -> laser_frame:
-  xyz=(0, 0, 0.100), rpy=(0, 0, 0)
-
-base_footprint -> camera_link:
-  xyz=(-0.132025, 0.000153, 0.187925)
-  rpy=(pi/2, -0.007906, -pi/2)
-```
-
-## Clean Robot Run Data
-
-On the robot:
-
-```bash
-rm -rf ~/agv_data/*/
-rm -f ~/agv_data/*_manifest.yaml ~/agv_data/*_chrony.txt ~/agv_data/*_bringup.log
-```
-
-## Hardware
-
-```text
-AGV base controller: /dev/ttyACM0 (symlink /dev/myAGV via udev)
-YDLiDAR X2:          /dev/ydlidar (symlink via udev, native /dev/ttyS0)
-RealSense D455:      USB 3.x, RGB-D 640x480 @ 15 Hz plus /camera/imu
-Base MCU IMU:        Optional /imu topic when exposed by the base driver
-```
-
-## RealSense Setup Gate
-
-For setup diagnostics on a newly flashed robot, run the standalone camera gate:
-
-```bash
-cd ~/slam_project
-ROS_DOMAIN_ID=78 STREAM_SECONDS=60 bash scripts/diagnostics/realsense_camera_gate_ros2.sh
-```
-
-This standalone diagnostic starts and stops the camera, so use it for setup
-checks, not immediately before a publishable session. `start_session.sh` runs a
-live gate against the actual bringup process and then starts recording without
-restarting the camera.
-
-The gate must pass all of these checks:
-
-```text
-USB reset succeeds
-pre-stream rs-enumerate-devices runs and logs D455 details when the control path responds
-hardware RGB-D profiles are >= 15 FPS
-/camera/color/image_raw >= 12 Hz
-/camera/aligned_depth_to_color/image_raw >= 12 Hz
-/camera/imu >= 150 Hz
-post-stream rs-enumerate-devices runs and logs evidence
-```
-
-Pre/post `rs-enumerate-devices` failures are warnings by default because they
-can occur before or after a clean streaming test on Raspberry Pi RealSense
-setups. Set `STRICT_POST_ENUM=true` only when investigating the camera control
-path.
-
-Use the broader readiness script for base, LiDAR, TF, and package checks:
-
-```bash
-bash scripts/diagnostics/robot_readiness_check.sh
-```
-
-The readiness script skips pre-bringup `rs-enumerate-devices` by default because
-that command itself exercises the unstable UVC control path. Use
-`RUN_RS_ENUMERATE=true bash scripts/diagnostics/robot_readiness_check.sh` only
-when deliberately diagnosing the control path.
-
-Readiness also checks the robot power-management hardening:
-
-```text
-usbcore.autosuspend=-1 active and present in the Pi boot cmdline
-D455 agv-realsense-power.service enabled
-D455 /sys/.../power/control = on
-D455 /sys/.../power/autosuspend = -1
-NetworkManager WiFi powersave disabled
-wlan0 power_save off when wlan0 is available
-```
-
-For a manual spot check:
-
-```bash
-rs-enumerate-devices | grep -E "Firmware Version|Usb Type Descriptor|Imu Type"
-dpkg -l | grep -E "librealsense2|ros-humble-realsense2-camera"
-ros2 topic hz /camera/imu
-ros2 topic hz /camera/gyro/sample
-ros2 topic hz /camera/accel/sample
-ros2 topic hz /camera/color/image_raw
-ros2 topic hz /camera/aligned_depth_to_color/image_raw
-```
-
-Expected known-good D455 baseline:
-
-```text
-Firmware Version: 5.17.0.10
-Usb Type Descriptor: 3.x / 5000 Mb/s
-IMU: BMI085
-ROS realsense2_camera package: 4.57.7
-ROS node LibRealSense: 2.57.7
-standalone librealsense tools: 2.58.1
-/camera/imu: near 200 Hz live, at least 150 Hz under recording load
-/camera/gyro/sample: near 200 Hz
-/camera/accel/sample: near 100 Hz
-RGB-D image topics: near 15 Hz
-```
-
-If a robot repeatedly passes USB3/package checks but still wedges under the
-live gate, the next controlled escalation is an RSUSB/libuvc RealSense build on
-one sacrificial robot and a before/after 10-minute gate comparison. Do not mix a
-source-built RSUSB stack into the whole fleet until that comparison shows a real
-improvement over the pinned apt packages above.
-
-Post-run bag validation checks the hardware snapshots, runtime watchdog status,
-runtime kernel log, and fault classification file. For publishable data, run
-validation with hardware evidence required:
-
-```bash
-python3 scripts/logging/validate_bag.py ~/agv_data/<session_dir> \
-  --require-imu \
-  --require-hardware-logs
-```
-
-A bag with `PASS` or `PASS_WITH_LOW_LEVEL_WARNINGS` classification is acceptable
-if the topic-rate checks pass and the runtime watchdog status is
-`STOPPED_CLEANLY cycles=<N>` with `N >= 1`. Any `REALSENSE_*`, `USB_*`,
-`HOST_POWER_OR_THERMAL`, `FAIL_RUNTIME_WATCHDOG`, or zero-cycle watchdog result
-should be rejected for official dataset collection and diagnosed before the
-robot is used again.
-
-## Scaling To More Robots
-
-For each robot:
-
-1. Flash Ubuntu arm64, set hostname (`agv<N>`), connect to WiFi, install avahi-daemon (see Post-Flash setup above).
-2. Clone/pull this repo to `~/slam_project`.
-3. Run `bash scripts/setup_robot.sh`.
-4. Assign a stable robot name, e.g. `agv1`, `agv2`, `agv3`.
-5. Run the RealSense setup gate and require the D455 firmware, driver, USB link, and IMU rates to match the known-good baseline.
-6. Record with `bash scripts/logging/start_session.sh <robot_name> <scenario>`.
-7. For fleet orchestration, use `launch_fleet.sh` from the parent directory.
-8. Before each run, confirm chrony on robot and mocap machines if ground truth is recorded separately.
+Do not use the ROS 1 commands for new ROS 2 dataset robots unless you are
+intentionally debugging a legacy robot.

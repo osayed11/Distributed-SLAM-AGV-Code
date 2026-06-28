@@ -1,16 +1,19 @@
 #!/bin/bash
-# start_session.sh - Start a dataset recording session with auto-generated manifest.
+# start_session.sh - Run one managed dataset recording session.
 #
 # Usage:
 #   ./start_session.sh <robot_name> <scenario>
-#   ./start_session.sh agv1 corridor_loop
+#   REQUIRE_IMU=true REQUIRE_GT=true ./start_session.sh agv110 corridor_loop
 #
 # What it does:
-#   1. Validates that ROS is running and all required topics are publishing
-#   2. Generates a session_manifest.yaml before recording starts
-#   3. Launches roslaunch agv_bringup bringup.launch
-#   4. Waits for all sensor streams to stabilise before starting rosbag
-#   5. On Ctrl+C, finalises the manifest with duration and bag size
+#   1. Waits for clock sync before naming the session.
+#   2. Captures pre-run chrony and hardware evidence.
+#   3. Stops stale bringup/recording processes.
+#   4. Starts ROS bringup and waits for required sensor topics.
+#   5. Runs the required RealSense live gate on the active bringup.
+#   6. Records ROS 2 data with MCAP/QoS overrides when available.
+#   7. On Ctrl+C, stops recording cleanly, stops bringup, and finalizes the
+#      manifest with watchdog, hardware, and RealSense fault evidence.
 #
 # Run this on the robot. It is location-independent as long as this repo is
 # intact, e.g. ~/slam_project/scripts/logging/start_session.sh.
