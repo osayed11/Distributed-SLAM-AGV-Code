@@ -51,6 +51,9 @@ TOPICS = [
     ("/camera/aligned_depth_to_color/image_raw", "sensor_msgs/msg/Image", 15),
     ("/camera/aligned_depth_to_color/camera_info", "sensor_msgs/msg/CameraInfo", 15),
     ("/imu", "sensor_msgs/msg/Imu", 100),
+    ("/camera/imu", "sensor_msgs/msg/Imu", 200),
+    ("/camera/gyro/sample", "sensor_msgs/msg/Imu", 200),
+    ("/camera/accel/sample", "sensor_msgs/msg/Imu", 100),
     ("/optitrack/rigid_bodies/agv", "geometry_msgs/msg/PoseStamped", 50),
 ]
 
@@ -100,6 +103,8 @@ def write_ros2_bag(
     *,
     duration_sec: float = 10.0,
     missing_topic: str = "",
+    missing_topics: Optional[set[str]] = None,
+    empty_topic: str = "",
     scan_major_gap: bool = False,
     truncated_topic: str = "",
     non_monotonic_topic: str = "",
@@ -119,10 +124,16 @@ def write_ros2_bag(
     start_ns = 1_000_000_000
     msg_id = 1
     topic_id = 1
+    missing = set(missing_topics or set())
+    if missing_topic:
+        missing.add(missing_topic)
     for name, msg_type, hz in TOPICS:
-        if name == missing_topic:
+        if name in missing:
             continue
         cur.execute("INSERT INTO topics VALUES (?,?,?,?,?)", (topic_id, name, msg_type, "cdr", ""))
+        if name == empty_topic:
+            topic_id += 1
+            continue
         topic_duration = duration_sec * 0.5 if name == truncated_topic else duration_sec
         n_msgs = max(1, int(topic_duration * hz))
         for i in range(n_msgs):
@@ -188,6 +199,19 @@ class ValidateRos2BagTests(unittest.TestCase):
             self.assertEqual(rc, 1)
             failures = [item["check"] for item in report["results"] if item["level"] == "FAIL"]
             self.assertIn("scan", failures)
+
+    def test_ros2_validator_accepts_raw_imu_when_fused_imu_empty(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            bag = Path(tmp) / "raw_imu_only"
+            write_ros2_bag(bag, missing_topics={"/imu"}, empty_topic="/camera/imu")
+            rc, report = run_validator(bag)
+            self.assertEqual(rc, 0)
+            failures = [item for item in report["results"] if item["level"] == "FAIL"]
+            self.assertFalse(failures)
+            warnings = [item for item in report["results"] if item["level"] == "WARN"]
+            self.assertTrue(any(item["check"] == "/camera/imu" for item in warnings))
+            self.assertTrue(any(item["check"] == "/camera/gyro/sample" and item["level"] == "PASS" for item in report["results"]))
+            self.assertTrue(any(item["check"] == "/camera/accel/sample" and item["level"] == "PASS" for item in report["results"]))
 
     def test_major_gap_fails(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

@@ -1095,6 +1095,8 @@ if [ "${ROS_VERSION}" = "2" ]; then
         /camera/aligned_depth_to_color/camera_info
         /camera/extrinsics/depth_to_color
         /camera/imu
+        /camera/gyro/sample
+        /camera/accel/sample
         /imu
         /diagnostics
         /tag_detections
@@ -1121,6 +1123,8 @@ else
         /camera/aligned_depth_to_color/camera_info \
         /camera/extrinsics/depth_to_color \
         /camera/imu \
+        /camera/gyro/sample \
+        /camera/accel/sample \
         /imu \
         /diagnostics \
         /tag_detections \

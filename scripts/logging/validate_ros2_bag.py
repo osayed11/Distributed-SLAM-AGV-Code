@@ -615,9 +615,10 @@ def validate_imu(
             "missing; checked {}".format(", ".join(imu_topics())),
         )
         return
+    live = [item for item in present if item.count > 0]
     for item in present:
         if item.count <= 0:
-            record(results, FAIL if require_imu else WARN, item.topic, "present but empty", item.topic)
+            record(results, WARN, item.topic, "present but empty", item.topic)
             continue
         min_hz = 150.0 if "gyro" in item.topic or item.topic == "/camera/imu" else 60.0
         level = PASS if item.hz >= min_hz else WARN
@@ -633,6 +634,8 @@ def validate_imu(
                 bag_end_ns,
                 item.topic.strip("/").replace("/", "_") + "_coverage",
             )
+    if require_imu and not live:
+        record(results, FAIL, "imu", "IMU required but all IMU topics are empty")
 
 
 def bag_bounds(stats: Dict[str, TopicStats]) -> Tuple[Optional[int], Optional[int], float]:
