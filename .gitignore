@@ -2,6 +2,9 @@
 **/devel/
 **/install/
 **/logs/
+.DS_Store
+__pycache__/
+*.py[cod]
 .catkin_workspace
 build/
 devel/

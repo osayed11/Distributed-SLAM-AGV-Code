@@ -150,10 +150,11 @@ fi
 echo "Bag: ${BAG_PATH}"
 ros2 bag info "${BAG_PATH}"
 echo ""
-echo "Fast audit:"
-python3 scripts/logging/audit_bag_fast.py "${BAG_PATH}" || true
-echo ""
 echo "Full validation:"
-python3 scripts/logging/validate_bag.py "${BAG_PATH}" --require-gt --require-imu || true
+CMD_TOPIC="${CMD_TOPIC}" \
+MOCAP_TOPIC="${MOCAP_TOPIC}" \
+REQUIRE_GT=true \
+REQUIRE_IMU=true \
+python3 scripts/logging/validate_ros2_bag.py "${BAG_PATH}" --require-resilient-storage || true
 echo ""
 echo "Session log: ${SESSION_LOG}"

@@ -67,7 +67,7 @@ Use NetworkManager. Do not manually run repeated `wpa_supplicant -B` and
 unreliable.
 
 ```bash
-sudo nmcli device wifi connect "DELTA_FLIGHT_ARENA" password "ucl_delta_123"
+sudo nmcli device wifi connect "<LAB_WIFI_SSID>" password "<LAB_WIFI_PASSWORD>"
 nmcli -t -f DEVICE,STATE,CONNECTION device
 ip addr show wlan0
 ping -c 3 8.8.8.8
