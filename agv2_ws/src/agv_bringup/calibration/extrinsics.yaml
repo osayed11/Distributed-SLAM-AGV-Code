@@ -1,0 +1,90 @@
+# Sensor Extrinsics — All transforms relative to base_footprint
+# -----------------------------------------------------------------------
+# STATUS: PLACEHOLDER — fill in from physical measurement or CAD
+#
+# Convention:
+#   All transforms are expressed as [x, y, z, roll, pitch, yaw]
+#   in metres and radians, child frame relative to parent frame.
+#   This matches the args format of static_transform_publisher.
+#
+# Coordinate frames (REP-105 compliant):
+#   base_footprint  — robot footprint on the ground (origin of robot)
+#   base_link       — robot body centre (same x,y as footprint, z = height above ground)
+#   laser_frame     — YDLiDAR X2 optical centre
+#   camera_link     — RealSense D455 body
+#   camera_imu_optical_frame — D455 IMU (published by realsense-ros)
+#
+# How to measure:
+#   1. Print a 1:1 scale diagram of the AGV top plate.
+#   2. Measure x/y offsets of each sensor centre from the robot centre
+#      (base_footprint is at ground level, directly below robot centre).
+#   3. Measure z height from ground plane.
+#   4. Measure mounting angles (most sensors should be 0,0,0 if mounted flat).
+#   5. For the LiDAR yaw: check if the cable exit faces forward or backward.
+#      If backward, yaw = 0 is correct. If mounted reversed, yaw = pi.
+#
+# Verification:
+#   After updating, inspect /tf_static and RViz2.
+#   Check: odom -> base_footprint -> base_link -> laser_frame is continuous.
+#   Check: base_footprint -> camera_link -> camera_imu_optical_frame is continuous.
+# -----------------------------------------------------------------------
+
+calibration_date: "2026-03-15"
+calibration_operator: "riyaa"
+measurement_method: "cad"  # tape_measure | cad | checkerboard_optimisation
+
+# base_footprint -> base_link
+# base_link is at robot body centre, raised from ground by body half-height
+base_footprint_to_base_link:
+  x: 0.0
+  y: 0.0
+  z: 0.0        # PLACEHOLDER — measure height of robot body centre from ground
+  roll: 0.0
+  pitch: 0.0
+  yaw: 0.0
+
+# base_footprint -> laser_frame
+# z=0.10m physically measured 2026-03-15. yaw=0 (X2 parallel to ground, forward-facing).
+# x/y (forward/lateral offset from robot centre) still need tape-measure — pending.
+base_footprint_to_laser_frame:
+  x: 0.0        # pending tape-measure
+  y: 0.0        # pending tape-measure
+  z: 0.10       # measured 2026-03-15
+  roll: 0.0
+  pitch: 0.0
+  yaw: 0.0      # X2 mounted parallel to ground, forward-facing
+
+# base_footprint -> camera_link
+# From assembly.urdf CAD (original mount). L-bracket mount was trialled 2026-03-15
+# but caused significant LiDAR forward-sector blockage; original mount restored.
+base_footprint_to_camera_link:
+  x: -0.132025    # CAD, assembly.urdf
+  y:  0.000153    # CAD, assembly.urdf
+  z:  0.187925    # CAD, assembly.urdf
+  roll:  1.570796
+  pitch: -0.007906
+  yaw:  -1.570796
+
+# camera_link -> camera_imu_optical_frame
+# Read from /tf_static or RealSense SDK extrinsics.
+# Translation: [-0.016, -0.030, 0.007] m
+# Rotation rpy: [-pi/2, 0, -pi/2] (quaternion: [-0.5, 0.5, -0.5, 0.5])
+camera_link_to_imu:
+  x: -0.016
+  y: -0.030
+  z:  0.007
+  roll:  -1.5708   # -pi/2
+  pitch:  0.0
+  yaw:   -1.5708   # -pi/2
+  source: "factory_sdk_tf_static"
+  date: "2026-03-15"
+
+# Base physical measurements. Documentation only: myagv_odometry_node currently
+# integrates chassis velocities returned by the STM32, not raw wheel encoder
+# ticks, so wheel_radius_m and wheel_base_m do not affect /odom.
+odometry:
+  wheel_radius_m: 0.0385
+  wheel_base_m: 0.211
+  source: "robot-side base.yaml values observed before runtime config cleanup"
+  linear_error_1m: ~        # measured % error driving 1m straight
+  angular_error_360deg: ~   # measured degree error on full 360 turn

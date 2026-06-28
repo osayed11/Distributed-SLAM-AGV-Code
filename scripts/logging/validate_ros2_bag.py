@@ -2,11 +2,10 @@
 """Validate a ROS 2 rosbag2 dataset using metadata plus SQLite/MCAP timing.
 
 This is intentionally dependency-light so it can run on the robot after a
-session. It checks the same publishability surface as the ROS 1 validator:
-required topics, average rates, timestamp gaps, storage timestamp monotonicity,
-IMU presence, ground truth, and bag readability. It does not deserialize ROS
-messages; rosbag2 storage timestamps are enough to detect missing streams, time
-source regressions, and frame drop patterns.
+session. It checks required topics, average rates, timestamp gaps, storage
+timestamp monotonicity, IMU presence, ground truth, and bag readability. It
+does not deserialize ROS messages; rosbag2 storage timestamps are enough to
+detect missing streams, time source regressions, and frame drop patterns.
 """
 
 from __future__ import annotations
@@ -131,7 +130,6 @@ def required_specs() -> List[TopicSpec]:
 
 def ground_truth_topics() -> List[str]:
     topics = [
-        "/phasespace/rigids",
         "/mocap",
         "/ground_truth",
         "/ground_truth/pose",

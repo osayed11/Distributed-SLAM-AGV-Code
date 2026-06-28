@@ -6,8 +6,7 @@
 #   bash scripts/setup_robot_ros2.sh agv102 --skip-system
 #   SUDO_PASSWORD=ubuntu bash scripts/setup_robot_ros2.sh agv102
 #
-# This script is intentionally separate from setup_robot.sh, which targets the
-# legacy ROS 1/catkin stack.
+# This is the only supported provisioning script for the ROS 2 dataset robots.
 
 set -euo pipefail
 
@@ -21,6 +20,7 @@ fi
 
 INSTALL_SYSTEM=true
 INSTALL_REALSENSE=true
+INSTALL_YDLIDAR_SDK=true
 BUILD_WS=true
 RUN_DOCTOR=true
 APPLY_LOW_RISK_FIXES=true
@@ -41,6 +41,7 @@ usage() {
 Options:
   --skip-system            Do not install apt packages.
   --skip-realsense         Do not add/install RealSense apt packages.
+  --skip-ydlidar-sdk       Do not build/install the native YDLidar SDK.
   --skip-build             Do not build agv2_ws.
   --no-doctor              Do not run robot_doctor at the end.
   --no-low-risk-fixes      Do not install D455 low-risk udev rules.
@@ -66,6 +67,9 @@ while [ "$#" -gt 0 ]; do
             ;;
         --skip-realsense)
             INSTALL_REALSENSE=false
+            ;;
+        --skip-ydlidar-sdk)
+            INSTALL_YDLIDAR_SDK=false
             ;;
         --skip-build)
             BUILD_WS=false
@@ -380,6 +384,30 @@ PY
     exit 1
 }
 
+install_ydlidar_sdk() {
+    section "ydlidar sdk"
+    local sdk_dir="${ROOT}/drivers/YDLidar-SDK"
+    local jobs
+
+    if [ ! -d "${sdk_dir}" ]; then
+        echo "ERROR: missing vendored YDLidar SDK at ${sdk_dir}" >&2
+        echo "       agv2_ws/src/ydlidar_ros2_driver requires ydlidar_sdk." >&2
+        exit 1
+    fi
+
+    jobs="$(nproc 2>/dev/null || echo 2)"
+    cmake -S "${sdk_dir}" -B "${sdk_dir}/build" -DCMAKE_BUILD_TYPE=Release
+    cmake --build "${sdk_dir}/build" -j "${jobs}"
+    sudo_run cmake --install "${sdk_dir}/build"
+    sudo_run ldconfig || true
+
+    if pkg-config --exists ydlidar_sdk; then
+        echo "pkg-config ydlidar_sdk: $(pkg-config --modversion ydlidar_sdk)"
+    else
+        echo "WARN: ydlidar_sdk installed, but pkg-config did not find ydlidar_sdk.pc"
+    fi
+}
+
 section "repo"
 echo "root: ${ROOT}"
 echo "robot: ${ROBOT_ID}"
@@ -438,6 +466,10 @@ if [ "${APPLY_LOW_RISK_FIXES}" = "true" ]; then
     install_d455_power_rule
     install_d455_power_service
     install_d455_uvc_bind_rule
+fi
+
+if [ "${INSTALL_YDLIDAR_SDK}" = "true" ]; then
+    install_ydlidar_sdk
 fi
 
 if [ "${BUILD_WS}" = "true" ]; then

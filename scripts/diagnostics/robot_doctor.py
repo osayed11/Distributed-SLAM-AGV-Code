@@ -589,12 +589,8 @@ class Doctor:
             distro = os.environ.get("ROS_DISTRO", "")
             if distro in {"humble", "foxy", "galactic", "iron", "jazzy", "rolling"}:
                 self.ros_mode = "ros2"
-            elif distro in {"melodic", "noetic"}:
-                self.ros_mode = "ros1"
             elif shutil.which("ros2") or Path("/opt/ros/humble/setup.bash").exists():
                 self.ros_mode = "ros2"
-            elif shutil.which("rostopic") or Path("/opt/ros/noetic/setup.bash").exists():
-                self.ros_mode = "ros1"
             else:
                 self.ros_mode = "none"
 
@@ -608,18 +604,6 @@ class Doctor:
                 str(Path.home() / "slam_project/agv2_ws/install/setup.bash"),
                 str(self.root / "install/setup.bash"),
                 str(self.root / "agv2_ws/install/setup.bash"),
-            ]:
-                if setup and Path(setup).exists():
-                    parts.append(f"source {shell_quote(Path(setup))}; ")
-        elif self.ros_mode == "ros1":
-            for setup in [
-                os.environ.get("ROS_SETUP", ""),
-                "/opt/ros/noetic/setup.bash",
-                "/opt/ros/melodic/setup.bash",
-                str(Path.home() / "slam_project/myagv_ros/devel/setup.bash"),
-                str(Path.home() / "slam_project/agv_ws/devel/setup.bash"),
-                str(self.root / "myagv_ros/devel/setup.bash"),
-                str(self.root / "agv_ws/devel/setup.bash"),
             ]:
                 if setup and Path(setup).exists():
                     parts.append(f"source {shell_quote(Path(setup))}; ")
@@ -659,7 +643,7 @@ class Doctor:
             "native_ros2_stack",
             "echo ENV; "
             "printenv | grep -E '^(ROS_DISTRO|ROS_DOMAIN_ID|ROS_MASTER_URI|ROS_IP|ROS_HOSTNAME)=' || true; "
-            "echo COMMANDS; command -v ros2 || true; command -v rostopic || true; "
+            "echo COMMANDS; command -v ros2 || true; "
             "echo PROCESSES; "
             "ps -eo pid=,comm=,args= | awk '$2 !~ /^(bash|sh|awk|grep|pgrep)$/ && "
             "$0 ~ /(roscore|rosmaster|ros1_bridge|dynamic_bridge|parameter_bridge)/ {print}' || true; "
@@ -2520,10 +2504,7 @@ PY
             return
         self.start_bringup()
         try:
-            if self.ros_mode == "ros2":
-                topic_cmd = "(ros2 topic list -t --no-daemon --spin-time 5 2>&1 || ros2 topic list -t 2>&1)"
-            else:
-                topic_cmd = "rostopic list 2>&1"
+            topic_cmd = "(ros2 topic list -t --no-daemon --spin-time 5 2>&1 || ros2 topic list -t 2>&1)"
             topics = self.ros_cmd(topic_cmd, timeout=15, label="ros_topic_list")
             text = self.command_output(topics)
             self.topic_types = self.parse_topic_list(text)
@@ -2847,10 +2828,7 @@ PY
             self.add("2.2", PASS, "d455_infra_fps_cap", f"{topic} measured {rate:.1f} Hz")
 
     def measure_topic_rate(self, topic: str, seconds: int) -> Optional[float]:
-        if self.ros_mode == "ros2":
-            cmd = f"timeout {seconds + 8} ros2 topic hz {topic} --window 20 2>&1"
-        else:
-            cmd = f"timeout {seconds + 8} rostopic hz {topic} --window 20 2>&1"
+        cmd = f"timeout {seconds + 8} ros2 topic hz {topic} --window 20 2>&1"
         result = self.ros_cmd(cmd, timeout=seconds + 12, label=f"hz_{topic.strip('/').replace('/', '_')}")
         text = self.command_output(result)
         matches = re.findall(r"average rate:\s*([0-9.]+)", text)
@@ -2990,29 +2968,30 @@ PY
                 FAIL,
                 "bag_validation",
                 f"bag path does not exist: {bag}",
-                next_action="rerun with --bag pointing at an existing ROS bag file or rosbag2 directory",
+                next_action="rerun with --bag pointing at an existing ROS2 bag file or rosbag2 directory",
             )
             return
         json_out = self.out_dir / "bag_validation.json"
         if bag.is_file() and bag.suffix == ".bag":
-            validator = self.root / "scripts/logging/validate_bag.py"
-            cmd = f"python3 {shell_quote(validator)} {shell_quote(bag)}"
-            if self.args.require_gt:
-                cmd += " --require-gt"
-            if self.args.require_imu:
-                cmd += " --require-imu"
-        else:
-            validator = self.root / "scripts/logging/validate_ros2_bag.py"
-            cmd = f"python3 {shell_quote(validator)} {shell_quote(bag)} --json-out {shell_quote(json_out)}"
-            if self.args.required_topic:
-                required_topics = " ".join(self.args.required_topic)
-                cmd = f"REQUIRED_TOPICS={shell_quote(required_topics)} " + cmd
-            if self.args.require_gt:
-                cmd += " --require-gt"
-            if self.args.require_imu:
-                cmd += " --require-imu"
-            if self.args.require_resilient_storage:
-                cmd += " --require-resilient-storage"
+            self.add(
+                "3.2",
+                FAIL,
+                "bag_validation",
+                f"unsupported ROS1 bag artifact on ROS2 dataset branch: {bag}",
+                next_action="record with scripts/logging/start_session.sh and pass the ROS2 bag directory or .mcap/.db3 artifact",
+            )
+            return
+        validator = self.root / "scripts/logging/validate_ros2_bag.py"
+        cmd = f"python3 {shell_quote(validator)} {shell_quote(bag)} --json-out {shell_quote(json_out)}"
+        if self.args.required_topic:
+            required_topics = " ".join(self.args.required_topic)
+            cmd = f"REQUIRED_TOPICS={shell_quote(required_topics)} " + cmd
+        if self.args.require_gt:
+            cmd += " --require-gt"
+        if self.args.require_imu:
+            cmd += " --require-imu"
+        if self.args.require_resilient_storage:
+            cmd += " --require-resilient-storage"
         result = self.run("bag_validation", cmd, timeout=self.args.bag_validation_timeout)
         if result.rc == 0:
             self.add("3.2", PASS, "bag_validation", "bag validator passed", [result.log, str(json_out)])
@@ -3235,12 +3214,12 @@ def build_parser() -> argparse.ArgumentParser:
         default=str(Path.home() / "agv_data/diagnostics"),
         help="directory where evidence folders are written",
     )
-    parser.add_argument("--ros", choices=["auto", "ros1", "ros2", "none"], default="auto")
+    parser.add_argument("--ros", choices=["auto", "ros2", "none"], default="auto")
     parser.add_argument("--no-ros", action="store_true", help="skip ROS graph checks")
     parser.add_argument("--bringup-cmd", help="optional command to launch bringup for bounded live checks")
     parser.add_argument("--bringup-wait", type=int, default=35)
     parser.add_argument("--live-seconds", type=int, default=12, help="seconds per live topic hz probe")
-    parser.add_argument("--bag", help="ROS1 .bag, ROS2 bag directory, or ROS2 .db3 to validate")
+    parser.add_argument("--bag", help="ROS2 bag directory, .mcap, or .db3 to validate")
     parser.add_argument("--require-bag", action="store_true", default=env_bool("REQUIRE_BAG"))
     parser.add_argument("--bag-validation-timeout", type=int, default=180)
     parser.add_argument("--require-gt", action="store_true", default=env_bool("REQUIRE_GT"))

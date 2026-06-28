@@ -5,7 +5,7 @@ This command ties together the lower-level diagnostics:
 
 - robot_doctor summary.json validation, including copied evidence files
 - dataset_ready checks for post-run doctor reports
-- ROS 1 / ROS 2 bag validation
+- ROS 2 bag validation
 - start_session manifest completeness
 
 It is intended to run on the laptop after copying artifacts back from robots.
@@ -185,11 +185,9 @@ def audit_reports(paths: Sequence[Path], require_ready: bool, require_configured
 
 
 def bag_kind(path: Path) -> str:
-    if path.is_file() and path.suffix == ".bag":
-        return "ros1"
-    if path.is_file() and path.suffix == ".db3":
+    if path.is_file() and path.suffix in {".db3", ".mcap"}:
         return "ros2"
-    if path.is_dir() and list(path.glob("*.db3")):
+    if path.is_dir() and (list(path.glob("*.db3")) or list(path.glob("*.mcap"))):
         return "ros2"
     return "unknown"
 
@@ -242,8 +240,8 @@ def audit_bags(
                     FAIL,
                     "bag_kind",
                     str(path),
-                    "not a ROS1 .bag, ROS2 .db3, or rosbag2 directory",
-                    "pass the completed bag file or rosbag2 directory",
+                    "not a ROS2 .mcap/.db3 file or rosbag2 directory",
+                    "pass the completed ROS2 bag file or rosbag2 directory",
                 )
             )
             continue
@@ -292,30 +290,6 @@ def audit_bags(
                     str(path),
                     summary,
                     "inspect bag validation log/json and fix missing or low-rate topics" if status == FAIL else "",
-                )
-            )
-        else:
-            command = [sys.executable, str(ROOT / "scripts/logging/validate_bag.py"), str(path)]
-            if require_gt:
-                command.append("--require-gt")
-            if require_imu:
-                command.append("--require-imu")
-            env = {}
-            if mocap_topic:
-                env["MOCAP_TOPIC"] = mocap_topic
-            if cmd_topic:
-                env["CMD_TOPIC"] = cmd_topic
-            proc = run_command(command, env=env)
-            log_path = output_dir / (path.name.replace(".", "_") + "_validate_bag.log")
-            log_path.write_text(proc.stdout)
-            status = status_from_rc(proc.returncode)
-            items.append(
-                AuditItem(
-                    status,
-                    "bag_validation",
-                    str(path),
-                    f"validate_bag rc={proc.returncode}",
-                    "inspect bag validation log and fix missing or low-rate topics" if status == FAIL else "",
                 )
             )
     return items
@@ -404,7 +378,7 @@ def audit_manifests(paths: Sequence[Path], require_manifest: bool) -> List[Audit
 
 
 def artifact_keys(path: Path) -> set[str]:
-    """Return names that can identify a bag artifact across ROS1/ROS2 layouts."""
+    """Return names that can identify a ROS2 bag artifact."""
     keys = {path.name}
     if path.suffix:
         keys.add(path.stem)
@@ -425,7 +399,6 @@ def manifest_bag_keys(data: Dict[str, str]) -> set[str]:
     session_id = data.get("session_id", "")
     if session_id:
         keys.update(artifact_keys(Path(session_id)))
-        keys.add(f"{session_id}.bag")
     return keys
 
 
@@ -554,7 +527,7 @@ def audit_artifact_consistency(report_paths: Sequence[Path], bag_paths: Sequence
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--report", action="append", default=[], help="robot_doctor summary.json or report directory; may be repeated/globbed")
-    parser.add_argument("--bag", action="append", default=[], help="ROS1 .bag, ROS2 .db3, or rosbag2 directory; may be repeated/globbed")
+    parser.add_argument("--bag", action="append", default=[], help="ROS2 .mcap/.db3 file or rosbag2 directory; may be repeated/globbed")
     parser.add_argument("--manifest", action="append", default=[], help="start_session *_manifest.yaml; may be repeated/globbed")
     parser.add_argument("--output-dir", default="diagnostic_reports/dataset_run_audits/latest")
     parser.add_argument("--json-out", help="write machine-readable audit JSON")

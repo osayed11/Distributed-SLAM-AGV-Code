@@ -77,7 +77,6 @@ class Audit:
             "scripts/diagnostics/synthesize_robot_doctor_failure.py",
             "scripts/diagnostics/diagnostic_pipeline_audit.py",
             "scripts/setup_robot_ros2.sh",
-            "scripts/logging/validate_bag.py",
             "scripts/logging/validate_ros2_bag.py",
             "configs/robot_doctor_dataset_gate.json",
             "configs/sqlite_resilient.yaml",
@@ -373,18 +372,6 @@ class Audit:
             ],
             ["scripts/logging/validate_ros2_bag.py"],
         )
-        self.require_source_patterns(
-            "ros1_bag_validator_guards",
-            [
-                "REQUIRED_TOPICS",
-                "require_gt",
-                "require_imu",
-                "imu_monotonic",
-                "mocap",
-            ],
-            ["scripts/logging/validate_bag.py"],
-        )
-
     def require_docs_and_tests(self) -> None:
         self.require_source_patterns(
             "diagnostic_docs",

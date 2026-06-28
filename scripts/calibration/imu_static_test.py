@@ -1,53 +1,52 @@
-#!/usr/bin/env python
-# -*- coding: utf-8 -*-
-"""
-imu_static_test.py
-------------------
-Collects 60 seconds of IMU data from a stationary robot and reports:
-  - Gyroscope Z drift (target: < 0.1 deg/s)
-  - Accelerometer noise std dev (target: < 0.05 m/s^2)
-  - Gravity alignment (accel Z should be ~9.81 m/s^2 when flat)
+#!/usr/bin/env python3
+"""Record a stationary ROS2 IMU stream and write calibration evidence."""
 
-Run AFTER starting bringup.launch with the robot STATIONARY on a flat surface:
-    roslaunch agv_bringup bringup.launch
-    python scripts/calibration/imu_static_test.py
+from __future__ import annotations
 
-Results are printed and saved to calibration/imu_intrinsics.yaml.
-"""
-
-import os
-import sys
+import argparse
+import datetime as dt
 import math
-import datetime
+import os
+import time
+from pathlib import Path
 
-import rospy
+import rclpy
+from rclpy.node import Node
 from sensor_msgs.msg import Imu
 import yaml
 
-IMU_TOPIC = "/camera/imu"
-RECORD_SECONDS = 60
-CALIB_YAML = os.path.join(
-    os.path.dirname(__file__),
-    "../../agv_ws/src/agv_bringup/calibration/imu_intrinsics.yaml"
-)
 
-# Pass criteria from Stage_0_Targets.md
-GYRO_DRIFT_LIMIT_DEG_S  = 0.1       # deg/s
-ACCEL_NOISE_LIMIT_M_S2  = 0.05      # m/s^2
-GRAVITY_NOMINAL_M_S2    = 9.81
-GRAVITY_TOLERANCE_M_S2  = 0.5       # warn if |az_mean - 9.81| > this
+ROOT = Path(__file__).resolve().parents[2]
+DEFAULT_OUTPUT = ROOT / "agv2_ws/src/agv_bringup/calibration/imu_intrinsics.yaml"
+GRAVITY_NOMINAL_M_S2 = 9.81
+GRAVITY_TOLERANCE_M_S2 = 0.5
+GYRO_DRIFT_LIMIT_DEG_S = 0.1
+ACCEL_NOISE_LIMIT_M_S2 = 0.05
 
 
-class IMUCollector:
-    def __init__(self):
-        self.ax = []
-        self.ay = []
-        self.az = []
-        self.gx = []
-        self.gy = []
-        self.gz = []
+def mean(values: list[float]) -> float:
+    return sum(values) / len(values) if values else 0.0
 
-    def callback(self, msg):
+
+def std(values: list[float]) -> float:
+    if not values:
+        return 0.0
+    avg = mean(values)
+    return math.sqrt(sum((value - avg) ** 2 for value in values) / len(values))
+
+
+class ImuCollector(Node):
+    def __init__(self, topic: str) -> None:
+        super().__init__("imu_static_test")
+        self.ax: list[float] = []
+        self.ay: list[float] = []
+        self.az: list[float] = []
+        self.gx: list[float] = []
+        self.gy: list[float] = []
+        self.gz: list[float] = []
+        self.create_subscription(Imu, topic, self._on_imu, 50)
+
+    def _on_imu(self, msg: Imu) -> None:
         self.ax.append(msg.linear_acceleration.x)
         self.ay.append(msg.linear_acceleration.y)
         self.az.append(msg.linear_acceleration.z)
@@ -56,149 +55,106 @@ class IMUCollector:
         self.gz.append(msg.angular_velocity.z)
 
 
-def std(values):
-    n = len(values)
-    if n == 0:
-        return 0.0
-    mean = sum(values) / n
-    return math.sqrt(sum((v - mean) ** 2 for v in values) / n)
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--topic", default="/camera/imu")
+    parser.add_argument("--seconds", type=float, default=60.0)
+    parser.add_argument("--min-samples", type=int, default=100)
+    parser.add_argument("--output", default=str(DEFAULT_OUTPUT))
+    return parser.parse_args()
 
 
-def mean(values):
-    return sum(values) / len(values) if values else 0.0
+def main() -> int:
+    args = parse_args()
+    rclpy.init()
+    node = ImuCollector(args.topic)
+    start = time.monotonic()
+    next_print = start
 
-
-def main():
-    rospy.init_node("imu_static_test", anonymous=True)
-
-    # Verify topic is publishing before starting
-    rospy.loginfo("Waiting for first IMU message on %s ...", IMU_TOPIC)
+    node.get_logger().info(f"Recording {args.seconds:.1f}s from {args.topic}. Keep the robot still.")
     try:
-        rospy.wait_for_message(IMU_TOPIC, Imu, timeout=10.0)
-    except rospy.ROSException:
-        rospy.logerr("No IMU data on %s. Is bringup.launch running with IMU enabled?", IMU_TOPIC)
-        sys.exit(1)
+        while rclpy.ok() and time.monotonic() - start < args.seconds:
+            rclpy.spin_once(node, timeout_sec=0.05)
+            if time.monotonic() >= next_print:
+                elapsed = time.monotonic() - start
+                node.get_logger().info(f"{elapsed:.0f}/{args.seconds:.0f}s samples={len(node.gz)}")
+                next_print = time.monotonic() + 5.0
 
-    collector = IMUCollector()
-    sub = rospy.Subscriber(IMU_TOPIC, Imu, collector.callback)
+        n = len(node.gz)
+        if n < args.min_samples:
+            node.get_logger().error(f"Only {n} samples collected; expected at least {args.min_samples}.")
+            return 1
 
-    rospy.loginfo("Recording %d seconds of IMU data. DO NOT MOVE THE ROBOT.", RECORD_SECONDS)
-    rate = rospy.Rate(1)
-    for i in range(RECORD_SECONDS):
-        if rospy.is_shutdown():
-            break
-        rospy.loginfo("  %d/%d seconds, %d samples so far...", i + 1, RECORD_SECONDS, len(collector.gz))
-        rate.sleep()
+        ax_mean, ay_mean, az_mean = mean(node.ax), mean(node.ay), mean(node.az)
+        gx_std, gy_std, gz_std = std(node.gx), std(node.gy), std(node.gz)
+        ax_std, ay_std, az_std = std(node.ax), std(node.ay), std(node.az)
+        gz_drift_deg = abs(mean(node.gz)) * 180.0 / math.pi
+        accel_noise_max = max(ax_std, ay_std, az_std)
+        gravity_magnitude = math.sqrt(ax_mean**2 + ay_mean**2 + az_mean**2)
+        gravity_error = abs(gravity_magnitude - GRAVITY_NOMINAL_M_S2)
+        gravity_axis = ["x", "y", "z"][
+            [abs(ax_mean), abs(ay_mean), abs(az_mean)].index(max(abs(ax_mean), abs(ay_mean), abs(az_mean)))
+        ]
+        gyro_pass = gz_drift_deg < GYRO_DRIFT_LIMIT_DEG_S
+        accel_pass = accel_noise_max < ACCEL_NOISE_LIMIT_M_S2
+        gravity_pass = gravity_error < GRAVITY_TOLERANCE_M_S2
 
-    sub.unregister()
-
-    n = len(collector.gz)
-    if n < 100:
-        rospy.logerr("Only %d samples collected — something is wrong. Expected ~%d.",
-                     n, 200 * RECORD_SECONDS)
-        sys.exit(1)
-
-    rospy.loginfo("Collected %d samples. Computing statistics...", n)
-
-    # Gyroscope
-    gz_mean     = mean(collector.gz)
-    gz_std      = std(collector.gz)
-    gz_drift_deg = abs(gz_mean) * 180.0 / math.pi
-    gx_std      = std(collector.gx)
-    gy_std      = std(collector.gy)
-
-    # Accelerometer
-    ax_mean = mean(collector.ax)
-    ay_mean = mean(collector.ay)
-    az_mean = mean(collector.az)
-    ax_std = std(collector.ax)
-    ay_std = std(collector.ay)
-    az_std = std(collector.az)
-    accel_noise_max = max(ax_std, ay_std, az_std)
-
-    # Gravity: check vector magnitude, not just Z axis.
-    # The D455 may be mounted with gravity on any axis depending on orientation.
-    gravity_magnitude = math.sqrt(ax_mean**2 + ay_mean**2 + az_mean**2)
-    gravity_error = abs(gravity_magnitude - GRAVITY_NOMINAL_M_S2)
-    # Identify dominant gravity axis (whichever has the largest absolute mean)
-    gravity_axis = ["x", "y", "z"][
-        [abs(ax_mean), abs(ay_mean), abs(az_mean)].index(
-            max(abs(ax_mean), abs(ay_mean), abs(az_mean)))]
-
-    # Pass / fail
-    gyro_pass  = gz_drift_deg < GYRO_DRIFT_LIMIT_DEG_S
-    accel_pass = accel_noise_max < ACCEL_NOISE_LIMIT_M_S2
-    grav_pass  = gravity_error < GRAVITY_TOLERANCE_M_S2
-
-    rospy.loginfo("")
-    rospy.loginfo("=== IMU STATIC TEST RESULTS ===")
-    rospy.loginfo("Gyro Z drift:    %.4f deg/s  (target < %.1f)  --> %s",
-                  gz_drift_deg, GYRO_DRIFT_LIMIT_DEG_S, "PASS" if gyro_pass else "FAIL")
-    rospy.loginfo("Accel noise max: %.4f m/s^2  (target < %.2f)  --> %s",
-                  accel_noise_max, ACCEL_NOISE_LIMIT_M_S2, "PASS" if accel_pass else "FAIL")
-    rospy.loginfo("Gravity magnitude: %.3f m/s^2  (nominal %.2f, dominant axis=%s) --> %s",
-                  gravity_magnitude, GRAVITY_NOMINAL_M_S2, gravity_axis,
-                  "PASS" if grav_pass else "CHECK MOUNTING")
-    rospy.loginfo("Accel means: x=%.3f  y=%.3f  z=%.3f m/s^2",
-                  ax_mean, ay_mean, az_mean)
-    rospy.loginfo("Accel stds:  x=%.4f  y=%.4f  z=%.4f m/s^2",
-                  ax_std, ay_std, az_std)
-    rospy.loginfo("")
-
-    if not (gyro_pass and accel_pass):
-        rospy.logwarn("One or more criteria FAILED.")
-        rospy.logwarn("NOTE: High accel noise is expected if base controller motors are running.")
-        rospy.logwarn("For a clean static test, stop base controller or power off motors.")
-
-    # Update imu_intrinsics.yaml
-    today = datetime.date.today().isoformat()
-    calib = {
-        "calibration_date": today,
-        "calibration_operator": os.uname()[1],
-        "calibration_method": "static_test",
-        "frame_id": "camera_imu_optical_frame",
-        "publish_rate_hz": round(n / RECORD_SECONDS),
-        "accelerometer": {
-            "noise_density": None,
-            "bias_instability": None,
-            "scale_and_alignment": [[1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0]],
-            "bias": [0.0, 0.0, 0.0],
-            "static_test_std_m_s2": {"x": round(ax_std, 6), "y": round(ay_std, 6), "z": round(az_std, 6)},
-            "static_test_mean_m_s2": {"x": round(ax_mean, 4), "y": round(ay_mean, 4), "z": round(az_mean, 4)}
-        },
-        "gyroscope": {
-            "noise_density": None,
-            "bias_instability": None,
-            "scale_and_alignment": [[1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0]],
-            "bias": [0.0, 0.0, 0.0],
-            "static_test_std_rad_s": {"x": round(gx_std, 6), "y": round(gy_std, 6), "z": round(gz_std, 6)}
-        },
-        "imu_to_color_extrinsic": {
-            "note": "Read from SDK: rs-enumerate-devices -c | grep -A20 'Motion Intrinsics'",
-            "rotation": [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0],
-            "translation": [0.0, 0.0, 0.0]
-        },
-        "static_test_60s": {
-            "num_samples": n,
-            "gyro_drift_deg_per_s": round(gz_drift_deg, 4),
-            "accel_noise_m_s2": round(accel_noise_max, 4),
-            "gravity_magnitude_m_s2": round(gravity_magnitude, 4),
-            "gravity_dominant_axis": gravity_axis,
-            "gravity_alignment_verified": grav_pass,
-            "gyro_pass": gyro_pass,
-            "accel_pass": accel_pass,
-            "note": "Accel noise includes motor vibration if base controller was running during test."
+        calib = {
+            "calibration_date": dt.date.today().isoformat(),
+            "calibration_operator": os.uname().nodename,
+            "calibration_method": "ros2_static_test",
+            "frame_id": "camera_imu_optical_frame",
+            "publish_rate_hz": round(n / args.seconds, 3),
+            "accelerometer": {
+                "noise_density": None,
+                "bias_instability": None,
+                "scale_and_alignment": [[1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0]],
+                "bias": [0.0, 0.0, 0.0],
+                "static_test_std_m_s2": {"x": round(ax_std, 6), "y": round(ay_std, 6), "z": round(az_std, 6)},
+                "static_test_mean_m_s2": {"x": round(ax_mean, 4), "y": round(ay_mean, 4), "z": round(az_mean, 4)},
+            },
+            "gyroscope": {
+                "noise_density": None,
+                "bias_instability": None,
+                "scale_and_alignment": [[1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0]],
+                "bias": [0.0, 0.0, 0.0],
+                "static_test_std_rad_s": {"x": round(gx_std, 6), "y": round(gy_std, 6), "z": round(gz_std, 6)},
+            },
+            "imu_to_color_extrinsic": {
+                "note": "Read from rs-enumerate-devices -c when exact per-camera extrinsics are needed.",
+                "rotation": [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0],
+                "translation": [0.0, 0.0, 0.0],
+            },
+            "static_test": {
+                "seconds": args.seconds,
+                "num_samples": n,
+                "gyro_drift_deg_per_s": round(gz_drift_deg, 4),
+                "accel_noise_m_s2": round(accel_noise_max, 4),
+                "gravity_magnitude_m_s2": round(gravity_magnitude, 4),
+                "gravity_dominant_axis": gravity_axis,
+                "gravity_alignment_verified": gravity_pass,
+                "gyro_pass": gyro_pass,
+                "accel_pass": accel_pass,
+                "note": "Accel noise includes motor vibration if the base controller was running.",
+            },
         }
-    }
 
-    out_path = os.path.realpath(CALIB_YAML)
-    with open(out_path, "w") as f:
-        yaml.dump(calib, f, default_flow_style=False)
+        output = Path(args.output).expanduser()
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text(yaml.safe_dump(calib, sort_keys=False))
 
-    rospy.loginfo("Written to %s", out_path)
-    overall = "PASS" if (gyro_pass and accel_pass) else "FAIL"
-    rospy.loginfo("Overall Stage 1d result: %s", overall)
+        node.get_logger().info(f"Wrote {output}")
+        node.get_logger().info(
+            f"gyro_z_drift={gz_drift_deg:.4f} deg/s accel_noise={accel_noise_max:.4f} m/s^2 "
+            f"gravity={gravity_magnitude:.3f} m/s^2 axis={gravity_axis}"
+        )
+        if not (gyro_pass and accel_pass and gravity_pass):
+            node.get_logger().warning("Static IMU criteria did not all pass; inspect the YAML evidence.")
+        return 0
+    finally:
+        node.destroy_node()
+        rclpy.shutdown()
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

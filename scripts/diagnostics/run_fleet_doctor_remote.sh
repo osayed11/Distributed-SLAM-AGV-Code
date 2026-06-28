@@ -2,7 +2,7 @@
 # Run robot_doctor over a fleet host list and aggregate copied reports.
 #
 # Host list format, one robot per line:
-#   agv100 192.168.50.179
+#   agv100 <robot-ip-or-hostname>
 #   agv101 agv101.local
 #
 # Blank lines and lines starting with # are ignored.

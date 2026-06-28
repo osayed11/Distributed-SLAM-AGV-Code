@@ -1413,8 +1413,8 @@ class DatasetRunAuditTests(unittest.TestCase):
             summary = report_dir / "summary.json"
             summary.write_text(json.dumps(report) + "\n")
 
-            bag = root / "agv101_square_20260627_120000.bag"
-            bag.write_bytes(b"placeholder")
+            bag = root / "agv101_square_20260627_120000"
+            bag.mkdir()
             manifest = root / "agv101_square_20260627_120000_manifest.yaml"
             manifest.write_text(
                 "\n".join(
@@ -1425,7 +1425,7 @@ class DatasetRunAuditTests(unittest.TestCase):
                         "date: 2026-06-27",
                         "time_start: '12:00:00'",
                         "time_end: '12:01:00'",
-                        "bag_file: agv101_square_20260627_120000.bag",
+                        "bag_file: agv101_square_20260627_120000",
                         "duration_sec: 60",
                         "bag_size_mb: 1",
                     ]
@@ -1438,8 +1438,8 @@ class DatasetRunAuditTests(unittest.TestCase):
     def test_dataset_run_audit_rejects_unmatched_bag_and_manifest(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            bag = root / "agv100_other_20260627_120000.bag"
-            bag.write_bytes(b"placeholder")
+            bag = root / "agv100_other_20260627_120000"
+            bag.mkdir()
             manifest = root / "agv100_square_20260627_120000_manifest.yaml"
             manifest.write_text(
                 "\n".join(
@@ -1450,7 +1450,7 @@ class DatasetRunAuditTests(unittest.TestCase):
                         "date: 2026-06-27",
                         "time_start: '12:00:00'",
                         "time_end: '12:01:00'",
-                        "bag_file: agv100_square_20260627_120000.bag",
+                        "bag_file: agv100_square_20260627_120000",
                         "duration_sec: 60",
                         "bag_size_mb: 1",
                     ]
@@ -1469,7 +1469,6 @@ class FleetDoctorSummaryTests(unittest.TestCase):
             ROOT / "scripts/diagnostics/robot_doctor.sh",
             ROOT / "scripts/diagnostics/run_robot_doctor_remote.sh",
             ROOT / "scripts/diagnostics/run_fleet_doctor_remote.sh",
-            ROOT / "scripts/setup_robot.sh",
             ROOT / "scripts/setup_robot_ros2.sh",
             ROOT / "scripts/logging/start_session.sh",
         ]
@@ -1579,7 +1578,7 @@ class FleetDoctorSummaryTests(unittest.TestCase):
                         "date: 2026-06-27",
                         "time_start: 12:00:00",
                         "time_end: ~",
-                        "bag_file: missing.bag",
+                        "bag_file: missing_run",
                         "duration_sec: ~",
                         "bag_size_mb: ~",
                         "",

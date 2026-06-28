@@ -1,119 +1,109 @@
-#!/usr/bin/env python
-# -*- coding: utf-8 -*-
-"""
-extract_realsense_calib.py
---------------------------
-Reads factory camera intrinsics from live RealSense ROS topics and writes
-them to agv_ws/src/agv_bringup/calibration/camera_intrinsics.yaml.
+#!/usr/bin/env python3
+"""Capture RealSense camera intrinsics from live ROS2 CameraInfo topics."""
 
-Run AFTER starting bringup.launch:
-    roslaunch agv_bringup bringup.launch
-    python scripts/calibration/extract_realsense_calib.py
+from __future__ import annotations
 
-The script waits for one message on each camera_info topic, extracts
-K (camera matrix) and D (distortion), then writes the YAML.
-"""
-
+import argparse
+import datetime as dt
 import os
-import sys
-import datetime
+import time
+from pathlib import Path
+from typing import Optional
 
-import rospy
+import rclpy
+from rclpy.node import Node
 from sensor_msgs.msg import CameraInfo
 import yaml
 
-CALIB_YAML = os.path.join(
-    os.path.dirname(__file__),
-    "../../agv_ws/src/agv_bringup/calibration/camera_intrinsics.yaml"
-)
 
-COLOR_TOPIC = "/camera/color/camera_info"
-DEPTH_TOPIC = "/camera/depth/camera_info"
-
-TIMEOUT_S = 10.0
+ROOT = Path(__file__).resolve().parents[2]
+DEFAULT_OUTPUT = ROOT / "agv2_ws/src/agv_bringup/calibration/camera_intrinsics.yaml"
 
 
-def wait_for_camera_info(topic):
-    rospy.loginfo("Waiting for %s ...", topic)
-    try:
-        msg = rospy.wait_for_message(topic, CameraInfo, timeout=TIMEOUT_S)
-    except rospy.ROSException:
-        rospy.logerr("Timed out waiting for %s. Is bringup.launch running?", topic)
-        sys.exit(1)
-    return msg
-
-
-def camera_info_to_dict(msg):
+def camera_info_to_dict(msg: CameraInfo) -> dict:
     return {
-        "image_width":  msg.width,
+        "image_width": msg.width,
         "image_height": msg.height,
-        "camera_matrix": {
-            "rows": 3, "cols": 3,
-            "data": list(msg.K)
-        },
+        "camera_matrix": {"rows": 3, "cols": 3, "data": list(msg.k)},
         "distortion_model": msg.distortion_model,
-        "distortion_coefficients": {
-            "rows": 1,
-            "cols": len(msg.D),
-            "data": list(msg.D)
-        },
-        "rectification_matrix": {
-            "rows": 3, "cols": 3,
-            "data": list(msg.R)
-        },
-        "projection_matrix": {
-            "rows": 3, "cols": 4,
-            "data": list(msg.P)
-        }
+        "distortion_coefficients": {"rows": 1, "cols": len(msg.d), "data": list(msg.d)},
+        "rectification_matrix": {"rows": 3, "cols": 3, "data": list(msg.r)},
+        "projection_matrix": {"rows": 3, "cols": 4, "data": list(msg.p)},
     }
 
 
-def main():
-    rospy.init_node("extract_realsense_calib", anonymous=True)
+class CameraInfoCapture(Node):
+    def __init__(self, color_topic: str, depth_topic: str) -> None:
+        super().__init__("extract_realsense_calib")
+        self.color_msg: Optional[CameraInfo] = None
+        self.depth_msg: Optional[CameraInfo] = None
+        self.create_subscription(CameraInfo, color_topic, self._on_color, 10)
+        self.create_subscription(CameraInfo, depth_topic, self._on_depth, 10)
 
-    color_info = wait_for_camera_info(COLOR_TOPIC)
-    depth_info = wait_for_camera_info(DEPTH_TOPIC)
+    def _on_color(self, msg: CameraInfo) -> None:
+        self.color_msg = msg
 
-    today = datetime.date.today().isoformat()
-    hostname = os.uname()[1]
+    def _on_depth(self, msg: CameraInfo) -> None:
+        self.depth_msg = msg
 
-    calib = {
-        "calibration_date": today,
-        "calibration_operator": hostname,
-        "calibration_method": "factory",
-        "reprojection_error_px": None,
-        "color_camera": camera_info_to_dict(color_info),
-        "depth_camera": camera_info_to_dict(depth_info),
-        "color_to_depth_extrinsic": {
-            "note": "Read from /camera/extrinsics/depth_to_color — populate manually.",
-            "rotation":    [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0],
-            "translation": [0.015, 0.0, 0.0]
-        },
-        "depth_accuracy": {
-            "error_at_0_5m_mm": None,
-            "error_at_1_0m_mm": None,
-            "error_at_2_0m_mm": None,
-            "note": "Fill in from physical depth accuracy test (see STAGE_1_CALIBRATION_SOP.md 1c)"
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--color-topic", default="/camera/color/camera_info")
+    parser.add_argument("--depth-topic", default="/camera/depth/camera_info")
+    parser.add_argument("--timeout", type=float, default=10.0)
+    parser.add_argument("--output", default=str(DEFAULT_OUTPUT))
+    return parser.parse_args()
+
+
+def main() -> int:
+    args = parse_args()
+    rclpy.init()
+    node = CameraInfoCapture(args.color_topic, args.depth_topic)
+    deadline = time.monotonic() + args.timeout
+
+    node.get_logger().info(f"Waiting for {args.color_topic} and {args.depth_topic}")
+    try:
+        while rclpy.ok() and time.monotonic() < deadline:
+            if node.color_msg is not None and node.depth_msg is not None:
+                break
+            rclpy.spin_once(node, timeout_sec=0.1)
+        if node.color_msg is None or node.depth_msg is None:
+            node.get_logger().error("Timed out waiting for CameraInfo topics. Is ROS2 bringup running?")
+            return 1
+
+        calib = {
+            "calibration_date": dt.date.today().isoformat(),
+            "calibration_operator": os.uname().nodename,
+            "calibration_method": "factory_ros2_camera_info",
+            "reprojection_error_px": None,
+            "color_camera": camera_info_to_dict(node.color_msg),
+            "depth_camera": camera_info_to_dict(node.depth_msg),
+            "depth_to_color_extrinsic": {
+                "note": "Read from /camera/extrinsics/depth_to_color and populate if needed.",
+                "rotation": [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0],
+                "translation": [0.0, 0.0, 0.0],
+            },
+            "depth_accuracy": {
+                "error_at_0_5m_mm": None,
+                "error_at_1_0m_mm": None,
+                "error_at_2_0m_mm": None,
+            },
         }
-    }
 
-    out_path = os.path.realpath(CALIB_YAML)
-    with open(out_path, "w") as f:
-        yaml.dump(calib, f, default_flow_style=False)
-
-    rospy.loginfo("Written to %s", out_path)
-    rospy.loginfo("Color K: %s", color_info.K)
-    rospy.loginfo("Depth K: %s", depth_info.K)
-    rospy.loginfo("Color D: %s", color_info.D)
-
-    # Quick sanity: fx should be > 300 for a real camera
-    fx = color_info.K[0]
-    if fx < 300:
-        rospy.logwarn("fx=%.1f looks wrong — is the camera actually connected?", fx)
-    else:
-        rospy.loginfo("PASS: fx=%.1f looks plausible for D455 at %dx%d",
-                      fx, color_info.width, color_info.height)
+        output = Path(args.output).expanduser()
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text(yaml.safe_dump(calib, sort_keys=False))
+        fx = node.color_msg.k[0]
+        node.get_logger().info(f"Wrote {output}")
+        node.get_logger().info(f"Color fx={fx:.1f} at {node.color_msg.width}x{node.color_msg.height}")
+        if fx < 300:
+            node.get_logger().warning("fx looks low for a D455; confirm the expected camera profile.")
+        return 0
+    finally:
+        node.destroy_node()
+        rclpy.shutdown()
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

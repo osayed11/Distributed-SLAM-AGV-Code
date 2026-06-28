@@ -130,11 +130,8 @@ if [ -f "${ROOT}/scripts/setup_robot_ros2.sh" ]; then
         "${REMOTE}:${REMOTE_ROOT}/scripts/"
 fi
 
-# validate_bag.py belongs under scripts/logging on the robot; copy it again to
-# the canonical location so bag validation works with both ROS1 and ROS2 bags.
 run_scp \
     "${ROOT}/scripts/logging/validate_ros2_bag.py" \
-    "${ROOT}/scripts/logging/validate_bag.py" \
     "${REMOTE}:${REMOTE_ROOT}/scripts/logging/"
 
 if [ -f "${ROOT}/docs/ROBOT_DIAGNOSTIC_PIPELINE.md" ]; then

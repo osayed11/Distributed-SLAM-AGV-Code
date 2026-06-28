@@ -110,8 +110,9 @@ SUDO_PASSWORD=ubuntu bash scripts/setup_robot_ros2.sh agv110
 ```
 
 The setup script installs ROS 2 dependencies, RealSense tools, MCAP rosbag
-storage, Python MCAP parsing, udev rules, LiDAR/base permissions, and builds
-`agv2_ws`. It also runs a static diagnostic report at the end.
+storage, Python MCAP parsing, the native YDLidar SDK, udev rules, LiDAR/base
+permissions, and builds `agv2_ws`. It also runs a static diagnostic report at
+the end.
 
 Use these only for special cases:
 
@@ -456,16 +457,14 @@ Repository layout:
 ```text
 slam_project/
 ├── agv2_ws/                  active ROS 2 workspace
-├── agv_ws/                   legacy ROS 1 workspace, kept for reference/older robots
 ├── scripts/
 │   ├── diagnostics/          readiness gates, failure classification, audits
 │   ├── logging/              session recording, validators, motion helpers
 │   ├── mocap/                NatNet/OptiTrack helper tools
-│   ├── scenarios/            scenario launch helpers
 │   └── calibration/          calibration extraction and static tests
 ├── configs/                  dataset gate, recorder, RViz configs
 ├── docs/                     SOPs and diagnostic documentation
-├── drivers/                  vendored hardware SDKs
+├── drivers/YDLidar-SDK/      native SDK required by ydlidar_ros2_driver
 └── README.md
 ```
 
@@ -488,18 +487,3 @@ robot_doctor_selftest.py: OK
 diagnostic_pipeline_audit.py: all rows PASS
 shell syntax checks: no output
 ```
-
-## Legacy ROS 1 Notes
-
-The repository still contains the older ROS 1/catkin stack and validator for
-previous robots:
-
-```text
-scripts/setup_robot.sh
-scripts/logging/validate_bag.py
-agv_ws/
-myagv_ros/
-```
-
-Do not use the ROS 1 commands for new ROS 2 dataset robots unless you are
-intentionally debugging a legacy robot.

@@ -231,7 +231,7 @@ python3 scripts/diagnostics/dataset_run_audit.py \
 
 Use this as the final publishability check for a collected run. It fails if
 robot_doctor evidence is invalid, reports are not `dataset_ready`, bags fail the
-ROS1/ROS2 validators, manifests are incomplete, or the copied report/bag/manifest
+ROS2 validators, manifests are incomplete, or the copied report/bag/manifest
 artifacts do not match the same robot, scenario, and session identity.
 
 `effective_gate` records the exact gate values used for that run. This is what
@@ -252,18 +252,7 @@ Archive these fields with dataset metadata so a report can be reproduced later.
 
 ## Post-Run Bag Diagnosis
 
-ROS 1 bag:
-
-```bash
-bash scripts/diagnostics/robot_doctor.sh agv102 \
-  --profile dataset \
-  --require-bag \
-  --bag ~/agv_data/<run>.bag \
-  --require-gt \
-  --require-imu
-```
-
-ROS 2 bag directory, `.db3`, or `.mcap`:
+ROS2 bag directory, `.db3`, or `.mcap`:
 
 ```bash
 bash scripts/diagnostics/robot_doctor.sh agv102 \
@@ -274,10 +263,7 @@ bash scripts/diagnostics/robot_doctor.sh agv102 \
   --require-imu
 ```
 
-The doctor automatically dispatches to:
-
-- `scripts/logging/validate_bag.py` for ROS 1 `.bag`
-- `scripts/logging/validate_ros2_bag.py` for ROS 2 bag directories, `.db3`, and `.mcap`
+The doctor dispatches to `scripts/logging/validate_ros2_bag.py`.
 
 If `--profile dataset` runs without `--bag`, the report is a partial gate and
 `dataset_ready=false`. Add `--require-bag` for final post-run audits so missing
@@ -294,7 +280,7 @@ bag evidence is a hard failure instead of a warning.
 | `2.2` | Drivers/launch config | librealsense packages, RealSense tools, RealSense ROS package/runtime versions, ROS environment, optional bringup command |
 | `2.3` | ROS data quality | Topic presence, types, rates, IMU rate, live MoCap topic/rate |
 | `3.1` | Recording pipeline | Disk space, stale recorders, bag path/readability, resilient ROS2 storage evidence |
-| `3.2` | Validation pipeline | RealSense standalone stream gate, ROS1/ROS2 bag validation, metadata/rate/gap checks |
+| `3.2` | Validation pipeline | RealSense standalone stream gate, ROS2 bag validation, metadata/rate/gap checks |
 | `3.3` | Experiment execution | Clock sync, network/DNS, Wi-Fi management state, MoCap/operator confirmations, DDS discovery, anchor/obstacle confirmations |
 
 ## Interpreting Results
@@ -487,25 +473,13 @@ bash scripts/diagnostics/robot_doctor.sh agv102 \
 
 ## Optional Bringup Gate
 
-If sensors are not already running, the doctor can launch bringup temporarily:
-
-ROS 2 example:
+If sensors are not already running, the doctor can launch ROS2 bringup temporarily:
 
 ```bash
 bash scripts/diagnostics/robot_doctor.sh agv102 \
   --profile dataset \
   --ros ros2 \
   --bringup-cmd "ros2 launch agv_bringup bringup.launch.py" \
-  --bringup-wait 90
-```
-
-ROS 1 example:
-
-```bash
-bash scripts/diagnostics/robot_doctor.sh agv1 \
-  --profile dataset \
-  --ros ros1 \
-  --bringup-cmd "roslaunch agv_bringup bringup.launch" \
   --bringup-wait 90
 ```
 
@@ -528,7 +502,7 @@ remote self-test, execute the diagnostic, and copy the evidence folder back:
 
 ```bash
 SSH_PASS=ubuntu bash scripts/diagnostics/run_robot_doctor_remote.sh \
-  agv102 192.168.0.71 -- \
+  agv102 <robot-ip-or-hostname> -- \
   --config configs/robot_doctor_dataset_gate.json \
   --profile preflight
 ```
@@ -536,9 +510,9 @@ SSH_PASS=ubuntu bash scripts/diagnostics/run_robot_doctor_remote.sh \
 For multiple robots, create a host list:
 
 ```text
-agv100 192.168.50.179
+agv100 <robot-ip-or-hostname>
 agv101 agv101.local
-agv102 192.168.50.196
+agv102 <robot-ip-or-hostname>
 ```
 
 Then run the same gate over every robot:
@@ -559,7 +533,7 @@ For a strict dataset gate over SSH:
 
 ```bash
 SSH_PASS=ubuntu bash scripts/diagnostics/run_robot_doctor_remote.sh \
-  agv102 192.168.0.71 -- \
+  agv102 <robot-ip-or-hostname> -- \
   --config configs/robot_doctor_dataset_gate.json \
   --mocap-topic /optitrack/rigid_bodies/orkar_agv102 \
   --cmd-topic /agv102/cmd_vel \

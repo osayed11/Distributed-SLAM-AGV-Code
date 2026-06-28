@@ -161,7 +161,7 @@ wait_for_clock_sync_before_session_id
 DATESTAMP=$(date +%Y%m%d_%H%M%S)
 SESSION_ID="${ROBOT_NAME}_${SCENARIO}_${DATESTAMP}"
 BAG_DIR="${BAG_DIR:-${HOME}/agv_data}"
-BAG_FILE="${BAG_DIR}/${SESSION_ID}.bag"
+BAG_PATH="${BAG_DIR}/${SESSION_ID}"
 MANIFEST_FILE="${BAG_DIR}/${SESSION_ID}_manifest.yaml"
 CHRONY_FILE="${BAG_DIR}/${SESSION_ID}_chrony.txt"
 CAMERA_GATE_PRE_LOG="${BAG_DIR}/${SESSION_ID}_camera_gate_pre.log"
@@ -195,44 +195,34 @@ require_min_fps "${CAMERA_COLOR_FPS}" "CAMERA_COLOR_FPS"
 require_min_fps "${CAMERA_DEPTH_FPS}" "CAMERA_DEPTH_FPS"
 
 # ---------------------------------------------------------------------------
-# Source ROS
+# Source ROS 2
 # ---------------------------------------------------------------------------
-# Source ROS2 if available (preferred for agv2_ws robots), otherwise ROS1.
-ROS_VERSION=0
 if [ -f /opt/ros/humble/setup.bash ]; then
     source /opt/ros/humble/setup.bash
-    ROS_VERSION=2
 elif [ -f /opt/ros/iron/setup.bash ]; then
     source /opt/ros/iron/setup.bash
-    ROS_VERSION=2
-elif [ -f /opt/ros/noetic/setup.bash ]; then
-    source /opt/ros/noetic/setup.bash
-    ROS_VERSION=1
-elif [ -f /opt/ros/melodic/setup.bash ]; then
-    source /opt/ros/melodic/setup.bash
-    ROS_VERSION=1
 else
-    echo "ERROR: no supported ROS setup found under /opt/ros" >&2
+    echo "ERROR: no supported ROS 2 setup found under /opt/ros (expected Humble or Iron)." >&2
     exit 1
 fi
 
-# Source whichever workspace is built
 if [ -f "${ROOT}/agv2_ws/install/setup.bash" ]; then
     source "${ROOT}/agv2_ws/install/setup.bash"
-elif [ -f "${ROOT}/agv_ws/devel/setup.bash" ]; then
-    source "${ROOT}/agv_ws/devel/setup.bash"
+else
+    echo "ERROR: missing ROS 2 workspace setup: ${ROOT}/agv2_ws/install/setup.bash" >&2
+    echo "       Run bash scripts/setup_robot_ros2.sh ${ROBOT_NAME} before recording." >&2
+    exit 1
 fi
 
-if [ "${ROS_VERSION}" = "2" ]; then
-    if [ "${ROSBAG2_STORAGE_ID}" = "auto" ]; then
-        if ros2 bag record --help 2>/dev/null | grep -Eq '\bmcap\b'; then
-            ROSBAG2_STORAGE_ID_EFFECTIVE="mcap"
-        else
-            ROSBAG2_STORAGE_ID_EFFECTIVE="sqlite3"
-        fi
+ROS_VERSION=2
+if [ "${ROSBAG2_STORAGE_ID}" = "auto" ]; then
+    if ros2 bag record --help 2>/dev/null | grep -Eq '\bmcap\b'; then
+        ROSBAG2_STORAGE_ID_EFFECTIVE="mcap"
     else
-        ROSBAG2_STORAGE_ID_EFFECTIVE="${ROSBAG2_STORAGE_ID}"
+        ROSBAG2_STORAGE_ID_EFFECTIVE="sqlite3"
     fi
+else
+    ROSBAG2_STORAGE_ID_EFFECTIVE="${ROSBAG2_STORAGE_ID}"
 fi
 
 # ---------------------------------------------------------------------------
@@ -343,89 +333,20 @@ GROUND_TRUTH_TOPICS="${MOCAP_TOPIC} /mocap"
 ALL_OK=true
 
 _topic_list_ok() {
-    if [ "${ROS_VERSION}" = "2" ]; then
-        timeout 3 ros2 topic list > /dev/null 2>&1
-    else
-        rostopic list > /dev/null 2>&1
-    fi
+    timeout 3 ros2 topic list > /dev/null 2>&1
 }
 
 _topic_hz_ok() {
     local topic="$1"
-    if [ "${ROS_VERSION}" = "2" ]; then
-        timeout 6 ros2 topic hz --window 10 "$topic" 2>/dev/null | grep -q "average rate"
-    else
-        timeout 6 rostopic hz "$topic" --window 10 2>/dev/null | grep -q "average rate"
-    fi
+    timeout 6 ros2 topic hz --window 10 "$topic" 2>/dev/null | grep -q "average rate"
 }
 
 _topic_echo_ok() {
     local topic="$1"
-    if [ "${ROS_VERSION}" = "2" ]; then
-        timeout 3 ros2 topic echo --once "$topic" > /dev/null 2>&1
-    else
-        timeout 3 rostopic echo "$topic" -n 1 > /dev/null 2>&1
-    fi
+    timeout 3 ros2 topic echo --once "$topic" > /dev/null 2>&1
 }
 
-if [ "${ROS_VERSION}" = "2" ] || ! _topic_list_ok; then
-    echo "  [i] Skipping pre-flight topic probes; sensor gate runs after bringup."
-else
-    for topic in $REQUIRED_TOPICS; do
-        if _topic_hz_ok "$topic"; then
-            echo "  [OK] $topic publishing"
-        else
-            # Try simpler check
-            if _topic_echo_ok "$topic"; then
-                echo "  [OK] $topic publishing"
-            else
-                echo "  [!] $topic not detected - may not be running yet"
-                ALL_OK=false
-            fi
-        fi
-    done
-
-    for topic in $OPTIONAL_TOPICS; do
-        if _topic_hz_ok "$topic"; then
-            echo "  [OK] optional $topic publishing"
-        else
-            echo "  [i] optional $topic not detected"
-        fi
-    done
-
-    GT_OK=false
-    for topic in $GROUND_TRUTH_TOPICS; do
-        if _topic_echo_ok "$topic"; then
-            echo "  [OK] ground truth topic detected: $topic"
-            GT_OK=true
-            break
-        fi
-    done
-    if [ "$GT_OK" = false ]; then
-        if [ "$REQUIRE_GT" = true ]; then
-            echo "ERROR: no ground truth topic detected (${GROUND_TRUTH_TOPICS})"
-            exit 1
-        else
-            echo "  [i] no ground truth topic detected yet (${GROUND_TRUTH_TOPICS})"
-            echo "      Recording can proceed; use REQUIRE_GT=true when GT must be present."
-        fi
-    fi
-
-    if [ "$REQUIRE_IMU" = true ]; then
-        IMU_OK=false
-        for topic in $IMU_TOPICS; do
-            if _topic_hz_ok "$topic"; then
-                echo "  [OK] IMU topic detected: $topic"
-                IMU_OK=true
-                break
-            fi
-        done
-        if [ "$IMU_OK" = false ]; then
-            echo "ERROR: REQUIRE_IMU=true but no IMU topic is publishing (${IMU_TOPICS})."
-            exit 1
-        fi
-    fi
-fi
+echo "  [i] Skipping pre-flight topic probes; sensor gate runs after bringup."
 
 if [ "$ALL_OK" = false ]; then
     echo ""
@@ -437,8 +358,8 @@ fi
 # ---------------------------------------------------------------------------
 # Write initial manifest
 # ---------------------------------------------------------------------------
-ROS_DISTRO_VAL=$(echo "${ROS_DISTRO:-noetic}")
-CALIB_DIR="${ROOT}/agv_ws/src/agv_bringup/calibration"
+ROS_DISTRO_VAL=$(echo "${ROS_DISTRO:-humble}")
+CALIB_DIR="${ROOT}/agv2_ws/src/agv_bringup/calibration"
 if [ -d "$CALIB_DIR" ]; then
     CALIB_HASH=$(find "$CALIB_DIR" -type f | sort | xargs sha256sum 2>/dev/null | sha256sum | cut -d' ' -f1)
 else
@@ -456,6 +377,7 @@ time_end: ~
 operator: $(whoami)
 ros_distro: ${ROS_DISTRO_VAL}
 bag_dir: ${SESSION_ID}
+bag_file: ${SESSION_ID}
 chrony_file: ${SESSION_ID}_chrony.txt
 bag_size_mb: ~
 duration_sec: ~
@@ -515,7 +437,7 @@ EOF
 
 echo ""
 echo "=== Session: ${SESSION_ID} ==="
-echo "Bag:      ${BAG_FILE}"
+echo "Bag:      ${BAG_PATH}"
 echo "Manifest: ${MANIFEST_FILE}"
 echo ""
 echo "Press Ctrl+C to stop recording."
@@ -598,23 +520,10 @@ finalise_manifest() {
     DURATION=$((END_EPOCH - START_EPOCH))
     WATCHDOG_STATUS="not_started"
 
-    if [ "${ROS_VERSION}" = "2" ]; then
-        # ROS2 bag is a directory
-        BAG_PATH="${BAG_DIR}/${SESSION_ID}"
-        if [ -d "${BAG_PATH}" ]; then
-            BAG_SIZE_MB=$(du -sm "${BAG_PATH}" 2>/dev/null | cut -f1)
-        else
-            BAG_SIZE_MB="~"
-        fi
+    if [ -d "${BAG_PATH}" ]; then
+        BAG_SIZE_MB=$(du -sm "${BAG_PATH}" 2>/dev/null | cut -f1)
     else
-        # ROS1 bag is a .bag file
-        if [ -f "${BAG_FILE}" ]; then
-            BAG_SIZE_MB=$(du -m "${BAG_FILE}" 2>/dev/null | cut -f1)
-        else
-            # rosbag appends .bag automatically but also sometimes names it differently
-            ACTUAL_BAG=$(ls "${BAG_DIR}/${SESSION_ID}"*.bag 2>/dev/null | head -1)
-            BAG_SIZE_MB=$(du -m "${ACTUAL_BAG}" 2>/dev/null | cut -f1 || echo "~")
-        fi
+        BAG_SIZE_MB="~"
     fi
 
     # Update manifest with final values
@@ -632,15 +541,11 @@ finalise_manifest() {
     echo "Manifest written: ${MANIFEST_FILE}"
     echo ""
     echo "Run quality check:"
-    if [ "${ROS_VERSION}" = "2" ]; then
-        echo "  CMD_TOPIC=${CMD_TOPIC} python3 scripts/logging/validate_ros2_bag.py ${BAG_DIR}/${SESSION_ID} --require-resilient-storage"
-    else
-        echo "  python3 scripts/logging/validate_bag.py ${BAG_DIR}/${SESSION_ID}.bag"
-    fi
+    echo "  CMD_TOPIC=${CMD_TOPIC} python3 scripts/logging/validate_ros2_bag.py ${BAG_PATH} --require-resilient-storage"
 }
 
 run_camera_pre_gate() {
-    if [ "${ROS_VERSION}" != "2" ] || [ "${RUN_REALSENSE_CAMERA_GATE}" != "true" ]; then
+    if [ "${RUN_REALSENSE_CAMERA_GATE}" != "true" ]; then
         return 0
     fi
 
@@ -958,7 +863,7 @@ write_watchdog_stopped_cleanly_status() {
 }
 
 start_runtime_watchdog() {
-    if [ "${ROS_VERSION}" != "2" ] || [ "${ENABLE_RUNTIME_WATCHDOG}" != "true" ]; then
+    if [ "${ENABLE_RUNTIME_WATCHDOG}" != "true" ]; then
         echo "DISABLED" > "${RUNTIME_WATCHDOG_STATUS_FILE}"
         return 0
     fi
@@ -969,7 +874,7 @@ start_runtime_watchdog() {
 }
 
 run_camera_post_enumerate_gate() {
-    if [ "${ROS_VERSION}" != "2" ] || [ "${RUN_REALSENSE_CAMERA_GATE}" != "true" ]; then
+    if [ "${RUN_REALSENSE_CAMERA_GATE}" != "true" ]; then
         return 0
     fi
 
@@ -998,10 +903,6 @@ run_camera_post_enumerate_gate() {
 }
 
 run_realsense_fault_classification() {
-    if [ "${ROS_VERSION}" != "2" ]; then
-        return 0
-    fi
-
     if [ ! -f "${ROOT}/scripts/diagnostics/classify_realsense_fault.py" ]; then
         {
             echo "classification: INCONCLUSIVE"
@@ -1195,28 +1096,16 @@ fi
 
 KERNEL_RUNTIME_START_LINE="$(kernel_line_count)"
 echo "Starting bringup; log: ${BRINGUP_LOG}"
-if [ "${ROS_VERSION}" = "2" ]; then
-    COLOR_PROFILE="${CAMERA_COLOR_WIDTH}x${CAMERA_COLOR_HEIGHT}x${CAMERA_COLOR_FPS}"
-    DEPTH_PROFILE="${CAMERA_DEPTH_WIDTH}x${CAMERA_DEPTH_HEIGHT}x${CAMERA_DEPTH_FPS}"
-    setsid ros2 launch agv_bringup bringup.launch.py \
-        agv_serial_port:="/dev/ttyACM0" \
-        agv_color_profile:="${COLOR_PROFILE}" \
-        agv_depth_profile:="${DEPTH_PROFILE}" \
-        enable_sync:="${ENABLE_REALSENSE_SYNC}" \
-        initial_reset:="false" \
-        agv_cmd_vel_topic:="${CMD_TOPIC}" \
-        > "${BRINGUP_LOG}" 2>&1 &
-else
-    setsid roslaunch agv_bringup bringup.launch \
-        enable_realsense_sync:="${ENABLE_REALSENSE_SYNC}" \
-        color_width:="${CAMERA_COLOR_WIDTH}" \
-        color_height:="${CAMERA_COLOR_HEIGHT}" \
-        color_fps:="${CAMERA_COLOR_FPS}" \
-        depth_width:="${CAMERA_DEPTH_WIDTH}" \
-        depth_height:="${CAMERA_DEPTH_HEIGHT}" \
-        depth_fps:="${CAMERA_DEPTH_FPS}" \
-        > "${BRINGUP_LOG}" 2>&1 &
-fi
+COLOR_PROFILE="${CAMERA_COLOR_WIDTH}x${CAMERA_COLOR_HEIGHT}x${CAMERA_COLOR_FPS}"
+DEPTH_PROFILE="${CAMERA_DEPTH_WIDTH}x${CAMERA_DEPTH_HEIGHT}x${CAMERA_DEPTH_FPS}"
+setsid ros2 launch agv_bringup bringup.launch.py \
+    agv_serial_port:="/dev/ttyACM0" \
+    agv_color_profile:="${COLOR_PROFILE}" \
+    agv_depth_profile:="${DEPTH_PROFILE}" \
+    enable_sync:="${ENABLE_REALSENSE_SYNC}" \
+    initial_reset:="false" \
+    agv_cmd_vel_topic:="${CMD_TOPIC}" \
+    > "${BRINGUP_LOG}" 2>&1 &
 BRINGUP_PID=$!
 sleep 1
 BRINGUP_PGID="$(ps -o pgid= -p "${BRINGUP_PID}" 2>/dev/null | tr -d ' ')"
@@ -1272,81 +1161,56 @@ run_camera_pre_gate
 
 echo "Sensors are live; starting bag recording."
 START_EPOCH=$(date +%s)
-if [ "${ROS_VERSION}" = "2" ]; then
-    ROS2_RECORD_TOPICS=(
-        /scan
-        /odom
-        "${CMD_TOPIC}"
-        /tf
-        /tf_static
-        /camera/color/image_raw
-        /camera/color/camera_info
-        /camera/depth/camera_info
-        /camera/aligned_depth_to_color/image_raw
-        /camera/aligned_depth_to_color/camera_info
-        /camera/extrinsics/depth_to_color
-        /camera/imu
-        /camera/gyro/sample
-        /camera/accel/sample
-        /imu
-        /diagnostics
-        /tag_detections
-        "${MOCAP_TOPIC}"
-        /mocap
-    )
-    ROS2_STORAGE_ARGS=()
-    if [ -n "${ROSBAG2_STORAGE_ID_EFFECTIVE}" ]; then
-        ROS2_STORAGE_ARGS+=(-s "${ROSBAG2_STORAGE_ID_EFFECTIVE}")
-    fi
-    if [ "${ROSBAG2_STORAGE_ID_EFFECTIVE}" = "sqlite3" ] && [ -n "${ROSBAG2_STORAGE_CONFIG}" ]; then
-        if [ -f "${ROSBAG2_STORAGE_CONFIG}" ]; then
-            ROS2_STORAGE_ARGS+=(--storage-config-file "${ROSBAG2_STORAGE_CONFIG}")
-        else
-            echo "  [WARN] rosbag2 storage config not found: ${ROSBAG2_STORAGE_CONFIG}; using rosbag2 defaults."
-        fi
-    fi
-    if [ -n "${ROSBAG2_STORAGE_PRESET_PROFILE}" ]; then
-        ROS2_STORAGE_ARGS+=(--storage-preset-profile "${ROSBAG2_STORAGE_PRESET_PROFILE}")
-    fi
-    if [ -n "${ROSBAG2_QOS_OVERRIDES}" ]; then
-        if [ -f "${ROSBAG2_QOS_OVERRIDES}" ]; then
-            ROS2_STORAGE_ARGS+=(--qos-profile-overrides-path "${ROSBAG2_QOS_OVERRIDES}")
-        else
-            echo "  [WARN] rosbag2 QoS overrides file not found: ${ROSBAG2_QOS_OVERRIDES}; using rosbag2 QoS defaults."
-        fi
-    fi
-    if [ -n "${ROSBAG2_MAX_BAG_SIZE}" ] && [ "${ROSBAG2_MAX_BAG_SIZE}" != "0" ]; then
-        ROS2_STORAGE_ARGS+=(--max-bag-size "${ROSBAG2_MAX_BAG_SIZE}")
-    fi
-    # ROS2: ros2 bag record writes to a directory; -o specifies the directory name
-    ros2 bag record \
-        --max-cache-size "${ROSBAG2_MAX_CACHE_SIZE}" \
-        "${ROS2_STORAGE_ARGS[@]}" \
-        -o "${BAG_DIR}/${SESSION_ID}" \
-        "${ROS2_RECORD_TOPICS[@]}" &
-else
-    # ROS1 fallback for Melodic/Noetic robots
-    rosbag record --buffsize=2048 --lz4 -O "${BAG_FILE}" \
-        /scan \
-        /odom \
-        /cmd_vel \
-        /tf \
-        /tf_static \
-        /camera/color/image_raw \
-        /camera/color/camera_info \
-        /camera/depth/camera_info \
-        /camera/aligned_depth_to_color/image_raw \
-        /camera/aligned_depth_to_color/camera_info \
-        /camera/extrinsics/depth_to_color \
-        /camera/imu \
-        /camera/gyro/sample \
-        /camera/accel/sample \
-        /imu \
-        /diagnostics \
-        /tag_detections \
-        "${MOCAP_TOPIC}" \
-        /mocap &
+ROS2_RECORD_TOPICS=(
+    /scan
+    /odom
+    "${CMD_TOPIC}"
+    /tf
+    /tf_static
+    /camera/color/image_raw
+    /camera/color/camera_info
+    /camera/depth/camera_info
+    /camera/aligned_depth_to_color/image_raw
+    /camera/aligned_depth_to_color/camera_info
+    /camera/extrinsics/depth_to_color
+    /camera/imu
+    /camera/gyro/sample
+    /camera/accel/sample
+    /imu
+    /diagnostics
+    /tag_detections
+    "${MOCAP_TOPIC}"
+    /mocap
+)
+ROS2_STORAGE_ARGS=()
+if [ -n "${ROSBAG2_STORAGE_ID_EFFECTIVE}" ]; then
+    ROS2_STORAGE_ARGS+=(-s "${ROSBAG2_STORAGE_ID_EFFECTIVE}")
 fi
+if [ "${ROSBAG2_STORAGE_ID_EFFECTIVE}" = "sqlite3" ] && [ -n "${ROSBAG2_STORAGE_CONFIG}" ]; then
+    if [ -f "${ROSBAG2_STORAGE_CONFIG}" ]; then
+        ROS2_STORAGE_ARGS+=(--storage-config-file "${ROSBAG2_STORAGE_CONFIG}")
+    else
+        echo "  [WARN] rosbag2 storage config not found: ${ROSBAG2_STORAGE_CONFIG}; using rosbag2 defaults."
+    fi
+fi
+if [ -n "${ROSBAG2_STORAGE_PRESET_PROFILE}" ]; then
+    ROS2_STORAGE_ARGS+=(--storage-preset-profile "${ROSBAG2_STORAGE_PRESET_PROFILE}")
+fi
+if [ -n "${ROSBAG2_QOS_OVERRIDES}" ]; then
+    if [ -f "${ROSBAG2_QOS_OVERRIDES}" ]; then
+        ROS2_STORAGE_ARGS+=(--qos-profile-overrides-path "${ROSBAG2_QOS_OVERRIDES}")
+    else
+        echo "  [WARN] rosbag2 QoS overrides file not found: ${ROSBAG2_QOS_OVERRIDES}; using rosbag2 QoS defaults."
+    fi
+fi
+if [ -n "${ROSBAG2_MAX_BAG_SIZE}" ] && [ "${ROSBAG2_MAX_BAG_SIZE}" != "0" ]; then
+    ROS2_STORAGE_ARGS+=(--max-bag-size "${ROSBAG2_MAX_BAG_SIZE}")
+fi
+ros2 bag record \
+    --max-cache-size "${ROSBAG2_MAX_CACHE_SIZE}" \
+    "${ROS2_STORAGE_ARGS[@]}" \
+    -o "${BAG_PATH}" \
+    "${ROS2_RECORD_TOPICS[@]}" &
 ROSBAG_PID=$!
 RECORDING_STARTED=true
 start_runtime_watchdog

@@ -350,12 +350,12 @@ Every run should pass a QA pipeline.
 For this project, the most important next actions are:
 
 1. Finalize the real sensor suite on the AGV.
-2. Make `agv_ws/src/agv_bringup/launch/logging.launch` the single source of truth for collection.
-3. Add camera, IMU, UWB, and diagnostics topics to logging once verified.
-4. Define a metadata schema and write it on every run.
-5. Establish a calibration and synchronization SOP.
+2. Keep `scripts/logging/start_session.sh` as the single collection entry point.
+3. Keep camera, IMU, LiDAR, odom, command, diagnostics, and ground-truth topics in the ROS2 recorder.
+4. Keep the session manifest and diagnostic report with every run.
+5. Maintain the calibration and synchronization SOP.
 6. Build a scenario matrix before large-scale collection starts.
-7. Add QA scripts before recording a large number of runs.
+7. Run `dataset_run_audit.py --strict` before declaring a run publishable.
 8. Define benchmark splits and baseline methods early.
 
 ## Publication Readiness Gate

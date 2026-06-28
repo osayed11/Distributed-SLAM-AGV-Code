@@ -254,7 +254,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(
         description="Classify RealSense readiness failures from readiness, bringup, kernel, and hardware logs."
     )
-    parser.add_argument("--readiness-log", help="Full robot_readiness_check output log")
+    parser.add_argument("--readiness-log", help="Full readiness or RealSense gate output log")
     parser.add_argument("--bringup-log", help="ROS bringup log containing realsense2_camera output")
     parser.add_argument("--kernel-log", help="Kernel/dmesg log or snapshot")
     parser.add_argument("--hardware-log", action="append", default=[], help="Hardware snapshot log; may be repeated")
