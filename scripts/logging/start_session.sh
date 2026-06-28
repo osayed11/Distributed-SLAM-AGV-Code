@@ -333,7 +333,7 @@ echo "  [i] hardware snapshot: ${HARDWARE_PRE_LOG}"
 
 # Check required topics are publishing (best-effort, bounded timeout).
 # If logging.launch is allowed to start bringup itself these checks may warn
-# before sensors exist; validate_bag.py remains the authoritative post-run gate.
+# before sensors exist; validate_ros2_bag.py remains the authoritative post-run gate.
 REQUIRED_TOPICS="/scan /odom /tf /camera/color/image_raw /camera/aligned_depth_to_color/image_raw"
 OPTIONAL_TOPICS=""
 GROUND_TRUTH_TOPICS="${MOCAP_TOPIC} /mocap"
@@ -427,7 +427,7 @@ fi
 if [ "$ALL_OK" = false ]; then
     echo ""
     echo "WARNING: Some topics not detected. Starting logging anyway."
-    echo "Run validate_bag.py after recording to check data quality."
+    echo "Run validate_ros2_bag.py after recording to check data quality."
     echo ""
 fi
 
@@ -630,7 +630,7 @@ finalise_manifest() {
     echo ""
     echo "Run quality check:"
     if [ "${ROS_VERSION}" = "2" ]; then
-        echo "  python3 scripts/logging/validate_bag.py ${BAG_DIR}/${SESSION_ID}"
+        echo "  CMD_TOPIC=${CMD_TOPIC} python3 scripts/logging/validate_ros2_bag.py ${BAG_DIR}/${SESSION_ID} --require-resilient-storage"
     else
         echo "  python3 scripts/logging/validate_bag.py ${BAG_DIR}/${SESSION_ID}.bag"
     fi
