@@ -99,6 +99,9 @@ def required_specs() -> List[TopicSpec]:
     depth_info_topic = os.environ.get(
         "DEPTH_INFO_TOPIC", "/camera/aligned_depth_to_color/camera_info"
     )
+    rgbd_min_hz = env_float("RGBD_BAG_MIN_HZ", 10.0)
+    rgbd_target_hz = env_float("RGBD_TARGET_HZ", 15.0)
+    camera_info_min_hz = env_float("CAMERA_INFO_MIN_HZ", 10.0)
 
     specs = [
         TopicSpec("scan", ["/scan"], 5.0, 18.0),
@@ -106,19 +109,19 @@ def required_specs() -> List[TopicSpec]:
         TopicSpec("cmd_vel", [cmd_topic, "/cmd_vel"], 0.0, 0.0, required=require_cmd_vel),
         TopicSpec("tf", ["/tf"], 10.0, 12.5),
         TopicSpec("tf_static", ["/tf_static"], 0.0, 0.0),
-        TopicSpec("color_image", ["/camera/color/image_raw"], 12.0, 15.0),
-        TopicSpec("color_info", ["/camera/color/camera_info"], 12.0, 15.0),
+        TopicSpec("color_image", ["/camera/color/image_raw"], rgbd_min_hz, rgbd_target_hz),
+        TopicSpec("color_info", ["/camera/color/camera_info"], camera_info_min_hz, rgbd_target_hz),
         TopicSpec(
             "depth_image",
             [depth_topic, "/camera/aligned_depth_to_color/image_raw", "/camera/depth/image_rect_raw"],
-            12.0,
-            15.0,
+            rgbd_min_hz,
+            rgbd_target_hz,
         ),
         TopicSpec(
             "depth_info",
             [depth_info_topic, "/camera/aligned_depth_to_color/camera_info", "/camera/depth/camera_info"],
-            12.0,
-            15.0,
+            camera_info_min_hz,
+            rgbd_target_hz,
         ),
     ]
 
@@ -458,7 +461,10 @@ def gap_limits_for_topic(topic: str, target_hz: float) -> Tuple[float, float]:
             env_float("RGBD_MAJOR_GAP_SEC", 0.75),
         )
     expected = 1.0 / target_hz
-    return 1.5 * expected, 3.0 * expected
+    return (
+        max(1.5 * expected, env_float("MIN_MINOR_GAP_SEC", 0.0)),
+        max(3.0 * expected, env_float("MIN_MAJOR_GAP_SEC", 0.25)),
+    )
 
 
 def coverage_tolerance_sec(target_hz: float) -> float:

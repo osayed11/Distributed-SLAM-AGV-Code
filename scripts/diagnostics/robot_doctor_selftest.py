@@ -106,9 +106,11 @@ def write_ros2_bag(
     missing_topics: Optional[set[str]] = None,
     empty_topic: str = "",
     scan_major_gap: bool = False,
+    scan_bounded_gap: bool = False,
     scan_shutdown_gap: bool = False,
     truncated_topic: str = "",
     non_monotonic_topic: str = "",
+    topic_hz_overrides: Optional[dict[str, float]] = None,
 ) -> None:
     bag_dir.mkdir(parents=True, exist_ok=True)
     db_path = bag_dir / "test_0.db3"
@@ -128,9 +130,11 @@ def write_ros2_bag(
     missing = set(missing_topics or set())
     if missing_topic:
         missing.add(missing_topic)
-    for name, msg_type, hz in TOPICS:
+    hz_overrides = topic_hz_overrides or {}
+    for name, msg_type, default_hz in TOPICS:
         if name in missing:
             continue
+        hz = hz_overrides.get(name, default_hz)
         cur.execute("INSERT INTO topics VALUES (?,?,?,?,?)", (topic_id, name, msg_type, "cdr", ""))
         if name == empty_topic:
             topic_id += 1
@@ -144,6 +148,8 @@ def write_ros2_bag(
                 offset_ns = int(i * (topic_duration * 1e9 / (n_msgs - 1)))
             if scan_major_gap and name == "/scan" and i > n_msgs // 2:
                 offset_ns += 350_000_000
+            if scan_bounded_gap and name == "/scan" and i > n_msgs // 2:
+                offset_ns += 130_000_000
             if scan_shutdown_gap and name == "/scan" and i > n_msgs - max(3, int(hz)):
                 offset_ns += 350_000_000
             if non_monotonic_topic == name and i == n_msgs // 2:
@@ -224,6 +230,51 @@ class ValidateRos2BagTests(unittest.TestCase):
             self.assertEqual(rc, 1)
             failures = [item for item in report["results"] if item["level"] == "FAIL"]
             self.assertTrue(any(item["check"] == "scan_gaps" for item in failures))
+
+    def test_bounded_scan_gap_is_warning_not_failure(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            bag = Path(tmp) / "scan_bounded_gap"
+            write_ros2_bag(bag, scan_bounded_gap=True)
+            rc, report = run_validator(bag)
+            self.assertEqual(rc, 0)
+            failures = [item for item in report["results"] if item["level"] == "FAIL"]
+            self.assertFalse(any(item["check"] == "scan_gaps" for item in failures))
+            warnings = [item for item in report["results"] if item["level"] == "WARN"]
+            self.assertTrue(any(item["check"] == "scan_gaps" for item in warnings))
+
+    def test_default_full_system_rgbd_bag_rate_policy(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            bag = Path(tmp) / "full_system_rgbd_rates"
+            write_ros2_bag(
+                bag,
+                topic_hz_overrides={
+                    "/camera/color/image_raw": 11.0,
+                    "/camera/color/camera_info": 11.0,
+                    "/camera/aligned_depth_to_color/image_raw": 13.0,
+                    "/camera/aligned_depth_to_color/camera_info": 13.0,
+                },
+            )
+            rc, report = run_validator(bag)
+            self.assertEqual(rc, 0)
+            failures = [item for item in report["results"] if item["level"] == "FAIL"]
+            self.assertFalse(failures)
+
+    def test_rgbd_bag_rate_policy_can_be_tightened(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            bag = Path(tmp) / "strict_rgbd_rates"
+            write_ros2_bag(
+                bag,
+                topic_hz_overrides={
+                    "/camera/color/image_raw": 11.0,
+                    "/camera/color/camera_info": 11.0,
+                    "/camera/aligned_depth_to_color/image_raw": 13.0,
+                    "/camera/aligned_depth_to_color/camera_info": 13.0,
+                },
+            )
+            rc, report = run_validator(bag, {"RGBD_BAG_MIN_HZ": "12", "CAMERA_INFO_MIN_HZ": "12"})
+            self.assertEqual(rc, 1)
+            failures = [item for item in report["results"] if item["level"] == "FAIL"]
+            self.assertTrue(any(item["check"] == "color_image" for item in failures))
 
     def test_shutdown_edge_gap_does_not_fail(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

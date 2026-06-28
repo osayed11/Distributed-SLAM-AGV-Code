@@ -860,7 +860,7 @@ run_runtime_watchdog() {
     else
         echo "STOPPED_CLEANLY cycles=${cycle}" > "${RUNTIME_WATCHDOG_STATUS_FILE}"
     fi
-    echo "STOPPED_CLEANLY: rosbag no longer running" >> "${RUNTIME_WATCHDOG_LOG}"
+    echo "STOPPED_CLEANLY: ros2 bag recorder no longer running" >> "${RUNTIME_WATCHDOG_LOG}"
     return 0
 }
 
@@ -942,9 +942,9 @@ cleanup() {
 
     if [ -n "${ROSBAG_PID}" ] && kill -0 "${ROSBAG_PID}" 2>/dev/null; then
         echo ""
-        echo "Stopping rosbag..."
+        echo "Stopping ros2 bag recorder..."
         kill -INT "${ROSBAG_PID}" 2>/dev/null || true
-        wait_or_kill "${ROSBAG_PID}" "rosbag" "${ROSBAG_STOP_TIMEOUT}"
+        wait_or_kill "${ROSBAG_PID}" "ros2 bag recorder" "${ROSBAG_STOP_TIMEOUT}"
     fi
 
     if [ -n "${WATCHDOG_PID}" ] && kill -0 "${WATCHDOG_PID}" 2>/dev/null; then
@@ -1255,7 +1255,7 @@ if [ -s "${RUNTIME_WATCHDOG_STATUS_FILE}" ] && \
 fi
 
 if [ "${ROSBAG_RC}" -ne 0 ]; then
-    echo "ERROR: rosbag exited with status ${ROSBAG_RC}." >&2
+    echo "ERROR: ros2 bag recorder exited with status ${ROSBAG_RC}." >&2
     cleanup
     exit "${ROSBAG_RC}"
 fi

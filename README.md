@@ -222,7 +222,7 @@ bash scripts/logging/start_session.sh agv110 home_test
 7. runs the required live RealSense gate on the active bringup
 8. starts ros2 bag record with MCAP, sensor QoS overrides, and large cache
 9. runs a runtime watchdog for low-bandwidth liveness checks
-10. stops rosbag cleanly, stops bringup, checks post-run D455 enumeration
+10. stops `ros2 bag` cleanly, stops bringup, checks post-run D455 enumeration
 11. writes the manifest and RealSense fault classification
 ```
 
@@ -376,7 +376,8 @@ data.
 
 The ROS 2 validator ignores a small start/stop edge window for gap checks while
 still enforcing coverage and mid-run continuity. This avoids rejecting bags just
-because rosbag and drivers shut down at different speeds after `Ctrl+C`.
+because the `ros2 bag` recorder and drivers shut down at different speeds after
+`Ctrl+C`.
 
 Mid-run gaps still fail.
 
