@@ -38,6 +38,7 @@ REALSENSE_CAMERA_GATE_SECONDS="${REALSENSE_CAMERA_GATE_SECONDS:-90}"
 STRICT_REALSENSE_UVC_LOG="${STRICT_REALSENSE_UVC_LOG:-false}"
 ENABLE_RUNTIME_WATCHDOG="${ENABLE_RUNTIME_WATCHDOG:-true}"
 ENABLE_RUNTIME_RGBD_WATCHDOG="${ENABLE_RUNTIME_RGBD_WATCHDOG:-false}"
+ENABLE_RUNTIME_CAMERA_IMU_WATCHDOG="${ENABLE_RUNTIME_CAMERA_IMU_WATCHDOG:-false}"
 RUNTIME_WATCHDOG_STARTUP_DELAY="${RUNTIME_WATCHDOG_STARTUP_DELAY:-15}"
 RUNTIME_WATCHDOG_INTERVAL="${RUNTIME_WATCHDOG_INTERVAL:-20}"
 RUNTIME_WATCHDOG_HZ_TIMEOUT="${RUNTIME_WATCHDOG_HZ_TIMEOUT:-12}"
@@ -366,6 +367,7 @@ realsense_camera_gate_post_log: ${SESSION_ID}_camera_gate_post.log
 strict_realsense_uvc_log: ${STRICT_REALSENSE_UVC_LOG}
 runtime_watchdog_enabled: ${ENABLE_RUNTIME_WATCHDOG}
 runtime_rgbd_watchdog_enabled: ${ENABLE_RUNTIME_RGBD_WATCHDOG}
+runtime_camera_imu_watchdog_enabled: ${ENABLE_RUNTIME_CAMERA_IMU_WATCHDOG}
 runtime_watchdog_log: ${SESSION_ID}_runtime_watchdog.log
 runtime_watchdog_status: ~
 rgbd_startup_timeout_sec: ${RGBD_STARTUP_TIMEOUT}
@@ -711,6 +713,7 @@ run_runtime_watchdog() {
         echo "interval_sec: ${RUNTIME_WATCHDOG_INTERVAL}"
         echo "hz_timeout_sec: ${RUNTIME_WATCHDOG_HZ_TIMEOUT}"
         echo "runtime_rgbd_watchdog_enabled: ${ENABLE_RUNTIME_RGBD_WATCHDOG}"
+        echo "runtime_camera_imu_watchdog_enabled: ${ENABLE_RUNTIME_CAMERA_IMU_WATCHDOG}"
         echo "min_scan_hz: ${MIN_SCAN_HZ}"
         echo "min_odom_hz: ${MIN_ODOM_HZ}"
         echo "min_rgbd_hz: ${MIN_RGBD_HZ}"
@@ -739,7 +742,11 @@ run_runtime_watchdog() {
             echo "SKIP /camera/color/image_raw: high-bandwidth stream checked by pre-run gate and post-run bag audit" >> "${RUNTIME_WATCHDOG_LOG}"
             echo "SKIP /camera/aligned_depth_to_color/image_raw: high-bandwidth stream checked by pre-run gate and post-run bag audit" >> "${RUNTIME_WATCHDOG_LOG}"
         fi
-        watchdog_rate_check /camera/imu "${MIN_CAMERA_IMU_HZ}" "${RUNTIME_WATCHDOG_HZ_TIMEOUT}" 50 || failures=$((failures + 1))
+        if [ "${ENABLE_RUNTIME_CAMERA_IMU_WATCHDOG}" = true ]; then
+            watchdog_liveness_check /camera/imu 8 || failures=$((failures + 1))
+        else
+            echo "SKIP /camera/imu: high-rate camera stream checked by pre-run gate and post-run bag audit" >> "${RUNTIME_WATCHDOG_LOG}"
+        fi
         if [ "${REQUIRE_GT}" = true ]; then
             watchdog_rate_check "${MOCAP_TOPIC}" "${MIN_GT_HZ}" "${RUNTIME_WATCHDOG_HZ_TIMEOUT}" 20 || failures=$((failures + 1))
         fi
