@@ -33,6 +33,8 @@ REQUIRE_IMU="${REQUIRE_IMU:-false}"
 IMU_TOPICS="${IMU_TOPICS:-/camera/imu /imu}"
 ENABLE_REALSENSE_SYNC="${ENABLE_REALSENSE_SYNC:-false}"
 ROSBAG2_MAX_CACHE_SIZE="${ROSBAG2_MAX_CACHE_SIZE:-536870912}"
+ROSBAG2_STORAGE_CONFIG="${ROSBAG2_STORAGE_CONFIG:-${ROOT}/configs/sqlite_resilient.yaml}"
+ROSBAG2_STORAGE_PRESET_PROFILE="${ROSBAG2_STORAGE_PRESET_PROFILE:-}"
 RUN_REALSENSE_CAMERA_GATE="${RUN_REALSENSE_CAMERA_GATE:-true}"
 REALSENSE_CAMERA_GATE_SECONDS="${REALSENSE_CAMERA_GATE_SECONDS:-90}"
 STRICT_REALSENSE_UVC_LOG="${STRICT_REALSENSE_UVC_LOG:-false}"
@@ -42,6 +44,7 @@ ENABLE_RUNTIME_CAMERA_IMU_WATCHDOG="${ENABLE_RUNTIME_CAMERA_IMU_WATCHDOG:-false}
 RUNTIME_WATCHDOG_STARTUP_DELAY="${RUNTIME_WATCHDOG_STARTUP_DELAY:-15}"
 RUNTIME_WATCHDOG_INTERVAL="${RUNTIME_WATCHDOG_INTERVAL:-20}"
 RUNTIME_WATCHDOG_HZ_TIMEOUT="${RUNTIME_WATCHDOG_HZ_TIMEOUT:-12}"
+RUNTIME_WATCHDOG_MAX_CONSECUTIVE_FAILURES="${RUNTIME_WATCHDOG_MAX_CONSECUTIVE_FAILURES:-2}"
 MIN_RGBD_HZ="${MIN_RGBD_HZ:-12}"
 MIN_CAMERA_IMU_HZ="${MIN_CAMERA_IMU_HZ:-150}"
 MIN_SCAN_HZ="${MIN_SCAN_HZ:-5}"
@@ -357,6 +360,8 @@ imu_topics: "${IMU_TOPICS}"
 camera_imu: enabled
 enable_realsense_sync: ${ENABLE_REALSENSE_SYNC}
 rosbag2_max_cache_size_bytes: ${ROSBAG2_MAX_CACHE_SIZE}
+rosbag2_storage_config: "${ROSBAG2_STORAGE_CONFIG}"
+rosbag2_storage_preset_profile: "${ROSBAG2_STORAGE_PRESET_PROFILE}"
 realsense_camera_gate_required: ${RUN_REALSENSE_CAMERA_GATE}
 realsense_camera_gate_seconds: ${REALSENSE_CAMERA_GATE_SECONDS}
 rgbd_warn_gate_gap_sec: ${RGBD_WARN_GATE_GAP_SEC}
@@ -728,6 +733,7 @@ run_runtime_watchdog() {
         echo "startup_delay_sec: ${RUNTIME_WATCHDOG_STARTUP_DELAY}"
         echo "interval_sec: ${RUNTIME_WATCHDOG_INTERVAL}"
         echo "hz_timeout_sec: ${RUNTIME_WATCHDOG_HZ_TIMEOUT}"
+        echo "max_consecutive_failure_cycles: ${RUNTIME_WATCHDOG_MAX_CONSECUTIVE_FAILURES}"
         echo "runtime_rgbd_watchdog_enabled: ${ENABLE_RUNTIME_RGBD_WATCHDOG}"
         echo "runtime_camera_imu_watchdog_enabled: ${ENABLE_RUNTIME_CAMERA_IMU_WATCHDOG}"
         echo "min_scan_hz: ${MIN_SCAN_HZ}"
@@ -740,6 +746,7 @@ run_runtime_watchdog() {
     } > "${RUNTIME_WATCHDOG_LOG}"
     echo "RUNNING" > "${RUNTIME_WATCHDOG_STATUS_FILE}"
 
+    local consecutive_failure_cycles=0
     sleep "${RUNTIME_WATCHDOG_STARTUP_DELAY}"
     while [ -n "${ROSBAG_PID}" ] && kill -0 "${ROSBAG_PID}" 2>/dev/null; do
         cycle=$((cycle + 1))
@@ -768,12 +775,19 @@ run_runtime_watchdog() {
         fi
 
         if [ "${failures}" -ne 0 ]; then
-            echo "FAIL: ${failures} runtime watchdog check(s) failed; stopping recording." | tee -a "${RUNTIME_WATCHDOG_LOG}"
-            echo "FAIL_RUNTIME_WATCHDOG" > "${RUNTIME_WATCHDOG_STATUS_FILE}"
-            kill -INT "${ROSBAG_PID}" 2>/dev/null || true
-            return 1
+            consecutive_failure_cycles=$((consecutive_failure_cycles + 1))
+            echo "WARN: ${failures} runtime watchdog check(s) failed in cycle ${cycle}; consecutive_failure_cycles=${consecutive_failure_cycles}/${RUNTIME_WATCHDOG_MAX_CONSECUTIVE_FAILURES}" | tee -a "${RUNTIME_WATCHDOG_LOG}"
+            if [ "${consecutive_failure_cycles}" -ge "${RUNTIME_WATCHDOG_MAX_CONSECUTIVE_FAILURES}" ]; then
+                echo "FAIL: runtime watchdog failed ${consecutive_failure_cycles} consecutive cycle(s); stopping recording." | tee -a "${RUNTIME_WATCHDOG_LOG}"
+                echo "FAIL_RUNTIME_WATCHDOG" > "${RUNTIME_WATCHDOG_STATUS_FILE}"
+                kill -INT "${ROSBAG_PID}" 2>/dev/null || true
+                return 1
+            fi
+            sleep "${RUNTIME_WATCHDOG_INTERVAL}"
+            continue
         fi
 
+        consecutive_failure_cycles=0
         echo "PASS watchdog cycle ${cycle}" >> "${RUNTIME_WATCHDOG_LOG}"
         sleep "${RUNTIME_WATCHDOG_INTERVAL}"
     done
@@ -931,6 +945,8 @@ export IMU_TOPICS="$IMU_TOPICS"
 
 export ENABLE_REALSENSE_SYNC="$ENABLE_REALSENSE_SYNC"
 export ROSBAG2_MAX_CACHE_SIZE="$ROSBAG2_MAX_CACHE_SIZE"
+export ROSBAG2_STORAGE_CONFIG="$ROSBAG2_STORAGE_CONFIG"
+export ROSBAG2_STORAGE_PRESET_PROFILE="$ROSBAG2_STORAGE_PRESET_PROFILE"
 export RUN_REALSENSE_CAMERA_GATE="$RUN_REALSENSE_CAMERA_GATE"
 export REALSENSE_CAMERA_GATE_SECONDS="$REALSENSE_CAMERA_GATE_SECONDS"
 export STRICT_REALSENSE_UVC_LOG="$STRICT_REALSENSE_UVC_LOG"
@@ -1119,9 +1135,21 @@ if [ "${ROS_VERSION}" = "2" ]; then
         "${MOCAP_TOPIC}"
         /mocap
     )
+    ROS2_STORAGE_ARGS=()
+    if [ -n "${ROSBAG2_STORAGE_CONFIG}" ]; then
+        if [ -f "${ROSBAG2_STORAGE_CONFIG}" ]; then
+            ROS2_STORAGE_ARGS+=(--storage-config-file "${ROSBAG2_STORAGE_CONFIG}")
+        else
+            echo "  [WARN] rosbag2 storage config not found: ${ROSBAG2_STORAGE_CONFIG}; using rosbag2 defaults."
+        fi
+    fi
+    if [ -n "${ROSBAG2_STORAGE_PRESET_PROFILE}" ]; then
+        ROS2_STORAGE_ARGS+=(--storage-preset-profile "${ROSBAG2_STORAGE_PRESET_PROFILE}")
+    fi
     # ROS2: ros2 bag record writes to a directory; -o specifies the directory name
     ros2 bag record \
         --max-cache-size "${ROSBAG2_MAX_CACHE_SIZE}" \
+        "${ROS2_STORAGE_ARGS[@]}" \
         -o "${BAG_DIR}/${SESSION_ID}" \
         "${ROS2_RECORD_TOPICS[@]}" &
 else
