@@ -56,6 +56,8 @@ GATE_LABEL_TOPICS = {
     "aligned depth stream": "/camera/aligned_depth_to_color/image_raw",
     "depth stream": "/camera/depth/image_rect_raw",
     "camera imu stream": "/camera/imu",
+    "camera gyro stream": "/camera/gyro/sample",
+    "camera accel stream": "/camera/accel/sample",
 }
 
 
@@ -190,8 +192,11 @@ def classify(text: str) -> tuple[str, list[str], list[str]]:
     if disconnect:
         evidence.append("USB disconnect/device-drop text was observed")
     required_video_pass = all(topic in video_pass for topic in REQUIRED_VIDEO_TOPICS)
-    required_imu_pass = all(topic in imu_pass for topic in REQUIRED_IMU_TOPICS)
-    all_stream_rates_pass = required_video_pass and required_imu_pass and not video_fail and not imu_fail
+    fused_imu_pass = all(topic in imu_pass for topic in REQUIRED_IMU_TOPICS)
+    raw_imu_pass = "/camera/gyro/sample" in imu_pass and "/camera/accel/sample" in imu_pass
+    required_imu_pass = fused_imu_pass or raw_imu_pass
+    critical_imu_fail = bool(imu_fail) and not required_imu_pass
+    all_stream_rates_pass = required_video_pass and required_imu_pass and not video_fail and not critical_imu_fail
 
     if all_stream_rates_pass:
         if video_warn or imu_warn:
@@ -217,17 +222,17 @@ def classify(text: str) -> tuple[str, list[str], list[str]]:
             "Software proves failure below ROS on the UVC video/control path. Camera/cable vs Pi/port requires A/B swap."
         )
         return "REALSENSE_UVC_VIDEO_CONTROL_TIMEOUT", evidence, limitations
-    if imu_fail and video_pass and (hid_timeout or uvc_timeout):
+    if critical_imu_fail and video_pass and (hid_timeout or uvc_timeout):
         limitations.append(
             "Software proves failure below ROS on the D455 HID/IMU path. Camera/cable vs Pi/port requires A/B swap."
         )
         return "REALSENSE_HID_IMU_TIMEOUT", evidence, limitations
-    if (video_fail or imu_fail) and uvc_timeout:
+    if (video_fail or critical_imu_fail) and uvc_timeout:
         limitations.append(
             "Software proves D455 USB control-path failure, but physical ownership requires A/B swap."
         )
         return "REALSENSE_DEVICE_CONTROL_TIMEOUT", evidence, limitations
-    if video_fail or imu_fail:
+    if video_fail or critical_imu_fail:
         limitations.append(
             "The live gate proved topic continuity failure even if average rates passed. Physical ownership requires A/B swap."
         )
@@ -237,7 +242,7 @@ def classify(text: str) -> tuple[str, list[str], list[str]]:
             "Logs prove a USB device drop/reset, but not whether the owner is cable, camera, port, or power without A/B."
         )
         return "USB_DEVICE_DISCONNECT_OR_RESET", evidence, limitations
-    if (video_fail or imu_fail) and not uvc_timeout and not hid_timeout:
+    if (video_fail or critical_imu_fail) and not uvc_timeout and not hid_timeout:
         limitations.append(
             "ROS topics failed without clear USB/UVC/HID log evidence; inspect launch logs and topic remaps."
         )

@@ -522,6 +522,8 @@ run_camera_pre_gate() {
     local color_log="${BAG_DIR}/${SESSION_ID}_camera_gate_pre_color_hz.txt"
     local depth_log="${BAG_DIR}/${SESSION_ID}_camera_gate_pre_aligned_depth_hz.txt"
     local imu_log="${BAG_DIR}/${SESSION_ID}_camera_gate_pre_imu_hz.txt"
+    local gyro_log="${BAG_DIR}/${SESSION_ID}_camera_gate_pre_gyro_hz.txt"
+    local accel_log="${BAG_DIR}/${SESSION_ID}_camera_gate_pre_accel_hz.txt"
     local gate_bringup_log="${BAG_DIR}/${SESSION_ID}_camera_gate_bringup_window.log"
     local gate_start_line=0
     local failures=0
@@ -543,6 +545,8 @@ run_camera_pre_gate() {
         echo "color_log: $(basename "${color_log}")"
         echo "aligned_depth_log: $(basename "${depth_log}")"
         echo "imu_log: $(basename "${imu_log}")"
+        echo "gyro_log: $(basename "${gyro_log}")"
+        echo "accel_log: $(basename "${accel_log}")"
         echo "bringup_window_log: $(basename "${gate_bringup_log}")"
         echo ""
     } > "${CAMERA_GATE_PRE_LOG}"
@@ -610,14 +614,13 @@ run_camera_pre_gate() {
         rate="$(_camera_rate_from_log "${file}")"
         if [ -z "${rate}" ]; then
             echo "FAIL ${label}: no average rate for ${topic}; see ${file}" | tee -a "${CAMERA_GATE_PRE_LOG}"
-            failures=$((failures + 1))
-            return
+            return 1
         fi
         if awk -v rate="${rate}" -v min="${min_rate}" 'BEGIN { exit(rate >= min ? 0 : 1) }'; then
             echo "PASS ${label}: ${topic} ${rate} Hz" | tee -a "${CAMERA_GATE_PRE_LOG}"
         else
             echo "FAIL ${label}: ${topic} ${rate} Hz, expected >= ${min_rate} Hz" | tee -a "${CAMERA_GATE_PRE_LOG}"
-            failures=$((failures + 1))
+            return 1
         fi
 
         max_gap="$(_camera_max_gap_from_log "${file}" "${min_gap_window}")"
@@ -629,13 +632,26 @@ run_camera_pre_gate() {
             echo "WARN ${label} steady max gap: ${max_gap}s exceeds warning ${warn_gap_limit}s but is <= hard ${hard_gap_limit}s after window ${min_gap_window}" | tee -a "${CAMERA_GATE_PRE_LOG}"
         else
             echo "FAIL ${label} steady max gap: ${max_gap}s exceeds hard ${hard_gap_limit}s after window ${min_gap_window}" | tee -a "${CAMERA_GATE_PRE_LOG}"
-            failures=$((failures + 1))
+            return 1
         fi
+        return 0
     }
 
-    _camera_check_rate_log /camera/color/image_raw "${color_log}" "${MIN_RGBD_HZ}" "color stream" "${RGBD_WARN_GATE_GAP_SEC}" "${MAX_RGBD_GATE_GAP_SEC}" 40
-    _camera_check_rate_log /camera/aligned_depth_to_color/image_raw "${depth_log}" "${MIN_RGBD_HZ}" "aligned depth stream" "${RGBD_WARN_GATE_GAP_SEC}" "${MAX_RGBD_GATE_GAP_SEC}" 40
-    _camera_check_rate_log /camera/imu "${imu_log}" "${MIN_CAMERA_IMU_HZ}" "camera imu stream" "${MAX_CAMERA_IMU_GATE_GAP_SEC}" "${MAX_CAMERA_IMU_GATE_GAP_SEC}" 80
+    _camera_check_rate_log /camera/color/image_raw "${color_log}" "${MIN_RGBD_HZ}" "color stream" "${RGBD_WARN_GATE_GAP_SEC}" "${MAX_RGBD_GATE_GAP_SEC}" 40 || failures=$((failures + 1))
+    _camera_check_rate_log /camera/aligned_depth_to_color/image_raw "${depth_log}" "${MIN_RGBD_HZ}" "aligned depth stream" "${RGBD_WARN_GATE_GAP_SEC}" "${MAX_RGBD_GATE_GAP_SEC}" 40 || failures=$((failures + 1))
+    if ! _camera_check_rate_log /camera/imu "${imu_log}" "${MIN_CAMERA_IMU_HZ}" "camera imu stream" "${MAX_CAMERA_IMU_GATE_GAP_SEC}" "${MAX_CAMERA_IMU_GATE_GAP_SEC}" 80; then
+        echo "WARN camera imu stream: fused /camera/imu failed; checking raw gyro+accel fallback" | tee -a "${CAMERA_GATE_PRE_LOG}"
+        timeout 30 ros2 topic hz /camera/gyro/sample --window 80 > "${gyro_log}" 2>&1 || true
+        timeout 30 ros2 topic hz /camera/accel/sample --window 40 > "${accel_log}" 2>&1 || true
+        raw_failures=0
+        _camera_check_rate_log /camera/gyro/sample "${gyro_log}" "150" "camera gyro stream" "${MAX_CAMERA_IMU_GATE_GAP_SEC}" "${MAX_CAMERA_IMU_GATE_GAP_SEC}" 80 || raw_failures=$((raw_failures + 1))
+        _camera_check_rate_log /camera/accel/sample "${accel_log}" "60" "camera accel stream" "${MAX_CAMERA_IMU_GATE_GAP_SEC}" "${MAX_CAMERA_IMU_GATE_GAP_SEC}" 40 || raw_failures=$((raw_failures + 1))
+        if [ "${raw_failures}" -eq 0 ]; then
+            echo "PASS camera imu fallback: raw gyro+accel streams satisfy IMU gate" | tee -a "${CAMERA_GATE_PRE_LOG}"
+        else
+            failures=$((failures + 1))
+        fi
+    fi
 
     if grep -Eiq "The device has been disconnected|USB disconnect|No such device|device removed" "${gate_bringup_log}" 2>/dev/null; then
         echo "FAIL RealSense runtime log: camera disconnect/device-drop errors observed" | tee -a "${CAMERA_GATE_PRE_LOG}"

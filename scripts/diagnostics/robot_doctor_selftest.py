@@ -820,6 +820,23 @@ speed=5000
         classification, _, _ = classify_realsense_fault(text)
         self.assertEqual(classification, "REALSENSE_STREAM_GAP_FAILURE")
 
+    def test_raw_imu_fallback_allows_fused_imu_gap(self) -> None:
+        text = """
+PASS color stream: /camera/color/image_raw 14.638 Hz
+PASS aligned depth stream: /camera/aligned_depth_to_color/image_raw 14.986 Hz
+FAIL camera imu stream steady max gap: 2.046s exceeds hard 0.10s after window 80
+WARN camera imu stream: fused /camera/imu failed; checking raw gyro+accel fallback
+PASS camera gyro stream: /camera/gyro/sample 199.900 Hz
+PASS camera gyro stream steady max gap: 0.010s <= warning 0.10s after window 80
+PASS camera accel stream: /camera/accel/sample 99.900 Hz
+PASS camera accel stream steady max gap: 0.020s <= warning 0.10s after window 40
+PASS camera imu fallback: raw gyro+accel streams satisfy IMU gate
+speed=5000
+"""
+        classification, evidence, _ = classify_realsense_fault(text)
+        self.assertEqual(classification, "PASS_WITH_STREAM_WARNINGS")
+        self.assertTrue(any("IMU/HID topics produced rate data" in item for item in evidence))
+
 
 class RobotDoctorDecisionTests(unittest.TestCase):
     def test_operator_decision_block_matches_target_shape(self) -> None:
