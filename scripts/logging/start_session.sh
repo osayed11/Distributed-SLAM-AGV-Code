@@ -46,6 +46,7 @@ ROSBAG2_STORAGE_ID="${ROSBAG2_STORAGE_ID:-auto}"
 ROSBAG2_STORAGE_ID_EFFECTIVE="${ROSBAG2_STORAGE_ID}"
 ROSBAG2_STORAGE_CONFIG="${ROSBAG2_STORAGE_CONFIG:-${ROOT}/configs/sqlite_resilient.yaml}"
 ROSBAG2_STORAGE_PRESET_PROFILE="${ROSBAG2_STORAGE_PRESET_PROFILE:-}"
+ROSBAG2_QOS_OVERRIDES="${ROSBAG2_QOS_OVERRIDES:-${ROOT}/configs/rosbag2_sensor_qos.yaml}"
 ROSBAG_STOP_TIMEOUT="${ROSBAG_STOP_TIMEOUT:-180}"
 BRINGUP_STOP_TIMEOUT="${BRINGUP_STOP_TIMEOUT:-60}"
 WATCHDOG_STOP_TIMEOUT="${WATCHDOG_STOP_TIMEOUT:-15}"
@@ -472,6 +473,7 @@ rosbag2_storage_id_requested: "${ROSBAG2_STORAGE_ID}"
 rosbag2_storage_id_effective: "${ROSBAG2_STORAGE_ID_EFFECTIVE}"
 rosbag2_storage_config: "${ROSBAG2_STORAGE_CONFIG}"
 rosbag2_storage_preset_profile: "${ROSBAG2_STORAGE_PRESET_PROFILE}"
+rosbag2_qos_overrides: "${ROSBAG2_QOS_OVERRIDES}"
 rosbag_stop_timeout_sec: ${ROSBAG_STOP_TIMEOUT}
 bringup_stop_timeout_sec: ${BRINGUP_STOP_TIMEOUT}
 realsense_camera_gate_required: ${RUN_REALSENSE_CAMERA_GATE}
@@ -1094,6 +1096,7 @@ export ROSBAG2_STORAGE_ID="$ROSBAG2_STORAGE_ID"
 export ROSBAG2_STORAGE_ID_EFFECTIVE="$ROSBAG2_STORAGE_ID_EFFECTIVE"
 export ROSBAG2_STORAGE_CONFIG="$ROSBAG2_STORAGE_CONFIG"
 export ROSBAG2_STORAGE_PRESET_PROFILE="$ROSBAG2_STORAGE_PRESET_PROFILE"
+export ROSBAG2_QOS_OVERRIDES="$ROSBAG2_QOS_OVERRIDES"
 export ROSBAG_STOP_TIMEOUT="$ROSBAG_STOP_TIMEOUT"
 export BRINGUP_STOP_TIMEOUT="$BRINGUP_STOP_TIMEOUT"
 export WATCHDOG_STOP_TIMEOUT="$WATCHDOG_STOP_TIMEOUT"
@@ -1301,6 +1304,13 @@ if [ "${ROS_VERSION}" = "2" ]; then
     fi
     if [ -n "${ROSBAG2_STORAGE_PRESET_PROFILE}" ]; then
         ROS2_STORAGE_ARGS+=(--storage-preset-profile "${ROSBAG2_STORAGE_PRESET_PROFILE}")
+    fi
+    if [ -n "${ROSBAG2_QOS_OVERRIDES}" ]; then
+        if [ -f "${ROSBAG2_QOS_OVERRIDES}" ]; then
+            ROS2_STORAGE_ARGS+=(--qos-profile-overrides-path "${ROSBAG2_QOS_OVERRIDES}")
+        else
+            echo "  [WARN] rosbag2 QoS overrides file not found: ${ROSBAG2_QOS_OVERRIDES}; using rosbag2 QoS defaults."
+        fi
     fi
     if [ -n "${ROSBAG2_MAX_BAG_SIZE}" ] && [ "${ROSBAG2_MAX_BAG_SIZE}" != "0" ]; then
         ROS2_STORAGE_ARGS+=(--max-bag-size "${ROSBAG2_MAX_BAG_SIZE}")

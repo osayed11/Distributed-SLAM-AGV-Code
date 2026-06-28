@@ -1,0 +1,30 @@
+/camera/color/image_raw:
+  history: keep_last
+  depth: 10
+  reliability: best_effort
+  durability: volatile
+/camera/aligned_depth_to_color/image_raw:
+  history: keep_last
+  depth: 10
+  reliability: best_effort
+  durability: volatile
+/camera/imu:
+  history: keep_last
+  depth: 1000
+  reliability: best_effort
+  durability: volatile
+/camera/gyro/sample:
+  history: keep_last
+  depth: 1000
+  reliability: best_effort
+  durability: volatile
+/camera/accel/sample:
+  history: keep_last
+  depth: 1000
+  reliability: best_effort
+  durability: volatile
+/scan:
+  history: keep_last
+  depth: 100
+  reliability: best_effort
+  durability: volatile
