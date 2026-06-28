@@ -1164,7 +1164,7 @@ class Doctor:
         result = self.run(
             "dev_nodes_permissions",
             "id; groups; "
-            "ls -l /dev/video* /dev/media* /dev/hidraw* /dev/ttyS0 /dev/ttyAMA0 /dev/ttyACM* /dev/ttyUSB* 2>/dev/null || true",
+            "ls -l /dev/video* /dev/media* /dev/hidraw* /dev/ydlidar /dev/ttyS0 /dev/ttyAMA0 /dev/ttyACM* /dev/ttyUSB* 2>/dev/null || true",
             timeout=8,
         )
         text = self.command_output(result)
@@ -1177,7 +1177,7 @@ class Doctor:
         missing = []
         if "/dev/video" in text and "video" not in groups:
             missing.append("video")
-        if re.search(r"/dev/tty(?:S|AMA|ACM|USB)", text) and "dialout" not in groups:
+        if re.search(r"/dev/(?:ydlidar|tty(?:S|AMA|ACM|USB))", text) and "dialout" not in groups:
             missing.append("dialout")
         if "/dev/hidraw" in text and not ({"plugdev", "input"} & groups):
             missing.append("plugdev/input")
@@ -1761,12 +1761,13 @@ class Doctor:
     def check_serial_devices(self) -> None:
         result = self.run(
             "serial_devices",
-            "ls -l /dev/ttyS0 /dev/ttyAMA0 /dev/ttyACM* /dev/ttyUSB* 2>/dev/null || true; "
+            "ls -l /dev/ydlidar /dev/ttyS0 /dev/ttyAMA0 /dev/ttyACM* /dev/ttyUSB* 2>/dev/null || true; "
+            "udevadm info -q property -n /dev/ydlidar 2>/dev/null | sed -n '1,80p' || true; "
             "udevadm info -q property -n /dev/ttyS0 2>/dev/null | sed -n '1,80p' || true",
             timeout=8,
         )
         text = self.command_output(result)
-        if "/dev/tty" not in text:
+        if "/dev/tty" not in text and "/dev/ydlidar" not in text:
             status = FAIL if self.args.profile == "dataset" else WARN
             self.add(
                 "1.1",
