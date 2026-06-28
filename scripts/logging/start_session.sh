@@ -32,8 +32,10 @@ REQUIRE_GT="${REQUIRE_GT:-false}"
 REQUIRE_IMU="${REQUIRE_IMU:-false}"
 IMU_TOPICS="${IMU_TOPICS:-/camera/imu /imu}"
 ENABLE_REALSENSE_SYNC="${ENABLE_REALSENSE_SYNC:-false}"
-ROSBAG2_MAX_CACHE_SIZE="${ROSBAG2_MAX_CACHE_SIZE:-67108864}"
+ROSBAG2_MAX_CACHE_SIZE="${ROSBAG2_MAX_CACHE_SIZE:-268435456}"
 ROSBAG2_MAX_BAG_SIZE="${ROSBAG2_MAX_BAG_SIZE:-2147483648}"
+ROSBAG2_STORAGE_ID="${ROSBAG2_STORAGE_ID:-auto}"
+ROSBAG2_STORAGE_ID_EFFECTIVE="${ROSBAG2_STORAGE_ID}"
 ROSBAG2_STORAGE_CONFIG="${ROSBAG2_STORAGE_CONFIG:-${ROOT}/configs/sqlite_resilient.yaml}"
 ROSBAG2_STORAGE_PRESET_PROFILE="${ROSBAG2_STORAGE_PRESET_PROFILE:-}"
 ROSBAG_STOP_TIMEOUT="${ROSBAG_STOP_TIMEOUT:-180}"
@@ -132,6 +134,18 @@ if [ -f "${ROOT}/agv2_ws/install/setup.bash" ]; then
     source "${ROOT}/agv2_ws/install/setup.bash"
 elif [ -f "${ROOT}/agv_ws/devel/setup.bash" ]; then
     source "${ROOT}/agv_ws/devel/setup.bash"
+fi
+
+if [ "${ROS_VERSION}" = "2" ]; then
+    if [ "${ROSBAG2_STORAGE_ID}" = "auto" ]; then
+        if ros2 bag record --help 2>/dev/null | grep -Eq '\bmcap\b'; then
+            ROSBAG2_STORAGE_ID_EFFECTIVE="mcap"
+        else
+            ROSBAG2_STORAGE_ID_EFFECTIVE="sqlite3"
+        fi
+    else
+        ROSBAG2_STORAGE_ID_EFFECTIVE="${ROSBAG2_STORAGE_ID}"
+    fi
 fi
 
 # ---------------------------------------------------------------------------
@@ -368,6 +382,8 @@ camera_imu: enabled
 enable_realsense_sync: ${ENABLE_REALSENSE_SYNC}
 rosbag2_max_cache_size_bytes: ${ROSBAG2_MAX_CACHE_SIZE}
 rosbag2_max_bag_size_bytes: ${ROSBAG2_MAX_BAG_SIZE}
+rosbag2_storage_id_requested: "${ROSBAG2_STORAGE_ID}"
+rosbag2_storage_id_effective: "${ROSBAG2_STORAGE_ID_EFFECTIVE}"
 rosbag2_storage_config: "${ROSBAG2_STORAGE_CONFIG}"
 rosbag2_storage_preset_profile: "${ROSBAG2_STORAGE_PRESET_PROFILE}"
 rosbag_stop_timeout_sec: ${ROSBAG_STOP_TIMEOUT}
@@ -988,6 +1004,8 @@ export IMU_TOPICS="$IMU_TOPICS"
 export ENABLE_REALSENSE_SYNC="$ENABLE_REALSENSE_SYNC"
 export ROSBAG2_MAX_CACHE_SIZE="$ROSBAG2_MAX_CACHE_SIZE"
 export ROSBAG2_MAX_BAG_SIZE="$ROSBAG2_MAX_BAG_SIZE"
+export ROSBAG2_STORAGE_ID="$ROSBAG2_STORAGE_ID"
+export ROSBAG2_STORAGE_ID_EFFECTIVE="$ROSBAG2_STORAGE_ID_EFFECTIVE"
 export ROSBAG2_STORAGE_CONFIG="$ROSBAG2_STORAGE_CONFIG"
 export ROSBAG2_STORAGE_PRESET_PROFILE="$ROSBAG2_STORAGE_PRESET_PROFILE"
 export ROSBAG_STOP_TIMEOUT="$ROSBAG_STOP_TIMEOUT"
@@ -1185,7 +1203,10 @@ if [ "${ROS_VERSION}" = "2" ]; then
         /mocap
     )
     ROS2_STORAGE_ARGS=()
-    if [ -n "${ROSBAG2_STORAGE_CONFIG}" ]; then
+    if [ -n "${ROSBAG2_STORAGE_ID_EFFECTIVE}" ]; then
+        ROS2_STORAGE_ARGS+=(-s "${ROSBAG2_STORAGE_ID_EFFECTIVE}")
+    fi
+    if [ "${ROSBAG2_STORAGE_ID_EFFECTIVE}" = "sqlite3" ] && [ -n "${ROSBAG2_STORAGE_CONFIG}" ]; then
         if [ -f "${ROSBAG2_STORAGE_CONFIG}" ]; then
             ROS2_STORAGE_ARGS+=(--storage-config-file "${ROSBAG2_STORAGE_CONFIG}")
         else
