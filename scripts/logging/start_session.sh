@@ -60,6 +60,7 @@ REALSENSE_CAMERA_GATE_SECONDS="${REALSENSE_CAMERA_GATE_SECONDS:-90}"
 STRICT_REALSENSE_UVC_LOG="${STRICT_REALSENSE_UVC_LOG:-false}"
 RATE_EPSILON_HZ="${RATE_EPSILON_HZ:-0.05}"
 REALSENSE_ACTIVE_RGBD_GAP_ABORT="${REALSENSE_ACTIVE_RGBD_GAP_ABORT:-false}"
+REALSENSE_ACTIVE_IMU_GAP_ABORT="${REALSENSE_ACTIVE_IMU_GAP_ABORT:-false}"
 ENABLE_RUNTIME_WATCHDOG="${ENABLE_RUNTIME_WATCHDOG:-true}"
 ENABLE_RUNTIME_RGBD_WATCHDOG="${ENABLE_RUNTIME_RGBD_WATCHDOG:-false}"
 ENABLE_RUNTIME_CAMERA_IMU_WATCHDOG="${ENABLE_RUNTIME_CAMERA_IMU_WATCHDOG:-false}"
@@ -410,6 +411,8 @@ realsense_camera_gate_seconds: ${REALSENSE_CAMERA_GATE_SECONDS}
 rgbd_warn_gate_gap_sec: ${RGBD_WARN_GATE_GAP_SEC}
 rgbd_hard_gate_gap_sec: ${MAX_RGBD_GATE_GAP_SEC}
 camera_imu_hard_gate_gap_sec: ${MAX_CAMERA_IMU_GATE_GAP_SEC}
+realsense_active_rgbd_gap_abort: ${REALSENSE_ACTIVE_RGBD_GAP_ABORT}
+realsense_active_imu_gap_abort: ${REALSENSE_ACTIVE_IMU_GAP_ABORT}
 realsense_camera_gate_pre_log: ${SESSION_ID}_camera_gate_pre.log
 realsense_camera_gate_post_log: ${SESSION_ID}_camera_gate_post.log
 strict_realsense_uvc_log: ${STRICT_REALSENSE_UVC_LOG}
@@ -579,6 +582,7 @@ run_camera_pre_gate() {
         echo "camera_imu_hard_gate_gap_sec: ${MAX_CAMERA_IMU_GATE_GAP_SEC}"
         echo "rate_epsilon_hz: ${RATE_EPSILON_HZ}"
         echo "active_rgbd_gap_abort: ${REALSENSE_ACTIVE_RGBD_GAP_ABORT}"
+        echo "active_imu_gap_abort: ${REALSENSE_ACTIVE_IMU_GAP_ABORT}"
         echo "color_log: $(basename "${color_log}")"
         echo "aligned_depth_log: $(basename "${depth_log}")"
         echo "imu_log: $(basename "${imu_log}")"
@@ -693,7 +697,7 @@ run_camera_pre_gate() {
 
     _camera_check_rate_log /camera/color/image_raw "${color_log}" "${MIN_RGBD_HZ}" "color stream" "${RGBD_WARN_GATE_GAP_SEC}" "${MAX_RGBD_GATE_GAP_SEC}" 40 "${REALSENSE_ACTIVE_RGBD_GAP_ABORT}" || failures=$((failures + 1))
     _camera_check_rate_log /camera/aligned_depth_to_color/image_raw "${depth_log}" "${MIN_RGBD_HZ}" "aligned depth stream" "${RGBD_WARN_GATE_GAP_SEC}" "${MAX_RGBD_GATE_GAP_SEC}" 40 "${REALSENSE_ACTIVE_RGBD_GAP_ABORT}" || failures=$((failures + 1))
-    if ! _camera_check_rate_log /camera/imu "${imu_log}" "${MIN_CAMERA_IMU_HZ}" "camera imu stream" "${MAX_CAMERA_IMU_GATE_GAP_SEC}" "${MAX_CAMERA_IMU_GATE_GAP_SEC}" 80; then
+    if ! _camera_check_rate_log /camera/imu "${imu_log}" "${MIN_CAMERA_IMU_HZ}" "camera imu stream" "${MAX_CAMERA_IMU_GATE_GAP_SEC}" "${MAX_CAMERA_IMU_GATE_GAP_SEC}" 80 "${REALSENSE_ACTIVE_IMU_GAP_ABORT}"; then
         echo "WARN camera imu stream: fused /camera/imu failed; checking raw gyro+accel fallback" | tee -a "${CAMERA_GATE_PRE_LOG}"
         timeout 30 ros2 topic hz /camera/gyro/sample --window 80 > "${gyro_log}" 2>&1 || true
         timeout 30 ros2 topic hz /camera/accel/sample --window 40 > "${accel_log}" 2>&1 || true
@@ -1022,6 +1026,7 @@ export REALSENSE_CAMERA_GATE_SECONDS="$REALSENSE_CAMERA_GATE_SECONDS"
 export STRICT_REALSENSE_UVC_LOG="$STRICT_REALSENSE_UVC_LOG"
 export RATE_EPSILON_HZ="$RATE_EPSILON_HZ"
 export REALSENSE_ACTIVE_RGBD_GAP_ABORT="$REALSENSE_ACTIVE_RGBD_GAP_ABORT"
+export REALSENSE_ACTIVE_IMU_GAP_ABORT="$REALSENSE_ACTIVE_IMU_GAP_ABORT"
 export RGBD_STARTUP_TIMEOUT="$RGBD_STARTUP_TIMEOUT"
 export IMU_STARTUP_TIMEOUT="$IMU_STARTUP_TIMEOUT"
 
