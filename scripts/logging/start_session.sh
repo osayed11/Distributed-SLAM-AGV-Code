@@ -45,6 +45,7 @@ RUNTIME_WATCHDOG_STARTUP_DELAY="${RUNTIME_WATCHDOG_STARTUP_DELAY:-15}"
 RUNTIME_WATCHDOG_INTERVAL="${RUNTIME_WATCHDOG_INTERVAL:-20}"
 RUNTIME_WATCHDOG_HZ_TIMEOUT="${RUNTIME_WATCHDOG_HZ_TIMEOUT:-12}"
 RUNTIME_WATCHDOG_MAX_CONSECUTIVE_FAILURES="${RUNTIME_WATCHDOG_MAX_CONSECUTIVE_FAILURES:-2}"
+RUNTIME_WATCHDOG_ABORT_ON_FAILURE="${RUNTIME_WATCHDOG_ABORT_ON_FAILURE:-false}"
 MIN_RGBD_HZ="${MIN_RGBD_HZ:-12}"
 MIN_CAMERA_IMU_HZ="${MIN_CAMERA_IMU_HZ:-150}"
 MIN_SCAN_HZ="${MIN_SCAN_HZ:-5}"
@@ -373,6 +374,7 @@ strict_realsense_uvc_log: ${STRICT_REALSENSE_UVC_LOG}
 runtime_watchdog_enabled: ${ENABLE_RUNTIME_WATCHDOG}
 runtime_rgbd_watchdog_enabled: ${ENABLE_RUNTIME_RGBD_WATCHDOG}
 runtime_camera_imu_watchdog_enabled: ${ENABLE_RUNTIME_CAMERA_IMU_WATCHDOG}
+runtime_watchdog_abort_on_failure: ${RUNTIME_WATCHDOG_ABORT_ON_FAILURE}
 runtime_watchdog_log: ${SESSION_ID}_runtime_watchdog.log
 runtime_watchdog_status: ~
 rgbd_startup_timeout_sec: ${RGBD_STARTUP_TIMEOUT}
@@ -734,6 +736,7 @@ run_runtime_watchdog() {
         echo "interval_sec: ${RUNTIME_WATCHDOG_INTERVAL}"
         echo "hz_timeout_sec: ${RUNTIME_WATCHDOG_HZ_TIMEOUT}"
         echo "max_consecutive_failure_cycles: ${RUNTIME_WATCHDOG_MAX_CONSECUTIVE_FAILURES}"
+        echo "abort_on_failure: ${RUNTIME_WATCHDOG_ABORT_ON_FAILURE}"
         echo "runtime_rgbd_watchdog_enabled: ${ENABLE_RUNTIME_RGBD_WATCHDOG}"
         echo "runtime_camera_imu_watchdog_enabled: ${ENABLE_RUNTIME_CAMERA_IMU_WATCHDOG}"
         echo "min_scan_hz: ${MIN_SCAN_HZ}"
@@ -778,10 +781,14 @@ run_runtime_watchdog() {
             consecutive_failure_cycles=$((consecutive_failure_cycles + 1))
             echo "WARN: ${failures} runtime watchdog check(s) failed in cycle ${cycle}; consecutive_failure_cycles=${consecutive_failure_cycles}/${RUNTIME_WATCHDOG_MAX_CONSECUTIVE_FAILURES}" | tee -a "${RUNTIME_WATCHDOG_LOG}"
             if [ "${consecutive_failure_cycles}" -ge "${RUNTIME_WATCHDOG_MAX_CONSECUTIVE_FAILURES}" ]; then
-                echo "FAIL: runtime watchdog failed ${consecutive_failure_cycles} consecutive cycle(s); stopping recording." | tee -a "${RUNTIME_WATCHDOG_LOG}"
-                echo "FAIL_RUNTIME_WATCHDOG" > "${RUNTIME_WATCHDOG_STATUS_FILE}"
-                kill -INT "${ROSBAG_PID}" 2>/dev/null || true
-                return 1
+                if [ "${RUNTIME_WATCHDOG_ABORT_ON_FAILURE}" = true ]; then
+                    echo "FAIL: runtime watchdog failed ${consecutive_failure_cycles} consecutive cycle(s); stopping recording." | tee -a "${RUNTIME_WATCHDOG_LOG}"
+                    echo "FAIL_RUNTIME_WATCHDOG" > "${RUNTIME_WATCHDOG_STATUS_FILE}"
+                    kill -INT "${ROSBAG_PID}" 2>/dev/null || true
+                    return 1
+                fi
+                echo "WARN: runtime watchdog failed ${consecutive_failure_cycles} consecutive cycle(s); recording continues and post-run bag validation is authoritative." | tee -a "${RUNTIME_WATCHDOG_LOG}"
+                echo "WARN_RUNTIME_WATCHDOG consecutive_failure_cycles=${consecutive_failure_cycles}" > "${RUNTIME_WATCHDOG_STATUS_FILE}"
             fi
             sleep "${RUNTIME_WATCHDOG_INTERVAL}"
             continue
@@ -796,7 +803,12 @@ run_runtime_watchdog() {
        grep -q "^FAIL_RUNTIME_WATCHDOG" "${RUNTIME_WATCHDOG_STATUS_FILE}"; then
         return 1
     fi
-    echo "STOPPED_CLEANLY cycles=${cycle}" > "${RUNTIME_WATCHDOG_STATUS_FILE}"
+    if [ -f "${RUNTIME_WATCHDOG_STATUS_FILE}" ] && \
+       grep -q "^WARN_RUNTIME_WATCHDOG" "${RUNTIME_WATCHDOG_STATUS_FILE}"; then
+        echo "STOPPED_WITH_RUNTIME_WARNINGS cycles=${cycle}" > "${RUNTIME_WATCHDOG_STATUS_FILE}"
+    else
+        echo "STOPPED_CLEANLY cycles=${cycle}" > "${RUNTIME_WATCHDOG_STATUS_FILE}"
+    fi
     echo "STOPPED_CLEANLY: rosbag no longer running" >> "${RUNTIME_WATCHDOG_LOG}"
     return 0
 }
@@ -947,6 +959,7 @@ export ENABLE_REALSENSE_SYNC="$ENABLE_REALSENSE_SYNC"
 export ROSBAG2_MAX_CACHE_SIZE="$ROSBAG2_MAX_CACHE_SIZE"
 export ROSBAG2_STORAGE_CONFIG="$ROSBAG2_STORAGE_CONFIG"
 export ROSBAG2_STORAGE_PRESET_PROFILE="$ROSBAG2_STORAGE_PRESET_PROFILE"
+export RUNTIME_WATCHDOG_ABORT_ON_FAILURE="$RUNTIME_WATCHDOG_ABORT_ON_FAILURE"
 export RUN_REALSENSE_CAMERA_GATE="$RUN_REALSENSE_CAMERA_GATE"
 export REALSENSE_CAMERA_GATE_SECONDS="$REALSENSE_CAMERA_GATE_SECONDS"
 export STRICT_REALSENSE_UVC_LOG="$STRICT_REALSENSE_UVC_LOG"
