@@ -51,24 +51,45 @@ def has_any(text: str, patterns: tuple[str, ...]) -> bool:
     return any(re.search(pattern, text, re.IGNORECASE) for pattern in patterns)
 
 
-def topic_state(text: str, topics: tuple[str, ...]) -> tuple[list[str], list[str]]:
+GATE_LABEL_TOPICS = {
+    "color stream": "/camera/color/image_raw",
+    "aligned depth stream": "/camera/aligned_depth_to_color/image_raw",
+    "depth stream": "/camera/depth/image_rect_raw",
+    "camera imu stream": "/camera/imu",
+}
+
+
+def topic_state(text: str, topics: tuple[str, ...]) -> tuple[list[str], list[str], list[str]]:
     passed: list[str] = []
     failed: list[str] = []
+    warned: list[str] = []
+    for line in text.splitlines():
+        for label, topic in GATE_LABEL_TOPICS.items():
+            if topic not in topics:
+                continue
+            if re.match(rf"^PASS {re.escape(label)}( (steady )?max gap)?:", line):
+                passed.append(topic)
+            if re.match(rf"^WARN {re.escape(label)}( (steady )?max gap)?:", line):
+                warned.append(topic)
+            if re.match(rf"^FAIL {re.escape(label)}( (steady )?max gap)?:", line):
+                failed.append(topic)
+
     for topic in topics:
         for line in text.splitlines():
             if topic not in line:
                 continue
             if line.startswith("PASS ") and ("average rate" in line or re.search(r"\b[0-9.]+\s+Hz\b", line)):
                 passed.append(topic)
+            if line.startswith("WARN "):
+                warned.append(topic)
             if line.startswith("FAIL "):
                 failed.append(topic)
-    return passed, failed
-
+    return sorted(set(passed)), sorted(set(failed)), sorted(set(warned))
 
 def extract_rates(text: str) -> list[str]:
     rates: list[str] = []
     for line in text.splitlines():
-        if not re.search(r"^(PASS|FAIL)\s+", line):
+        if not re.search(r"^(PASS|WARN|FAIL)\s+", line):
             continue
         if not re.search(r"/(camera|scan|odom|tf)", line):
             continue
@@ -91,9 +112,9 @@ def classify(text: str) -> tuple[str, list[str], list[str]]:
     evidence: list[str] = []
     limitations: list[str] = []
 
-    video_pass, video_fail = topic_state(text, VIDEO_TOPICS)
-    imu_pass, imu_fail = topic_state(text, IMU_TOPICS)
-    core_pass, core_fail = topic_state(text, CORE_TOPICS)
+    video_pass, video_fail, video_warn = topic_state(text, VIDEO_TOPICS)
+    imu_pass, imu_fail, imu_warn = topic_state(text, IMU_TOPICS)
+    core_pass, core_fail, core_warn = topic_state(text, CORE_TOPICS)
 
     uvc_timeout = has_any(
         text,
@@ -146,14 +167,20 @@ def classify(text: str) -> tuple[str, list[str], list[str]]:
         evidence.append("RGB-D video topics produced rate data")
     if video_fail:
         evidence.append("one or more RGB-D video topics failed rate checks")
+    if video_warn:
+        evidence.append("one or more RGB-D video topics produced bounded warning gaps")
     if imu_pass:
         evidence.append("one or more D455 IMU/HID topics produced rate data")
     if imu_fail:
         evidence.append("one or more D455 IMU/HID topics failed rate checks")
+    if imu_warn:
+        evidence.append("one or more D455 IMU/HID topics produced warning gaps")
     if core_pass:
         evidence.append("non-camera core ROS topics produced rate data")
     if core_fail:
         evidence.append("one or more non-camera core ROS topics failed rate checks")
+    if core_warn:
+        evidence.append("one or more non-camera core ROS topics produced warning gaps")
     if usb3_seen:
         evidence.append("D455 was observed on USB3/SuperSpeed")
     if uvc_timeout:
@@ -167,6 +194,11 @@ def classify(text: str) -> tuple[str, list[str], list[str]]:
     all_stream_rates_pass = required_video_pass and required_imu_pass and not video_fail and not imu_fail
 
     if all_stream_rates_pass:
+        if video_warn or imu_warn:
+            limitations.append(
+                "Critical stream rates passed, but bounded stream continuity warnings were observed. Final bag validation decides publishability."
+            )
+            return "PASS_WITH_STREAM_WARNINGS", evidence, limitations
         if uvc_timeout or hid_timeout or disconnect:
             limitations.append(
                 "Critical stream rates passed. Low-level timeout/reset text is evidence to monitor, not a readiness failure for this run."
@@ -195,6 +227,11 @@ def classify(text: str) -> tuple[str, list[str], list[str]]:
             "Software proves D455 USB control-path failure, but physical ownership requires A/B swap."
         )
         return "REALSENSE_DEVICE_CONTROL_TIMEOUT", evidence, limitations
+    if video_fail or imu_fail:
+        limitations.append(
+            "The live gate proved topic continuity failure even if average rates passed. Physical ownership requires A/B swap."
+        )
+        return "REALSENSE_STREAM_GAP_FAILURE", evidence, limitations
     if disconnect:
         limitations.append(
             "Logs prove a USB device drop/reset, but not whether the owner is cable, camera, port, or power without A/B."

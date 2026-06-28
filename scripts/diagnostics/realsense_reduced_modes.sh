@@ -8,7 +8,8 @@ if [ -f /opt/ros/noetic/setup.bash ]; then
 elif [ -f /opt/ros/melodic/setup.bash ]; then
     source /opt/ros/melodic/setup.bash
 else
-    echo "ERROR: Neither ROS Noetic nor Melodic found." >&2; exit 1
+    echo "ERROR: neither ROS Noetic nor ROS Melodic setup.bash was found." >&2
+    exit 1
 fi
 source "${ROOT}/agv_ws/devel/setup.bash"
 

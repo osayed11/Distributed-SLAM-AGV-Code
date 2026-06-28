@@ -1,0 +1,3 @@
+# SQLite rosbag2 storage profile for publishable dataset recording.
+write:
+  pragmas: ["journal_mode = WAL", "synchronous = NORMAL"]

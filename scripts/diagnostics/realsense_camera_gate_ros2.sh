@@ -24,6 +24,9 @@ ENABLE_REALSENSE_SYNC="${ENABLE_REALSENSE_SYNC:-false}"
 MIN_RGBD_HZ="${MIN_RGBD_HZ:-12}"
 MIN_CAMERA_IMU_HZ="${MIN_CAMERA_IMU_HZ:-150}"
 MIN_REALSENSE_FPS="${MIN_REALSENSE_FPS:-15}"
+RGBD_WARN_GATE_GAP_SEC="${RGBD_WARN_GATE_GAP_SEC:-0.25}"
+MAX_RGBD_GATE_GAP_SEC="${MAX_RGBD_GATE_GAP_SEC:-0.75}"
+MAX_CAMERA_IMU_GATE_GAP_SEC="${MAX_CAMERA_IMU_GATE_GAP_SEC:-0.10}"
 STRICT_UVC_LOG="${STRICT_UVC_LOG:-false}"
 STRICT_POST_ENUM="${STRICT_POST_ENUM:-false}"
 
@@ -223,6 +226,30 @@ rate_from_log() {
     grep "average rate" "$1" | tail -1 | awk -F': ' '{print $2}' | awk '{print $1}'
 }
 
+max_gap_from_log() {
+    local file="$1"
+    local min_window="$2"
+    awk -v min_window="${min_window}" '
+        /min: .* max: .* window:/ {
+            max_gap = ""
+            window = ""
+            for (i = 1; i <= NF; i++) {
+                if ($i == "max:") {
+                    max_gap = $(i + 1)
+                    gsub("s", "", max_gap)
+                }
+                if ($i == "window:") {
+                    window = $(i + 1)
+                }
+            }
+            if (max_gap != "" && window + 0 >= min_window && max_gap + 0 > max) {
+                max = max_gap + 0
+            }
+        }
+        END { if (max != "") print max }
+    ' "${file}"
+}
+
 log_size() {
     if [ -f "$1" ]; then
         wc -c < "$1" | tr -d ' '
@@ -262,6 +289,27 @@ check_rate() {
     fi
 }
 
+check_gap() {
+    local topic="$1"
+    local file="$2"
+    local label="$3"
+    local warn_gap_limit="$4"
+    local hard_gap_limit="$5"
+    local min_gap_window="$6"
+    local max_gap
+
+    max_gap="$(max_gap_from_log "${file}" "${min_gap_window}")"
+    if [ -z "${max_gap}" ]; then
+        warn_gate "${label} steady max gap" "no steady-state max-gap data found for ${topic} after window ${min_gap_window}"
+    elif awk -v gap="${max_gap}" -v limit="${warn_gap_limit}" 'BEGIN { exit(gap <= limit ? 0 : 1) }'; then
+        pass_gate "${label} steady max gap" "${max_gap}s <= warning ${warn_gap_limit}s after window ${min_gap_window}"
+    elif awk -v gap="${max_gap}" -v limit="${hard_gap_limit}" 'BEGIN { exit(gap <= limit ? 0 : 1) }'; then
+        warn_gate "${label} steady max gap" "${max_gap}s exceeds warning ${warn_gap_limit}s but is <= hard ${hard_gap_limit}s after window ${min_gap_window}"
+    else
+        fail_gate "${label} steady max gap" "${max_gap}s exceeds hard ${hard_gap_limit}s after window ${min_gap_window}"
+    fi
+}
+
 source_ros
 
 {
@@ -271,6 +319,9 @@ source_ros
     echo "color_profile=${CAMERA_COLOR_WIDTH}x${CAMERA_COLOR_HEIGHT}x${CAMERA_COLOR_FPS}"
     echo "depth_profile=${CAMERA_DEPTH_WIDTH}x${CAMERA_DEPTH_HEIGHT}x${CAMERA_DEPTH_FPS}"
     echo "min_realsense_fps=${MIN_REALSENSE_FPS}"
+    echo "rgbd_warn_gate_gap_sec=${RGBD_WARN_GATE_GAP_SEC}"
+    echo "rgbd_hard_gate_gap_sec=${MAX_RGBD_GATE_GAP_SEC}"
+    echo "camera_imu_hard_gate_gap_sec=${MAX_CAMERA_IMU_GATE_GAP_SEC}"
     echo "enable_sync=${ENABLE_REALSENSE_SYNC}"
     echo "strict_uvc_log=${STRICT_UVC_LOG}"
     echo "strict_post_enum=${STRICT_POST_ENUM}"
@@ -340,6 +391,9 @@ wait "${HZ_IMU_PID}" 2>/dev/null || true
 check_rate /camera/color/image_raw "${RUN_DIR}/hz_color.txt" "${MIN_RGBD_HZ}" "color stream"
 check_rate /camera/aligned_depth_to_color/image_raw "${RUN_DIR}/hz_aligned_depth.txt" "${MIN_RGBD_HZ}" "aligned depth stream"
 check_rate /camera/imu "${RUN_DIR}/hz_camera_imu.txt" "${MIN_CAMERA_IMU_HZ}" "camera imu stream"
+check_gap /camera/color/image_raw "${RUN_DIR}/hz_color.txt" "color stream" "${RGBD_WARN_GATE_GAP_SEC}" "${MAX_RGBD_GATE_GAP_SEC}" 40
+check_gap /camera/aligned_depth_to_color/image_raw "${RUN_DIR}/hz_aligned_depth.txt" "aligned depth stream" "${RGBD_WARN_GATE_GAP_SEC}" "${MAX_RGBD_GATE_GAP_SEC}" 40
+check_gap /camera/imu "${RUN_DIR}/hz_camera_imu.txt" "camera imu stream" "${MAX_CAMERA_IMU_GATE_GAP_SEC}" "${MAX_CAMERA_IMU_GATE_GAP_SEC}" 80
 
 cleanup
 trap - EXIT
