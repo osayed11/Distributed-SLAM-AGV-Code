@@ -224,7 +224,19 @@ check_rs_enumerate() {
 }
 
 rate_from_log() {
-    grep "average rate" "$1" | tail -1 | awk -F': ' '{print $2}' | awk '{print $1}'
+    awk '/average rate:/ { print $3 }' "$1" | sort -n | awk '
+        { rates[NR] = $1 }
+        END {
+            if (NR == 0) {
+                exit
+            }
+            if (NR % 2 == 1) {
+                print rates[(NR + 1) / 2]
+            } else {
+                printf "%.3f\n", (rates[NR / 2] + rates[(NR / 2) + 1]) / 2
+            }
+        }
+    '
 }
 
 max_gap_from_log() {
