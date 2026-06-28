@@ -106,6 +106,7 @@ def write_ros2_bag(
     missing_topics: Optional[set[str]] = None,
     empty_topic: str = "",
     scan_major_gap: bool = False,
+    scan_shutdown_gap: bool = False,
     truncated_topic: str = "",
     non_monotonic_topic: str = "",
 ) -> None:
@@ -142,6 +143,8 @@ def write_ros2_bag(
             else:
                 offset_ns = int(i * (topic_duration * 1e9 / (n_msgs - 1)))
             if scan_major_gap and name == "/scan" and i > n_msgs // 2:
+                offset_ns += 350_000_000
+            if scan_shutdown_gap and name == "/scan" and i > n_msgs - max(3, int(hz)):
                 offset_ns += 350_000_000
             if non_monotonic_topic == name and i == n_msgs // 2:
                 offset_ns = 0
@@ -221,6 +224,17 @@ class ValidateRos2BagTests(unittest.TestCase):
             self.assertEqual(rc, 1)
             failures = [item for item in report["results"] if item["level"] == "FAIL"]
             self.assertTrue(any(item["check"] == "scan_gaps" for item in failures))
+
+    def test_shutdown_edge_gap_does_not_fail(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            bag = Path(tmp) / "scan_shutdown_gap"
+            write_ros2_bag(bag, scan_shutdown_gap=True)
+            rc, report = run_validator(bag)
+            self.assertEqual(rc, 0)
+            failures = [item for item in report["results"] if item["level"] == "FAIL"]
+            self.assertFalse(any(item["check"] == "scan_gaps" for item in failures))
+            passes = [item for item in report["results"] if item["level"] == "PASS"]
+            self.assertTrue(any(item["check"] == "scan_gaps" and "edge gap" in item["message"] for item in passes))
 
     def test_truncated_required_stream_fails_coverage(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
