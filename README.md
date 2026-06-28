@@ -187,6 +187,10 @@ The report is written under:
 
 Keep this folder with the dataset notes.
 
+With `--bringup`, the gate normally takes about 3-5 minutes because it runs a
+bounded RealSense stream test and live ROS topic probes. It is not a background
+daemon; wait for the final `READY_TO_RECORD` decision block.
+
 ## Recording A Session
 
 Start recording on the robot:

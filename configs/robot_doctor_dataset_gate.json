@@ -24,7 +24,7 @@
   "expected_librealsense": "2.58.1",
   "expected_realsense_ros_driver": "4.57.7",
   "expected_realsense_ros_librealsense": "2.57.7",
-  "stream_test_seconds": 90,
+  "stream_test_seconds": 60,
   "stream_test_motion": true,
   "d455_motion_test_seconds": 10,
   "camera_width": "640",

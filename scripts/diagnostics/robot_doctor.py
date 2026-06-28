@@ -89,9 +89,9 @@ DEFAULT_TOPIC_SPECS = {
     "/odom": {"min_hz": 12.0, "target_hz": 20.0},
     "/tf": {"min_hz": 10.0, "target_hz": 50.0},
     "/camera/color/image_raw": {"min_hz": 12.0, "target_hz": 15.0},
-    "/camera/color/camera_info": {"min_hz": 12.0, "target_hz": 15.0},
+    "/camera/color/camera_info": {"min_hz": 0.0, "target_hz": 0.0},
     "/camera/aligned_depth_to_color/image_raw": {"min_hz": 12.0, "target_hz": 15.0},
-    "/camera/aligned_depth_to_color/camera_info": {"min_hz": 12.0, "target_hz": 15.0},
+    "/camera/aligned_depth_to_color/camera_info": {"min_hz": 0.0, "target_hz": 0.0},
 }
 
 
