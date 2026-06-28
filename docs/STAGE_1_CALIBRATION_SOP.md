@@ -17,14 +17,19 @@ step fails.
    ros2 launch agv_bringup bringup.launch.py agv_cmd_vel_topic:=/agv110/cmd_vel
    ```
 
-3. In another terminal, command a slow straight pulse and stop manually:
+3. In another terminal, run the odometry motion test:
 
    ```bash
-   ros2 topic pub -r 10 /agv110/cmd_vel geometry_msgs/msg/Twist \
-     "{linear: {x: 0.10}, angular: {z: 0.0}}"
+   cd ~/slam_project
+   python3 scripts/diagnostics/odom_motion_test.py \
+     --cmd-topic /agv110/cmd_vel \
+     --odom-topic /odom \
+     --distance 1.0 \
+     --linear 0.10 \
+     --skip-turn
    ```
 
-4. Compare physical distance against `/odom`.
+4. Compare the printed odometry distance against the physical tape marks.
 5. Record any scale correction in
    `agv2_ws/src/agv_bringup/calibration/extrinsics.yaml`.
 

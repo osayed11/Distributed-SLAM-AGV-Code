@@ -453,6 +453,21 @@ configs/sqlite_resilient.yaml                  SQLite fallback storage profile
 agv2_ws/src/agv_bringup/launch/bringup.launch.py ROS 2 bringup
 ```
 
+Calibration and scenario helpers:
+
+```text
+scripts/calibration/extract_realsense_calib.py camera intrinsics capture
+scripts/calibration/imu_static_test.py          stationary IMU characterization
+scripts/diagnostics/odom_motion_test.py        ROS 2 odom/base response test
+scripts/logging/drive_mocap_straight_ros2.py   mocap-feedback straight segment
+scripts/logging/drive_mocap_square_ros2.py     mocap-feedback square
+scripts/logging/drive_circle.py                odom-feedback circle scenario
+scripts/logging/drive_square.py                odom-feedback square test
+scripts/logging/drive_lawnmower.py             timed shuttle scenario helper
+scripts/mocap/natnet_ros2_pose_publisher.py    direct NatNet-to-ROS2 helper
+scripts/mocap/natnet_watch.py                  direct NatNet inspection helper
+```
+
 Repository layout:
 
 ```text
