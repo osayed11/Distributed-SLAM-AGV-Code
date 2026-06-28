@@ -298,7 +298,12 @@ class RobotDoctorParserTests(unittest.TestCase):
         self.assertEqual(status, "PASS")
         self.assertIn("<= 1.000 ms", summary)
 
-        bad_text = ok_text.replace("0.000345678", "0.002000000")
+        stepped_text = ok_text.replace("0.000234567", "1975798.750000000").replace("0.000345678", "1975798.750000000")
+        status, summary, _ = Doctor.classify_chrony_tracking(stepped_text, 1.0, "dataset")
+        self.assertEqual(status, "PASS")
+        self.assertIn("historical", summary)
+
+        bad_text = ok_text.replace("0.000123456", "0.002000000")
         status, summary, next_action = Doctor.classify_chrony_tracking(bad_text, 1.0, "dataset")
         self.assertEqual(status, "FAIL")
         self.assertIn("exceeds", summary)

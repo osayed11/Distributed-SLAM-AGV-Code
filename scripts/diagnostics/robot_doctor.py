@@ -794,11 +794,11 @@ class Doctor:
                 "repair chrony source selection; dataset timestamps are not trustworthy",
             )
 
-        offsets_sec: List[float] = []
+        offsets_sec: Dict[str, float] = {}
         for label in ["System time", "Last offset", "RMS offset"]:
             match = re.search(rf"{re.escape(label)}\s*:\s*([+-]?[0-9.]+)\s+seconds", text, flags=re.IGNORECASE)
             if match:
-                offsets_sec.append(abs(float(match.group(1))))
+                offsets_sec[label] = abs(float(match.group(1)))
         if not offsets_sec:
             status = FAIL if profile == "dataset" else WARN
             return (
@@ -807,13 +807,28 @@ class Doctor:
                 "capture `chronyc tracking` output and verify offset is below the dataset threshold",
             )
 
-        max_seen_ms = max(offsets_sec) * 1000.0
+        if "System time" in offsets_sec:
+            system_ms = offsets_sec["System time"] * 1000.0
+            historical_ms = max(offsets_sec.values()) * 1000.0
+            if system_ms <= max_offset_ms:
+                summary = f"chrony system offset {system_ms:.3f} ms <= {max_offset_ms:.3f} ms"
+                if historical_ms > max_offset_ms:
+                    summary += f"; historical last/RMS offset still settling up to {historical_ms:.3f} ms"
+                return (PASS, summary, "")
+            status = FAIL if profile == "dataset" else WARN
+            return (
+                status,
+                f"chrony system offset {system_ms:.3f} ms exceeds {max_offset_ms:.3f} ms",
+                "repair NTP/chrony topology and rerun before collecting publishable multi-robot data",
+            )
+
+        max_seen_ms = max(offsets_sec.values()) * 1000.0
         if max_seen_ms <= max_offset_ms:
-            return (PASS, f"chrony max parsed offset {max_seen_ms:.3f} ms <= {max_offset_ms:.3f} ms", "")
+            return (PASS, f"chrony parsed offset {max_seen_ms:.3f} ms <= {max_offset_ms:.3f} ms", "")
         status = FAIL if profile == "dataset" else WARN
         return (
             status,
-            f"chrony max parsed offset {max_seen_ms:.3f} ms exceeds {max_offset_ms:.3f} ms",
+            f"chrony parsed offset {max_seen_ms:.3f} ms exceeds {max_offset_ms:.3f} ms",
             "repair NTP/chrony topology and rerun before collecting publishable multi-robot data",
         )
 

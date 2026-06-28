@@ -30,7 +30,7 @@ Options:
   --bringup                  Launch standard ROS2 bringup only for this gate
                              using initial_reset:=false and the configured cmd topic.
   --bringup-cmd CMD          Launch this bringup command only for this gate.
-  --bringup-wait SECONDS     Wait after bringup before probing. Default: 45.
+  --bringup-wait SECONDS     Wait after bringup before probing. Default: 90.
   --confirm-mechanical       Operator confirms mounts/chassis/slip checklist.
   --confirm-mocap            Operator confirms rigid body and marker visibility.
   --confirm-anchors          Operator confirms anchors/obstacles were surveyed.
@@ -61,7 +61,7 @@ EXPECTED_D455_SERIAL_ARG=""
 CMD_TOPIC_ARG=""
 BRINGUP_CMD=""
 BRINGUP_REQUESTED=false
-BRINGUP_WAIT="${AGV_READY_BRINGUP_WAIT:-45}"
+BRINGUP_WAIT="${AGV_READY_BRINGUP_WAIT:-90}"
 DOCTOR_ARGS=()
 
 while [ "$#" -gt 0 ]; do

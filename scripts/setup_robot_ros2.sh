@@ -475,5 +475,5 @@ bash scripts/diagnostics/robot_doctor.sh ${ROBOT_ID} \\
   --config configs/robot_doctor_dataset_gate.json \\
   --profile dataset \\
   --bringup-cmd "ros2 launch agv_bringup bringup.launch.py" \\
-  --bringup-wait 45
+  --bringup-wait 90
 EOF

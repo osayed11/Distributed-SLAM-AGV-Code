@@ -490,7 +490,7 @@ bash scripts/diagnostics/robot_doctor.sh agv102 \
   --profile dataset \
   --ros ros2 \
   --bringup-cmd "ros2 launch agv_bringup bringup.launch.py" \
-  --bringup-wait 45
+  --bringup-wait 90
 ```
 
 ROS 1 example:
@@ -500,7 +500,7 @@ bash scripts/diagnostics/robot_doctor.sh agv1 \
   --profile dataset \
   --ros ros1 \
   --bringup-cmd "roslaunch agv_bringup bringup.launch" \
-  --bringup-wait 45
+  --bringup-wait 90
 ```
 
 The process is stopped at the end of the diagnostic run.
