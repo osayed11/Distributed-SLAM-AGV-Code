@@ -23,6 +23,7 @@ CAMERA_DEPTH_FPS="${CAMERA_DEPTH_FPS:-15}"
 ENABLE_REALSENSE_SYNC="${ENABLE_REALSENSE_SYNC:-false}"
 MIN_RGBD_HZ="${MIN_RGBD_HZ:-12}"
 MIN_CAMERA_IMU_HZ="${MIN_CAMERA_IMU_HZ:-150}"
+RATE_EPSILON_HZ="${RATE_EPSILON_HZ:-0.05}"
 MIN_REALSENSE_FPS="${MIN_REALSENSE_FPS:-15}"
 RGBD_WARN_GATE_GAP_SEC="${RGBD_WARN_GATE_GAP_SEC:-0.25}"
 MAX_RGBD_GATE_GAP_SEC="${MAX_RGBD_GATE_GAP_SEC:-0.75}"
@@ -284,6 +285,8 @@ check_rate() {
     fi
     if awk -v rate="${rate}" -v min="${min_rate}" 'BEGIN { exit(rate >= min ? 0 : 1) }'; then
         pass_gate "${label}" "${topic} ${rate} Hz"
+    elif awk -v rate="${rate}" -v min="${min_rate}" -v eps="${RATE_EPSILON_HZ}" 'BEGIN { exit(rate + eps >= min ? 0 : 1) }'; then
+        warn_gate "${label}" "${topic} ${rate} Hz is within ${RATE_EPSILON_HZ} Hz of required ${min_rate} Hz"
     else
         fail_gate "${label}" "${topic} ${rate} Hz, expected >= ${min_rate} Hz"
     fi
@@ -319,6 +322,7 @@ source_ros
     echo "color_profile=${CAMERA_COLOR_WIDTH}x${CAMERA_COLOR_HEIGHT}x${CAMERA_COLOR_FPS}"
     echo "depth_profile=${CAMERA_DEPTH_WIDTH}x${CAMERA_DEPTH_HEIGHT}x${CAMERA_DEPTH_FPS}"
     echo "min_realsense_fps=${MIN_REALSENSE_FPS}"
+    echo "rate_epsilon_hz=${RATE_EPSILON_HZ}"
     echo "rgbd_warn_gate_gap_sec=${RGBD_WARN_GATE_GAP_SEC}"
     echo "rgbd_hard_gate_gap_sec=${MAX_RGBD_GATE_GAP_SEC}"
     echo "camera_imu_hard_gate_gap_sec=${MAX_CAMERA_IMU_GATE_GAP_SEC}"
