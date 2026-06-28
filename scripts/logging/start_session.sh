@@ -35,6 +35,9 @@ ENABLE_REALSENSE_SYNC="${ENABLE_REALSENSE_SYNC:-false}"
 ROSBAG2_MAX_CACHE_SIZE="${ROSBAG2_MAX_CACHE_SIZE:-536870912}"
 ROSBAG2_STORAGE_CONFIG="${ROSBAG2_STORAGE_CONFIG:-${ROOT}/configs/sqlite_resilient.yaml}"
 ROSBAG2_STORAGE_PRESET_PROFILE="${ROSBAG2_STORAGE_PRESET_PROFILE:-}"
+ROSBAG_STOP_TIMEOUT="${ROSBAG_STOP_TIMEOUT:-180}"
+BRINGUP_STOP_TIMEOUT="${BRINGUP_STOP_TIMEOUT:-60}"
+WATCHDOG_STOP_TIMEOUT="${WATCHDOG_STOP_TIMEOUT:-15}"
 RUN_REALSENSE_CAMERA_GATE="${RUN_REALSENSE_CAMERA_GATE:-true}"
 REALSENSE_CAMERA_GATE_SECONDS="${REALSENSE_CAMERA_GATE_SECONDS:-90}"
 STRICT_REALSENSE_UVC_LOG="${STRICT_REALSENSE_UVC_LOG:-false}"
@@ -363,6 +366,8 @@ enable_realsense_sync: ${ENABLE_REALSENSE_SYNC}
 rosbag2_max_cache_size_bytes: ${ROSBAG2_MAX_CACHE_SIZE}
 rosbag2_storage_config: "${ROSBAG2_STORAGE_CONFIG}"
 rosbag2_storage_preset_profile: "${ROSBAG2_STORAGE_PRESET_PROFILE}"
+rosbag_stop_timeout_sec: ${ROSBAG_STOP_TIMEOUT}
+bringup_stop_timeout_sec: ${BRINGUP_STOP_TIMEOUT}
 realsense_camera_gate_required: ${RUN_REALSENSE_CAMERA_GATE}
 realsense_camera_gate_seconds: ${REALSENSE_CAMERA_GATE_SECONDS}
 rgbd_warn_gate_gap_sec: ${RGBD_WARN_GATE_GAP_SEC}
@@ -501,7 +506,7 @@ finalise_manifest() {
 
     # Update manifest with final values
     if [ -s "${RUNTIME_WATCHDOG_STATUS_FILE}" ]; then
-        WATCHDOG_STATUS="$(head -1 "${RUNTIME_WATCHDOG_STATUS_FILE}" | tr -cd 'A-Za-z0-9_ .:-' | sed 's/[[:space:]]*$//')"
+        WATCHDOG_STATUS="$(head -1 "${RUNTIME_WATCHDOG_STATUS_FILE}" | tr -cd 'A-Za-z0-9_ .:=-' | sed 's/[[:space:]]*$//')"
     fi
     sed -i "s/time_end: ~/time_end: $(date +%H:%M:%S)/" "${MANIFEST_FILE}"
     sed -i "s/bag_size_mb: ~/bag_size_mb: ${BAG_SIZE_MB:-unknown}/" "${MANIFEST_FILE}"
@@ -897,12 +902,12 @@ cleanup() {
         echo ""
         echo "Stopping rosbag..."
         kill -INT "${ROSBAG_PID}" 2>/dev/null || true
-        wait_or_kill "${ROSBAG_PID}" "rosbag" 30
+        wait_or_kill "${ROSBAG_PID}" "rosbag" "${ROSBAG_STOP_TIMEOUT}"
     fi
 
     if [ -n "${WATCHDOG_PID}" ] && kill -0 "${WATCHDOG_PID}" 2>/dev/null; then
         kill -TERM "${WATCHDOG_PID}" 2>/dev/null || true
-        wait_or_kill "${WATCHDOG_PID}" "runtime watchdog" 10
+        wait_or_kill "${WATCHDOG_PID}" "runtime watchdog" "${WATCHDOG_STOP_TIMEOUT}"
     fi
     if [ ! -s "${RUNTIME_WATCHDOG_STATUS_FILE}" ]; then
         if [ "${RECORDING_STARTED}" = true ]; then
@@ -923,10 +928,10 @@ cleanup() {
         echo "Stopping bringup..."
         if [ -n "${BRINGUP_PGID}" ] && kill -0 "-${BRINGUP_PGID}" 2>/dev/null; then
             kill -INT "-${BRINGUP_PGID}" 2>/dev/null || true
-            wait_or_kill_group "${BRINGUP_PGID}" "${BRINGUP_PID}" "bringup" 30
+            wait_or_kill_group "${BRINGUP_PGID}" "${BRINGUP_PID}" "bringup" "${BRINGUP_STOP_TIMEOUT}"
         else
             kill -INT "${BRINGUP_PID}" 2>/dev/null || true
-            wait_or_kill "${BRINGUP_PID}" "bringup" 30
+            wait_or_kill "${BRINGUP_PID}" "bringup" "${BRINGUP_STOP_TIMEOUT}"
         fi
     fi
 
@@ -959,6 +964,9 @@ export ENABLE_REALSENSE_SYNC="$ENABLE_REALSENSE_SYNC"
 export ROSBAG2_MAX_CACHE_SIZE="$ROSBAG2_MAX_CACHE_SIZE"
 export ROSBAG2_STORAGE_CONFIG="$ROSBAG2_STORAGE_CONFIG"
 export ROSBAG2_STORAGE_PRESET_PROFILE="$ROSBAG2_STORAGE_PRESET_PROFILE"
+export ROSBAG_STOP_TIMEOUT="$ROSBAG_STOP_TIMEOUT"
+export BRINGUP_STOP_TIMEOUT="$BRINGUP_STOP_TIMEOUT"
+export WATCHDOG_STOP_TIMEOUT="$WATCHDOG_STOP_TIMEOUT"
 export RUNTIME_WATCHDOG_ABORT_ON_FAILURE="$RUNTIME_WATCHDOG_ABORT_ON_FAILURE"
 export RUN_REALSENSE_CAMERA_GATE="$RUN_REALSENSE_CAMERA_GATE"
 export REALSENSE_CAMERA_GATE_SECONDS="$REALSENSE_CAMERA_GATE_SECONDS"
