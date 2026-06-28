@@ -32,7 +32,8 @@ REQUIRE_GT="${REQUIRE_GT:-false}"
 REQUIRE_IMU="${REQUIRE_IMU:-false}"
 IMU_TOPICS="${IMU_TOPICS:-/camera/imu /imu}"
 ENABLE_REALSENSE_SYNC="${ENABLE_REALSENSE_SYNC:-false}"
-ROSBAG2_MAX_CACHE_SIZE="${ROSBAG2_MAX_CACHE_SIZE:-536870912}"
+ROSBAG2_MAX_CACHE_SIZE="${ROSBAG2_MAX_CACHE_SIZE:-67108864}"
+ROSBAG2_MAX_BAG_SIZE="${ROSBAG2_MAX_BAG_SIZE:-2147483648}"
 ROSBAG2_STORAGE_CONFIG="${ROSBAG2_STORAGE_CONFIG:-${ROOT}/configs/sqlite_resilient.yaml}"
 ROSBAG2_STORAGE_PRESET_PROFILE="${ROSBAG2_STORAGE_PRESET_PROFILE:-}"
 ROSBAG_STOP_TIMEOUT="${ROSBAG_STOP_TIMEOUT:-180}"
@@ -364,6 +365,7 @@ imu_topics: "${IMU_TOPICS}"
 camera_imu: enabled
 enable_realsense_sync: ${ENABLE_REALSENSE_SYNC}
 rosbag2_max_cache_size_bytes: ${ROSBAG2_MAX_CACHE_SIZE}
+rosbag2_max_bag_size_bytes: ${ROSBAG2_MAX_BAG_SIZE}
 rosbag2_storage_config: "${ROSBAG2_STORAGE_CONFIG}"
 rosbag2_storage_preset_profile: "${ROSBAG2_STORAGE_PRESET_PROFILE}"
 rosbag_stop_timeout_sec: ${ROSBAG_STOP_TIMEOUT}
@@ -962,6 +964,7 @@ export IMU_TOPICS="$IMU_TOPICS"
 
 export ENABLE_REALSENSE_SYNC="$ENABLE_REALSENSE_SYNC"
 export ROSBAG2_MAX_CACHE_SIZE="$ROSBAG2_MAX_CACHE_SIZE"
+export ROSBAG2_MAX_BAG_SIZE="$ROSBAG2_MAX_BAG_SIZE"
 export ROSBAG2_STORAGE_CONFIG="$ROSBAG2_STORAGE_CONFIG"
 export ROSBAG2_STORAGE_PRESET_PROFILE="$ROSBAG2_STORAGE_PRESET_PROFILE"
 export ROSBAG_STOP_TIMEOUT="$ROSBAG_STOP_TIMEOUT"
@@ -1166,6 +1169,9 @@ if [ "${ROS_VERSION}" = "2" ]; then
     fi
     if [ -n "${ROSBAG2_STORAGE_PRESET_PROFILE}" ]; then
         ROS2_STORAGE_ARGS+=(--storage-preset-profile "${ROSBAG2_STORAGE_PRESET_PROFILE}")
+    fi
+    if [ -n "${ROSBAG2_MAX_BAG_SIZE}" ] && [ "${ROSBAG2_MAX_BAG_SIZE}" != "0" ]; then
+        ROS2_STORAGE_ARGS+=(--max-bag-size "${ROSBAG2_MAX_BAG_SIZE}")
     fi
     # ROS2: ros2 bag record writes to a directory; -o specifies the directory name
     ros2 bag record \
