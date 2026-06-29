@@ -135,7 +135,7 @@ source_ros() {
 }
 
 apt_install() {
-    sudo_run apt-get install -y "$@"
+    sudo_run env DEBIAN_FRONTEND=noninteractive apt-get install -y --allow-downgrades "$@"
 }
 
 disable_legacy_realsense_sources() {
