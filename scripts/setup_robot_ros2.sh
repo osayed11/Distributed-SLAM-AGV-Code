@@ -495,6 +495,9 @@ if [ "${INSTALL_SYSTEM}" = "true" ]; then
         usbutils \
         v4l-utils \
         "${ROS_DISTRO:+ros-${ROS_DISTRO}-cv-bridge}" \
+        "${ROS_DISTRO:+ros-${ROS_DISTRO}-ament-cmake-gtest}" \
+        "${ROS_DISTRO:+ros-${ROS_DISTRO}-ament-lint-auto}" \
+        "${ROS_DISTRO:+ros-${ROS_DISTRO}-ament-lint-common}" \
         "${ROS_DISTRO:+ros-${ROS_DISTRO}-diagnostic-msgs}" \
         "${ROS_DISTRO:+ros-${ROS_DISTRO}-geometry-msgs}" \
         "${ROS_DISTRO:+ros-${ROS_DISTRO}-image-transport}" \
