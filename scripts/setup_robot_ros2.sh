@@ -504,6 +504,17 @@ if [ "${INSTALL_SYSTEM}" = "true" ]; then
         "${ROS_DISTRO:+ros-${ROS_DISTRO}-launch-ros}" \
         "${ROS_DISTRO:+ros-${ROS_DISTRO}-nav-msgs}" \
         "${ROS_DISTRO:+ros-${ROS_DISTRO}-robot-state-publisher}" \
+        "${ROS_DISTRO:+ros-${ROS_DISTRO}-ros2bag}" \
+        "${ROS_DISTRO:+ros-${ROS_DISTRO}-ros2cli}" \
+        "${ROS_DISTRO:+ros-${ROS_DISTRO}-ros2doctor}" \
+        "${ROS_DISTRO:+ros-${ROS_DISTRO}-ros2interface}" \
+        "${ROS_DISTRO:+ros-${ROS_DISTRO}-ros2launch}" \
+        "${ROS_DISTRO:+ros-${ROS_DISTRO}-ros2node}" \
+        "${ROS_DISTRO:+ros-${ROS_DISTRO}-ros2param}" \
+        "${ROS_DISTRO:+ros-${ROS_DISTRO}-ros2pkg}" \
+        "${ROS_DISTRO:+ros-${ROS_DISTRO}-ros2run}" \
+        "${ROS_DISTRO:+ros-${ROS_DISTRO}-ros2service}" \
+        "${ROS_DISTRO:+ros-${ROS_DISTRO}-ros2topic}" \
         "${ROS_DISTRO:+ros-${ROS_DISTRO}-rosbag2-storage-mcap}" \
         "${ROS_DISTRO:+ros-${ROS_DISTRO}-sensor-msgs}" \
         "${ROS_DISTRO:+ros-${ROS_DISTRO}-std-msgs}" \
