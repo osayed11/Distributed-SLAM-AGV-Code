@@ -964,7 +964,7 @@ class RobotDoctorDecisionTests(unittest.TestCase):
                     "1.2",
                     "FAIL",
                     "ydlidar_scan_frame_timeout",
-                    "YDLidar electronics report healthy, but no scan frames arrive after scan start",
+                    "YDLidar serial opens and scan command is issued, but no scan frames arrive after scan start",
                     next_action="check LiDAR motor power",
                 ),
                 CheckResult("2.3", "FAIL", "topic_present", "/scan missing"),

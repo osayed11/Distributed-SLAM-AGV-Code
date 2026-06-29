@@ -2791,21 +2791,21 @@ PY
                 "check /dev/ydlidar, UART alias, hciuart, dialout permissions, and the configured baud/port",
             )
             return
-        health_ok = re.search(r"LiDAR successfully connected", text) and re.search(
-            r"health status:\s*good", text, flags=re.IGNORECASE
-        )
+        serial_opened = re.search(r"LiDAR successfully connected", text)
         scan_started = re.search(r"start scan mode", text, flags=re.IGNORECASE)
         scan_timeout = re.search(
             r"Failed to turn on the Lidar.*Operation timed out|Operation timed out",
             text,
             flags=re.IGNORECASE | re.DOTALL,
         )
-        if health_ok and scan_started and scan_timeout:
+        # The X2 single-channel SDK path can print a healthy status without
+        # proving that scan frames are arriving, so keep the evidence literal.
+        if serial_opened and scan_started and scan_timeout:
             self.add(
                 "1.2",
                 FAIL,
                 "ydlidar_scan_frame_timeout",
-                "YDLidar electronics report healthy, but no scan frames arrive after scan start",
+                "YDLidar serial opens and scan command is issued, but no scan frames arrive after scan start",
                 evidence,
                 "confirm the LiDAR motor spins; check motor power/enable/wiring, then swap LiDAR/harness with a known-good robot if it still times out",
             )
