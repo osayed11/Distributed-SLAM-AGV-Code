@@ -2716,6 +2716,10 @@ PY
 
     def live_topic_specs(self) -> Dict[str, Dict[str, float]]:
         specs = dict(DEFAULT_TOPIC_SPECS)
+        if not self.args.expect_camera:
+            for topic in list(specs):
+                if topic.startswith("/camera/"):
+                    specs.pop(topic, None)
         cmd_topic = self.args.cmd_topic or os.environ.get("CMD_TOPIC")
         if cmd_topic:
             specs[cmd_topic] = {"min_hz": 0.0, "target_hz": 0.0}

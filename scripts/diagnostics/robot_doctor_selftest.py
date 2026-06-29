@@ -1071,6 +1071,15 @@ class RobotDoctorConfigTests(unittest.TestCase):
             self.assertEqual(specs["/scan"]["min_hz"], 5.0)
             self.assertEqual(specs["/custom/topic"]["min_hz"], 0.0)
 
+    def test_no_expect_camera_removes_default_camera_topic_requirements(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            args = build_parser().parse_args(["agvtest", "--output-root", tmp, "--no-expect-camera"])
+            doctor = Doctor(args)
+            specs = doctor.live_topic_specs()
+            self.assertIn("/scan", specs)
+            self.assertNotIn("/camera/color/image_raw", specs)
+            self.assertNotIn("/camera/aligned_depth_to_color/image_raw", specs)
+
     def test_dataset_bringup_context_flags_missing_existing_graph(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             args = build_parser().parse_args(["agvtest", "--profile", "dataset", "--output-root", tmp])
