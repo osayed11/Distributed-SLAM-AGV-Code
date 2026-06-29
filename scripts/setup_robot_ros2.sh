@@ -504,6 +504,7 @@ if [ "${INSTALL_SYSTEM}" = "true" ]; then
         "${ROS_DISTRO:+ros-${ROS_DISTRO}-std-srvs}" \
         "${ROS_DISTRO:+ros-${ROS_DISTRO}-tf2-msgs}" \
         "${ROS_DISTRO:+ros-${ROS_DISTRO}-tf2-ros}" \
+        "${ROS_DISTRO:+ros-${ROS_DISTRO}-visualization-msgs}" \
         "${ROS_DISTRO:+ros-${ROS_DISTRO}-xacro}"
 
     python3 -m pip install --user "mcap>=1.2,<2"
