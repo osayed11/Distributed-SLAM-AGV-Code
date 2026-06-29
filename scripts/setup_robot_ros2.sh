@@ -170,6 +170,39 @@ write_realsense_source() {
     sudo_write_file /etc/apt/sources.list.d/librealsense.list 0644 "${source_line}"
 }
 
+ensure_ros2_repo() {
+    section "ros 2 apt repo"
+    local arch
+    local codename
+    local tmp_key
+
+    codename="$(
+        . /etc/os-release
+        printf '%s' "${UBUNTU_CODENAME:-${VERSION_CODENAME:-}}"
+    )"
+    if [ -z "${codename}" ]; then
+        echo "ERROR: could not determine Ubuntu codename from /etc/os-release." >&2
+        exit 1
+    fi
+    if [ "${codename}" != "jammy" ]; then
+        echo "ERROR: ROS 2 ${ROS_DISTRO} setup expects Ubuntu jammy; found ${codename}." >&2
+        exit 1
+    fi
+
+    apt_install ca-certificates curl gnupg lsb-release software-properties-common
+    sudo_run add-apt-repository universe -y
+    sudo_run install -d -m 0755 /etc/apt/keyrings
+    tmp_key="$(mktemp)"
+    curl -fsSL -o "${tmp_key}" https://raw.githubusercontent.com/ros/rosdistro/master/ros.key
+    sudo_run install -m 0644 "${tmp_key}" /etc/apt/keyrings/ros-archive-keyring.gpg
+    rm -f "${tmp_key}"
+
+    arch="$(dpkg --print-architecture)"
+    sudo_write_file /etc/apt/sources.list.d/ros2.list 0644 \
+        "deb [arch=${arch} signed-by=/etc/apt/keyrings/ros-archive-keyring.gpg] http://packages.ros.org/ros2/ubuntu ${codename} main"
+    sudo_run apt-get update
+}
+
 apt_update_logged() {
     local log_file="$1"
     set +e
@@ -422,6 +455,7 @@ if [ "${INSTALL_SYSTEM}" = "true" ]; then
         sudo_run rm -f /etc/apt/sources.list.d/librealsense.list
     fi
     sudo_run apt-get update
+    ensure_ros2_repo
     apt_install \
         build-essential \
         chrony \
