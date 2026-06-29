@@ -1080,6 +1080,20 @@ class RobotDoctorConfigTests(unittest.TestCase):
             self.assertNotIn("/camera/color/image_raw", specs)
             self.assertNotIn("/camera/aligned_depth_to_color/image_raw", specs)
 
+    def test_no_expect_camera_skips_realsense_stream_test(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            args = build_parser().parse_args(
+                ["agvtest", "--output-root", tmp, "--no-expect-camera", "--stream-test-seconds", "1"]
+            )
+            doctor = Doctor(args)
+            doctor.run_realsense_stream_test()
+            self.assertEqual(len(doctor.results), 1)
+            self.assertEqual(
+                (doctor.results[0].code, doctor.results[0].status, doctor.results[0].check),
+                ("3.2", "INFO", "realsense_stream_test"),
+            )
+            self.assertIn("camera not expected", doctor.results[0].summary)
+
     def test_dataset_bringup_context_flags_missing_existing_graph(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             args = build_parser().parse_args(["agvtest", "--profile", "dataset", "--output-root", tmp])

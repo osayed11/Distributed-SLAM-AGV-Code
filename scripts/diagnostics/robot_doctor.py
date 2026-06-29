@@ -2177,6 +2177,9 @@ class Doctor:
         )
 
     def run_realsense_stream_test(self) -> None:
+        if not self.args.expect_camera:
+            self.add("3.2", INFO, "realsense_stream_test", "camera not expected; standalone stream test skipped")
+            return
         if self.args.stream_test_seconds <= 0:
             self.add("3.2", INFO, "realsense_stream_test", "standalone stream test skipped")
             self.run_d455_motion_stream_gate()
