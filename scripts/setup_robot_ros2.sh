@@ -427,6 +427,24 @@ ACTION=="add", SUBSYSTEM=="usb", ENV{DEVTYPE}=="usb_interface", ATTRS{idVendor}=
     echo "installed ${rule_file}"
 }
 
+install_ydlidar_uart_rule() {
+    section "ydlidar uart rule"
+    local rule_file="/etc/udev/rules.d/99-ydlidar-uart.rules"
+    local rule_content
+    rule_content='# ORKAR AGV LiDAR is wired to the Raspberry Pi PL011 UART.
+KERNEL=="ttyAMA0", SUBSYSTEM=="tty", SYMLINK+="ydlidar", GROUP="dialout", MODE="0660"'
+
+    sudo_run systemctl disable --now hciuart.service >/dev/null 2>&1 || true
+    sudo_write_file "${rule_file}" 0644 "${rule_content}"
+    sudo_run usermod -aG dialout "${USER}" >/dev/null 2>&1 || true
+    sudo_run udevadm control --reload-rules
+    sudo_run udevadm trigger --subsystem-match=tty --name-match=ttyAMA0 || true
+    sudo_run ln -sfn ttyAMA0 /dev/ydlidar
+    sudo_run chgrp dialout /dev/ttyAMA0 || true
+    sudo_run chmod 0660 /dev/ttyAMA0 || true
+    echo "installed ${rule_file}; /dev/ydlidar -> /dev/ttyAMA0"
+}
+
 check_python_binding() {
     section "pyrealsense2 import"
     if python3 - <<'PY'
@@ -543,6 +561,7 @@ if [ "${APPLY_LOW_RISK_FIXES}" = "true" ]; then
     install_d455_power_service
     install_d455_power_rule
     install_d455_uvc_bind_rule
+    install_ydlidar_uart_rule
 fi
 
 if [ "${INSTALL_YDLIDAR_SDK}" = "true" ]; then
