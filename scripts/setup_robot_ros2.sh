@@ -484,6 +484,7 @@ if [ "${INSTALL_SYSTEM}" = "true" ]; then
         cmake \
         git \
         i2c-tools \
+        libboost-dev \
         network-manager \
         pkg-config \
         python3-colcon-common-extensions \
@@ -496,12 +497,14 @@ if [ "${INSTALL_SYSTEM}" = "true" ]; then
         "${ROS_DISTRO:+ros-${ROS_DISTRO}-diagnostic-msgs}" \
         "${ROS_DISTRO:+ros-${ROS_DISTRO}-geometry-msgs}" \
         "${ROS_DISTRO:+ros-${ROS_DISTRO}-image-transport}" \
+        "${ROS_DISTRO:+ros-${ROS_DISTRO}-launch-ros}" \
         "${ROS_DISTRO:+ros-${ROS_DISTRO}-nav-msgs}" \
         "${ROS_DISTRO:+ros-${ROS_DISTRO}-robot-state-publisher}" \
         "${ROS_DISTRO:+ros-${ROS_DISTRO}-rosbag2-storage-mcap}" \
         "${ROS_DISTRO:+ros-${ROS_DISTRO}-sensor-msgs}" \
         "${ROS_DISTRO:+ros-${ROS_DISTRO}-std-msgs}" \
         "${ROS_DISTRO:+ros-${ROS_DISTRO}-std-srvs}" \
+        "${ROS_DISTRO:+ros-${ROS_DISTRO}-tf2-geometry-msgs}" \
         "${ROS_DISTRO:+ros-${ROS_DISTRO}-tf2-msgs}" \
         "${ROS_DISTRO:+ros-${ROS_DISTRO}-tf2-ros}" \
         "${ROS_DISTRO:+ros-${ROS_DISTRO}-visualization-msgs}" \
