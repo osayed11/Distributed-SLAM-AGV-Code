@@ -485,6 +485,7 @@ if [ "${INSTALL_SYSTEM}" = "true" ]; then
         git \
         i2c-tools \
         libboost-dev \
+        libboost-system-dev \
         network-manager \
         pkg-config \
         python3-colcon-common-extensions \
