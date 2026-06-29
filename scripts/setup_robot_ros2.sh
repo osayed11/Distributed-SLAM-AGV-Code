@@ -352,7 +352,7 @@ path = Path(sys.argv[1])
 parts = [item for item in path.read_text().strip().split() if not item.startswith("usbcore.quirks=")]
 parts.append("usbcore.quirks=8086:0b5c:kn")
 path.write_text(" ".join(parts) + "\n")'
-    printf '%s\n' "${python_script}" | sudo_run python3 - "${cmdline_file}"
+    sudo_run python3 -c "${python_script}" "${cmdline_file}"
     echo "installed usbcore.quirks=8086:0b5c:kn in ${cmdline_file}; reboot required"
 }
 
