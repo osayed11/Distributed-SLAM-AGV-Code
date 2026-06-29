@@ -1121,6 +1121,28 @@ class RobotDoctorConfigTests(unittest.TestCase):
                 ("2.2", "PASS", "dataset_bringup_context"),
             )
 
+    def test_ydlidar_scan_frame_timeout_is_classified_from_bringup_log(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            args = build_parser().parse_args(["agvtest", "--profile", "dataset", "--output-root", tmp])
+            doctor = Doctor(args)
+            doctor.bringup_log = doctor.log_dir / "bringup_command.log"
+            doctor.bringup_log.write_text(
+                "YDLidar SDK initializing\n"
+                "LiDAR successfully connected\n"
+                "[YDLIDAR]:Lidar running correctly ! The health status: good\n"
+                "[CYdLidar] Successed to start scan mode, Elapsed time 1061 ms\n"
+                "timout count: 1\n"
+                "timout count: 2\n"
+                "[CYdLidar] Failed to turn on the Lidar, because the lidar is [Operation timed out].\n"
+            )
+            doctor.topic_types = {"/odom": "nav_msgs/msg/Odometry"}
+            doctor.check_ydlidar_bringup_classification()
+            self.assertEqual(len(doctor.results), 1)
+            self.assertEqual(
+                (doctor.results[0].code, doctor.results[0].status, doctor.results[0].check),
+                ("1.2", "FAIL", "ydlidar_scan_frame_timeout"),
+            )
+
 
 class RobotDoctorProcessTests(unittest.TestCase):
     def test_diagnostic_lock_blocks_second_doctor(self) -> None:

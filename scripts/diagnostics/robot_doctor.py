@@ -2557,6 +2557,7 @@ PY
                 return
             self.add("2.3", PASS, "ros_graph", f"{len(self.topic_types)} topics discovered", [topics.log])
             self.check_dataset_bringup_context()
+            self.check_ydlidar_bringup_classification()
             self.check_realsense_ros_runtime_versions()
             self.check_required_live_topics()
             self.check_dds_discovery()
@@ -2733,6 +2734,64 @@ PY
                 "dataset_bringup_context",
                 "dataset gate used an existing ROS graph and required data topics were visible",
             )
+
+    def check_ydlidar_bringup_classification(self) -> None:
+        if not self.bringup_log or not self.bringup_log.exists():
+            return
+        text = self.bringup_log.read_text(errors="replace")
+        if "YDLidar" not in text and "YDLIDAR" not in text:
+            return
+        evidence = [str(self.bringup_log)]
+        if "/scan" in self.topic_types:
+            self.add("2.2", PASS, "ydlidar_bringup", "YDLidar bringup produced /scan", evidence)
+            return
+        if re.search(r"cannot bind to the specified serial port", text, flags=re.IGNORECASE):
+            self.add(
+                "2.1",
+                FAIL,
+                "ydlidar_serial_bind",
+                "YDLidar could not bind the configured serial port/baud",
+                evidence,
+                "check /dev/ydlidar, UART alias, hciuart, dialout permissions, and the configured baud/port",
+            )
+            return
+        health_ok = re.search(r"LiDAR successfully connected", text) and re.search(
+            r"health status:\s*good", text, flags=re.IGNORECASE
+        )
+        scan_started = re.search(r"start scan mode", text, flags=re.IGNORECASE)
+        scan_timeout = re.search(
+            r"Failed to turn on the Lidar.*Operation timed out|Operation timed out",
+            text,
+            flags=re.IGNORECASE | re.DOTALL,
+        )
+        if health_ok and scan_started and scan_timeout:
+            self.add(
+                "1.2",
+                FAIL,
+                "ydlidar_scan_frame_timeout",
+                "YDLidar electronics report healthy, but no scan frames arrive after scan start",
+                evidence,
+                "confirm the LiDAR motor spins; check motor power/enable/wiring, then swap LiDAR/harness with a known-good robot if it still times out",
+            )
+            return
+        if re.search(r"Fail to get device information|Failed to start scan mode", text, flags=re.IGNORECASE):
+            self.add(
+                "1.1",
+                FAIL,
+                "ydlidar_device_health",
+                "YDLidar driver could not read device information or start scan mode",
+                evidence,
+                "check LiDAR identity, firmware/model assumptions, serial wiring, and try a known-good LiDAR",
+            )
+            return
+        self.add(
+            "2.2",
+            WARN,
+            "ydlidar_bringup",
+            "YDLidar log is present but /scan is missing without a known signature",
+            evidence,
+            "inspect the YDLidar bringup log and add a classifier for the observed failure signature",
+        )
 
     def check_required_live_topics(self) -> None:
         for topic, spec in self.live_topic_specs().items():
