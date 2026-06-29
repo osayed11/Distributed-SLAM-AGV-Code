@@ -228,6 +228,42 @@ class CheckResult:
     next_action: str = ""
 
 
+ROOT_CAUSE_CHECK_PRIORITY = {
+    "ydlidar_scan_frame_timeout": 0,
+    "ydlidar_serial_bind": 1,
+    "ydlidar_device_health": 2,
+    "realsense_stream_transport": 10,
+    "realsense_stream_no_frames": 11,
+    "realsense_control_query": 12,
+    "kernel_usb_disconnect": 13,
+    "kernel_usb_overcurrent": 14,
+    "kernel_xhci_errors": 15,
+    "kernel_uvc_errors": 16,
+}
+
+DOWNSTREAM_SYMPTOM_CHECKS = {
+    "dataset_bringup_context",
+    "bringup_wait",
+    "topic_present",
+    "topic_rate",
+}
+
+
+def primary_blocker(results: Sequence[CheckResult]) -> Optional[CheckResult]:
+    if not results:
+        return None
+
+    def sort_key(indexed: Tuple[int, CheckResult]) -> Tuple[int, int, int]:
+        index, item = indexed
+        if item.check in ROOT_CAUSE_CHECK_PRIORITY:
+            return (0, ROOT_CAUSE_CHECK_PRIORITY[item.check], index)
+        if item.check in DOWNSTREAM_SYMPTOM_CHECKS:
+            return (2, 0, index)
+        return (1, 0, index)
+
+    return min(enumerate(results), key=sort_key)[1]
+
+
 def summarize_decision(results: Sequence[CheckResult], profile: str = "dataset") -> Dict[str, object]:
     hard_failures = [item for item in results if item.status == FAIL]
     warnings = [item for item in results if item.status == WARN]
@@ -238,14 +274,14 @@ def summarize_decision(results: Sequence[CheckResult], profile: str = "dataset")
         verdict = "FAIL"
         can_run_tests = False
         dataset_ready = False
-        primary = hard_failures[0]
+        primary = primary_blocker(hard_failures)
         recommendation = primary.next_action or "Fix the first hard failure and rerun robot_doctor."
     elif warnings:
         state = "review"
         verdict = "WARN"
         can_run_tests = True
         dataset_ready = False
-        primary = warnings[0]
+        primary = primary_blocker(warnings)
         recommendation = primary.next_action or "Review warnings and rerun robot_doctor before publishable collection."
     else:
         state = "ready"

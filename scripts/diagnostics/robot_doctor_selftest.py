@@ -956,6 +956,24 @@ class RobotDoctorDecisionTests(unittest.TestCase):
         self.assertEqual(decision["primary_blocker"]["check"], "realsense_tools")
         self.assertEqual(decision["recommendation"], "install tools")
 
+    def test_root_cause_failure_beats_downstream_missing_topic_symptom(self) -> None:
+        decision = summarize_decision(
+            [
+                CheckResult("2.2", "FAIL", "dataset_bringup_context", "required topics missing: /scan"),
+                CheckResult(
+                    "1.2",
+                    "FAIL",
+                    "ydlidar_scan_frame_timeout",
+                    "YDLidar electronics report healthy, but no scan frames arrive after scan start",
+                    next_action="check LiDAR motor power",
+                ),
+                CheckResult("2.3", "FAIL", "topic_present", "/scan missing"),
+            ]
+        )
+        self.assertEqual(decision["primary_blocker"]["check"], "ydlidar_scan_frame_timeout")
+        self.assertEqual(decision["primary_blocker"]["code"], "1.2")
+        self.assertEqual(decision["recommendation"], "check LiDAR motor power")
+
     def test_warning_allows_tests_but_blocks_dataset(self) -> None:
         decision = summarize_decision(
             [
