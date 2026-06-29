@@ -290,10 +290,32 @@ ensure_realsense_repo() {
 
 install_realsense_stack() {
     section "realsense packages"
-    install_expected_version_package librealsense2 "${EXPECTED_LIBREALSENSE}"
-    install_expected_version_package librealsense2-dev "${EXPECTED_LIBREALSENSE}"
-    install_expected_version_package librealsense2-utils "${EXPECTED_LIBREALSENSE}"
-    install_expected_version_package librealsense2-udev-rules "${EXPECTED_LIBREALSENSE}"
+    local pkg
+    local version
+    local realsense_packages=(
+        librealsense2
+        librealsense2-gl
+        librealsense2-dev
+        librealsense2-utils
+        librealsense2-udev-rules
+    )
+    local install_args=()
+    for pkg in "${realsense_packages[@]}"; do
+        version="$(apt_candidate_with_prefix "${pkg}" "${EXPECTED_LIBREALSENSE}")"
+        if [ -n "${version}" ]; then
+            install_args+=("${pkg}=${version}")
+            continue
+        fi
+        if [ "${ALLOW_REALSENSE_VERSION_DRIFT}" = "true" ]; then
+            echo "WARN: no ${pkg} candidate starts with ${EXPECTED_LIBREALSENSE}; installing available candidate."
+            install_args+=("${pkg}")
+            continue
+        fi
+        echo "ERROR: no ${pkg} candidate starts with ${EXPECTED_LIBREALSENSE}." >&2
+        echo "       Set ALLOW_REALSENSE_VERSION_DRIFT=true only for debugging, not dataset standardization." >&2
+        exit 1
+    done
+    apt_install "${install_args[@]}"
     if apt-cache show python3-pyrealsense2 >/dev/null 2>&1; then
         install_expected_version_package python3-pyrealsense2 "${EXPECTED_LIBREALSENSE}"
     else
@@ -302,7 +324,7 @@ install_realsense_stack() {
         python3 -m pip install --user "pyrealsense2==${PYREALSENSE2_PIP_VERSION}"
     fi
 
-    for pkg in librealsense2 librealsense2-dev librealsense2-utils librealsense2-udev-rules python3-pyrealsense2; do
+    for pkg in "${realsense_packages[@]}" python3-pyrealsense2; do
         if dpkg-query -W -f='${Status}' "${pkg}" 2>/dev/null | grep -q "ok installed"; then
             sudo_run apt-mark hold "${pkg}" >/dev/null || true
         fi
