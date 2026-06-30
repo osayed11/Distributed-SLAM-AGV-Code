@@ -57,8 +57,9 @@ BRINGUP_STOP_TIMEOUT="${BRINGUP_STOP_TIMEOUT:-60}"
 WATCHDOG_STOP_TIMEOUT="${WATCHDOG_STOP_TIMEOUT:-15}"
 RUN_REALSENSE_CAMERA_GATE="${RUN_REALSENSE_CAMERA_GATE:-true}"
 REALSENSE_CAMERA_GATE_SECONDS="${REALSENSE_CAMERA_GATE_SECONDS:-90}"
-D455_RESET_MODE="${D455_RESET_MODE:-hardware-reset}"
+D455_RESET_MODE="${D455_RESET_MODE:-none}"
 D455_RESET_REENUMERATE_WAIT="${D455_RESET_REENUMERATE_WAIT:-15}"
+ROS_LOCALHOST_ONLY_AUTO="${ROS_LOCALHOST_ONLY_AUTO:-true}"
 STRICT_REALSENSE_UVC_LOG="${STRICT_REALSENSE_UVC_LOG:-false}"
 RATE_EPSILON_HZ="${RATE_EPSILON_HZ:-0.05}"
 REALSENSE_ACTIVE_RGBD_GAP_ABORT="${REALSENSE_ACTIVE_RGBD_GAP_ABORT:-false}"
@@ -82,6 +83,12 @@ MAX_CAMERA_IMU_GATE_GAP_SEC="${MAX_CAMERA_IMU_GATE_GAP_SEC:-0.10}"
 RGBD_STARTUP_TIMEOUT="${RGBD_STARTUP_TIMEOUT:-90}"
 IMU_STARTUP_TIMEOUT="${IMU_STARTUP_TIMEOUT:-30}"
 MIN_REALSENSE_FPS="${MIN_REALSENSE_FPS:-15}"
+
+if [ -z "${ROS_LOCALHOST_ONLY+x}" ] && \
+   [ "${ROS_LOCALHOST_ONLY_AUTO}" = true ] && \
+   [ "${REQUIRE_GT}" != true ]; then
+    export ROS_LOCALHOST_ONLY=1
+fi
 
 CAMERA_COLOR_WIDTH="${CAMERA_COLOR_WIDTH:-640}"
 CAMERA_COLOR_HEIGHT="${CAMERA_COLOR_HEIGHT:-480}"
@@ -399,6 +406,8 @@ imu_recording_keepalive_enabled: ${ENABLE_IMU_RECORDING_KEEPALIVE}
 imu_recording_keepalive_seconds: ${IMU_RECORDING_KEEPALIVE_SECONDS}
 camera_imu: enabled
 enable_realsense_sync: ${ENABLE_REALSENSE_SYNC}
+ros_localhost_only: "${ROS_LOCALHOST_ONLY:-}"
+ros_localhost_only_auto: ${ROS_LOCALHOST_ONLY_AUTO}
 rosbag2_max_cache_size_bytes: ${ROSBAG2_MAX_CACHE_SIZE}
 rosbag2_max_bag_size_bytes: ${ROSBAG2_MAX_BAG_SIZE}
 rosbag2_storage_id_requested: "${ROSBAG2_STORAGE_ID}"
@@ -1254,6 +1263,24 @@ reset_d455_before_bringup() {
     fi
 }
 
+ensure_ydlidar_device() {
+    if [ -e /dev/ydlidar ]; then
+        return 0
+    fi
+
+    if [ ! -e /dev/ttyS0 ]; then
+        echo "  [WARN] /dev/ydlidar missing and /dev/ttyS0 not present; LiDAR may not publish /scan"
+        return 0
+    fi
+
+    if sudo_best_effort ln -sfn ttyS0 /dev/ydlidar; then
+        sudo_best_effort chmod 666 /dev/ttyS0 || true
+        echo "  [OK] created /dev/ydlidar -> ttyS0"
+    else
+        echo "  [WARN] could not create /dev/ydlidar -> ttyS0; set SUDO_PASSWORD if /scan is missing"
+    fi
+}
+
 BRINGUP_LOG="${BAG_DIR}/${SESSION_ID}_bringup.log"
 
 # Kill any stale bringup from a previous session before starting a new one.
@@ -1271,6 +1298,7 @@ if [ -n "${STALE_PIDS}" ]; then
     sleep 1
 fi
 
+ensure_ydlidar_device
 reset_d455_before_bringup
 
 KERNEL_RUNTIME_START_LINE="$(kernel_line_count)"
