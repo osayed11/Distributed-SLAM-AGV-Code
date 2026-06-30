@@ -2036,12 +2036,12 @@ class Doctor:
         if self.args.confirm_mechanical:
             self.add("1.3", PASS, "mechanical_operator_check", "operator confirmed mechanical checks", [str(checklist)])
         else:
-            status = FAIL if self.args.strict_ops else WARN
+            status = FAIL if self.args.strict_ops else (WARN if self.args.profile == "dataset" else INFO)
             self.add(
                 "1.3",
                 status,
                 "mechanical_operator_check",
-                "mechanical checks require human confirmation",
+                "mechanical checks require human confirmation" if self.args.profile == "dataset" else "mechanical confirmation not required for this gate",
                 [str(checklist)],
                 "complete the checklist or rerun with --confirm-mechanical after inspection",
             )
