@@ -160,6 +160,7 @@ bash scripts/diagnostics/dataset_ready_gate.sh agv110 \
   --expected-d455-serial <assigned_d455_serial> \
   --mocap-topic /optitrack/rigid_bodies/orkar_agv110 \
   --cmd-topic /agv110/cmd_vel \
+  --odom-mocap-sanity-json ~/agv_data/diagnostics/agv110_odom_mocap_sanity.json \
   --strict-ops \
   --confirm-mechanical \
   --confirm-mocap \
@@ -179,6 +180,11 @@ CAUSE: pre-run gate passed; no blocking failures or pre-run warnings
 `POST_RUN_DATASET_READY: false` is normal before recording because no bag exists
 yet. If `READY_TO_RECORD` is false, do not collect publishable data. Use the
 printed `FAILED_STAGE`, `CAUSE`, `EVIDENCE`, and `NEXT_ACTION`.
+
+The `--odom-mocap-sanity-json` file is produced after the 1 m straight-line
+odom-vs-MoCap sanity check. It must contain numeric `odom_distance_m` and
+`mocap_distance_m`; the dataset gate accepts the robot only when the relative
+error is within the configured threshold.
 
 The report is written under:
 

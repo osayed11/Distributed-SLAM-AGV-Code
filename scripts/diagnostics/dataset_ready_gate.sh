@@ -23,6 +23,8 @@ Options:
   --output-root PATH         Evidence root. Default: ~/agv_data/diagnostics
   --mocap-topic TOPIC        Expected live MoCap rigid-body topic.
   --cmd-topic TOPIC          Expected command topic for this robot.
+  --odom-mocap-sanity-json PATH
+                             JSON evidence from the 1 m odom-vs-MoCap sanity check.
   --expected-d455-serial SN  Expected assigned D455 serial for this robot.
   --identity-file PATH       Read EXPECTED_D455_SERIAL from this file.
                              Default: ~/agv_data/<robot>_identity.env when present.
@@ -88,6 +90,13 @@ while [ "$#" -gt 0 ]; do
             CMD_TOPIC_ARG="${1:-}"
             [ -n "${CMD_TOPIC_ARG}" ] || { echo "ERROR: --cmd-topic requires a value" >&2; exit 2; }
             DOCTOR_ARGS+=("--cmd-topic" "${CMD_TOPIC_ARG}")
+            ;;
+        --odom-mocap-sanity-json)
+            opt="$1"
+            shift
+            value="${1:-}"
+            [ -n "${value}" ] || { echo "ERROR: ${opt} requires a value" >&2; exit 2; }
+            DOCTOR_ARGS+=("${opt}" "${value}")
             ;;
         --expected-d455-serial)
             shift

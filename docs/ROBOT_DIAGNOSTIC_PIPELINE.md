@@ -30,6 +30,7 @@ bash scripts/diagnostics/dataset_ready_gate.sh agv102 \
   --expected-d455-serial <assigned_d455_serial> \
   --mocap-topic /optitrack/rigid_bodies/orkar_agv102 \
   --cmd-topic /agv102/cmd_vel \
+  --odom-mocap-sanity-json ~/agv_data/diagnostics/agv102_odom_mocap_sanity.json \
   --strict-ops \
   --confirm-mechanical \
   --confirm-mocap \
@@ -51,6 +52,10 @@ bag exists yet. If `READY_TO_RECORD` is `false`, do not collect publishable
 data. Use the printed `FAILED_STAGE`, `CAUSE`, `EVIDENCE`, and `NEXT_ACTION` to
 decide the repair. Only then use `apply_robot_doctor_fix.sh` or perform a
 physical A/B swap.
+
+The odom-vs-MoCap JSON is the evidence from the 1 m straight-line sanity check.
+It must include numeric `odom_distance_m` and `mocap_distance_m`; the dataset
+gate fails if the relative error exceeds the configured threshold.
 
 The `--expected-d455-serial` value should come from the robot inventory label.
 This makes accidental camera swaps deterministic: the gate fails under
