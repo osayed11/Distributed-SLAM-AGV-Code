@@ -57,8 +57,8 @@ BRINGUP_STOP_TIMEOUT="${BRINGUP_STOP_TIMEOUT:-60}"
 WATCHDOG_STOP_TIMEOUT="${WATCHDOG_STOP_TIMEOUT:-15}"
 RUN_REALSENSE_CAMERA_GATE="${RUN_REALSENSE_CAMERA_GATE:-true}"
 REALSENSE_CAMERA_GATE_SECONDS="${REALSENSE_CAMERA_GATE_SECONDS:-90}"
-D455_RESET_MODE="${D455_RESET_MODE:-authorize-cycle}"
-D455_RESET_REENUMERATE_WAIT="${D455_RESET_REENUMERATE_WAIT:-10}"
+D455_RESET_MODE="${D455_RESET_MODE:-hardware-reset}"
+D455_RESET_REENUMERATE_WAIT="${D455_RESET_REENUMERATE_WAIT:-15}"
 STRICT_REALSENSE_UVC_LOG="${STRICT_REALSENSE_UVC_LOG:-false}"
 RATE_EPSILON_HZ="${RATE_EPSILON_HZ:-0.05}"
 REALSENSE_ACTIVE_RGBD_GAP_ABORT="${REALSENSE_ACTIVE_RGBD_GAP_ABORT:-false}"
@@ -1086,6 +1086,18 @@ write_sysfs_required() {
     return 1
 }
 
+sudo_best_effort() {
+    if sudo -n true >/dev/null 2>&1; then
+        sudo -n "$@" >/dev/null 2>&1
+        return $?
+    fi
+    if [ -n "${SUDO_PASSWORD:-}" ]; then
+        printf "%s\n" "${SUDO_PASSWORD}" | sudo -S "$@" >/dev/null 2>&1
+        return $?
+    fi
+    return 1
+}
+
 find_d455_sysfs() {
     local p
     for p in /sys/bus/usb/devices/*/idProduct; do
@@ -1130,6 +1142,31 @@ except Exception as e:
 "
 }
 
+hardware_reset_d455() {
+    python3 - <<'PY'
+import sys
+import time
+
+try:
+    import pyrealsense2 as rs
+except Exception as exc:
+    print(f"  [WARN] pyrealsense2 unavailable for D455 hardware_reset: {exc}", file=sys.stderr)
+    raise SystemExit(1)
+
+ctx = rs.context()
+for dev in ctx.query_devices():
+    product_id = dev.get_info(rs.camera_info.product_id).lower() if dev.supports(rs.camera_info.product_id) else ""
+    if product_id == "0b5c":
+        serial = dev.get_info(rs.camera_info.serial_number) if dev.supports(rs.camera_info.serial_number) else "unknown"
+        dev.hardware_reset()
+        print(f"  D455 hardware_reset sent ({serial})")
+        raise SystemExit(0)
+
+print("  [WARN] no D455 found by pyrealsense2 for hardware_reset", file=sys.stderr)
+raise SystemExit(1)
+PY
+}
+
 authorize_cycle_d455() {
     local rs_sysfs="$1"
 
@@ -1142,6 +1179,23 @@ authorize_cycle_d455() {
     write_sysfs_required "${rs_sysfs}/authorized" 0 || return 1
     sleep 4
     write_sysfs_required "${rs_sysfs}/authorized" 1 || return 1
+}
+
+retrigger_d455_udev() {
+    if ! command -v udevadm >/dev/null 2>&1; then
+        return 0
+    fi
+
+    if sudo_best_effort udevadm control --reload-rules; then
+        sudo_best_effort udevadm trigger --subsystem-match=video4linux || true
+        sudo_best_effort udevadm trigger --subsystem-match=media || true
+        sudo_best_effort udevadm trigger --subsystem-match=iio || true
+        sudo_best_effort udevadm trigger --subsystem-match=hidraw || true
+        sudo_best_effort udevadm settle --timeout=10 || true
+        echo "  D455 udev rules retriggered"
+    else
+        echo "  [WARN] could not retrigger udev rules; set SUDO_PASSWORD if device permissions look stale"
+    fi
 }
 
 reset_d455_before_bringup() {
@@ -1159,6 +1213,18 @@ reset_d455_before_bringup() {
     fi
 
     case "${D455_RESET_MODE}" in
+        hardware-reset)
+            echo "Resetting D455 (RealSense hardware_reset)..."
+            hardware_reset_d455 || {
+                echo "  [WARN] hardware_reset failed; falling back to USB deauthorize/reauthorize"
+                authorize_cycle_d455 "${rs_sysfs}" || {
+                    echo "  [WARN] authorize cycle failed; falling back to USBDEVFS_RESET"
+                    usb_reset_d455 "${rs_sysfs}" || true
+                }
+            }
+            sleep "${D455_RESET_REENUMERATE_WAIT}"
+            retrigger_d455_udev
+            ;;
         authorize-cycle)
             echo "Resetting D455 (USB deauthorize/reauthorize cycle)..."
             authorize_cycle_d455 "${rs_sysfs}" || {
@@ -1166,14 +1232,16 @@ reset_d455_before_bringup() {
                 usb_reset_d455 "${rs_sysfs}" || true
             }
             sleep "${D455_RESET_REENUMERATE_WAIT}"
+            retrigger_d455_udev
             ;;
         usb-reset)
             echo "Resetting D455 (USBDEVFS_RESET)..."
             usb_reset_d455 "${rs_sysfs}" || true
             sleep "${D455_RESET_REENUMERATE_WAIT}"
+            retrigger_d455_udev
             ;;
         *)
-            echo "ERROR: unsupported D455_RESET_MODE='${D455_RESET_MODE}' (use authorize-cycle, usb-reset, or none)." >&2
+            echo "ERROR: unsupported D455_RESET_MODE='${D455_RESET_MODE}' (use hardware-reset, authorize-cycle, usb-reset, or none)." >&2
             exit 1
             ;;
     esac

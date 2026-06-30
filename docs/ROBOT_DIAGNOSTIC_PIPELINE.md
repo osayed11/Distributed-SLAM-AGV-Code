@@ -438,11 +438,12 @@ checks `rs-enumerate-devices`. If the same control-query failure returns after
 reset plus authorize-cycle, treat it as persistent USB/camera/host-path
 evidence and move to the physical A/B swap branch.
 
-`scripts/logging/start_session.sh` uses this stronger D455 reset by default
-before bringup (`D455_RESET_MODE=authorize-cycle`) so the publishable logging
-path matches the doctor recovery path. Set `D455_RESET_MODE=usb-reset` to test
-the older plain USB reset, or `D455_RESET_MODE=none` only for a deliberate
-no-reset experiment.
+`scripts/logging/start_session.sh` uses an even stronger RealSense
+`hardware_reset()` by default before bringup (`D455_RESET_MODE=hardware-reset`)
+and then retriggers udev so the publishable logging path recovers the HID/IMU
+motion path as well as the video path. Set `D455_RESET_MODE=authorize-cycle` or
+`D455_RESET_MODE=usb-reset` only to compare older reset paths, or
+`D455_RESET_MODE=none` only for a deliberate no-reset experiment.
 
 ### D455 Physical A/B Swap Evidence
 
