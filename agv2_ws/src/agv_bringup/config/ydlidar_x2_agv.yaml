@@ -15,7 +15,7 @@ ydlidar_ros2_driver_node:
     isSingleChannel: true
     intensity_bit: 0
     intensity: false
-    support_motor_dtr: true
+    support_motor_dtr: false
     angle_max: 180.0
     angle_min: -180.0
     range_max: 12.0

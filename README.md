@@ -139,6 +139,7 @@ D455 IMU rate:                  about 200 Hz live, >=150 Hz in recorded bags
 Gyro raw topic:                 /camera/gyro/sample at about 200 Hz
 Accel raw topic:                /camera/accel/sample at about 100 Hz
 Bag storage:                    MCAP preferred; SQLite only with resilient evidence
+YDLidar X2 motor control:       support_motor_dtr=false
 ```
 
 The standard is encoded in:
