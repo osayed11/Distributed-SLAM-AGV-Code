@@ -1365,6 +1365,7 @@ if [ ${#FAILED_TOPICS[@]} -ne 0 ]; then
 fi
 
 run_camera_pre_gate
+sleep "${IMU_SETTLE_DELAY:-4}"
 
 echo "Sensors are live; starting bag recording."
 START_EPOCH=$(date +%s)
