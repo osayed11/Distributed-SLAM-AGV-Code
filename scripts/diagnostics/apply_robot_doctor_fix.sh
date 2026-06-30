@@ -136,14 +136,14 @@ install_d455_boot_quirk() {
     fi
     if [ "${APPLY}" = true ]; then
         sudo_run cp "${cmdline_file}" "${cmdline_file}.bak.$(date +%Y%m%d_%H%M%S)"
-        sudo_run python3 - "${cmdline_file}" <<'PY'
+        sudo_run python3 -c '
 from pathlib import Path
 import sys
 path = Path(sys.argv[1])
 parts = [item for item in path.read_text().strip().split() if not item.startswith("usbcore.quirks=")]
 parts.append("usbcore.quirks=8086:0b5c:kn")
 path.write_text(" ".join(parts) + "\n")
-PY
+' "${cmdline_file}"
         log "installed usbcore.quirks=8086:0b5c:kn in ${cmdline_file}; reboot required"
     else
         log "DRY-RUN: add usbcore.quirks=8086:0b5c:kn to ${cmdline_file}"
