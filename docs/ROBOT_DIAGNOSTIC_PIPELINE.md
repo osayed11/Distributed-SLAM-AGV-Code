@@ -95,6 +95,14 @@ kept LiDAR, odom, TF, RGB-D, and D455 IMU present without introducing recorder
 stalls. Enable the watchdog only for debugging, then validate the resulting bag
 before treating it as data.
 
+The managed logger also leaves the D455 IMU recording keepalive disabled
+(`ENABLE_IMU_RECORDING_KEEPALIVE=false`). The recorder already subscribes to
+the fused and raw D455 motion topics. On agv24, an extra bounded keepalive
+subscriber reproduced a deterministic failure where the pre-run IMU gate passed
+but the recorded bag contained zero IMU messages. Treat `REQUIRE_IMU=true`
+post-run validation as the authority, and enable the keepalive only when
+debugging that specific path.
+
 ## One-Time Provisioning
 
 For a freshly flashed ROS 2 robot, run the standard provisioning path first:

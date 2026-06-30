@@ -242,6 +242,13 @@ IMU path. The runtime watchdog is disabled by default because `ros2 topic hz`
 probes can perturb a publishable run; use post-run bag validation as the
 authority.
 
+The D455 IMU recording keepalive is also disabled by default
+(`ENABLE_IMU_RECORDING_KEEPALIVE=false`). The bag recorder itself subscribes to
+`/camera/imu`, `/camera/gyro/sample`, and `/camera/accel/sample`; adding a
+second keepalive subscriber has been observed to wedge the RealSense motion path
+on agv24 exactly when recording starts. Only enable the keepalive for a
+deliberate debug test, then validate the resulting bag with `REQUIRE_IMU=true`.
+
 Session artifacts are written to `~/agv_data`:
 
 ```text

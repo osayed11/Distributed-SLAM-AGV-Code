@@ -42,7 +42,7 @@ if [ -z "${REQUIRE_CLOCK_SYNC+x}" ]; then
 fi
 REQUIRE_IMU="${REQUIRE_IMU:-false}"
 IMU_TOPICS="${IMU_TOPICS:-/camera/imu /imu}"
-ENABLE_IMU_RECORDING_KEEPALIVE="${ENABLE_IMU_RECORDING_KEEPALIVE:-true}"
+ENABLE_IMU_RECORDING_KEEPALIVE="${ENABLE_IMU_RECORDING_KEEPALIVE:-false}"
 IMU_RECORDING_KEEPALIVE_SECONDS="${IMU_RECORDING_KEEPALIVE_SECONDS:-30}"
 ENABLE_REALSENSE_SYNC="${ENABLE_REALSENSE_SYNC:-false}"
 ROSBAG2_MAX_CACHE_SIZE="${ROSBAG2_MAX_CACHE_SIZE:-536870912}"
@@ -553,7 +553,7 @@ finalise_manifest() {
     echo "Manifest written: ${MANIFEST_FILE}"
     echo ""
     echo "Run quality check:"
-    echo "  CMD_TOPIC=${CMD_TOPIC} python3 scripts/logging/validate_ros2_bag.py ${BAG_PATH} --require-resilient-storage"
+    echo "  REQUIRE_IMU=${REQUIRE_IMU} CMD_TOPIC=${CMD_TOPIC} python3 scripts/logging/validate_ros2_bag.py ${BAG_PATH} --require-resilient-storage"
 }
 
 run_camera_pre_gate() {
