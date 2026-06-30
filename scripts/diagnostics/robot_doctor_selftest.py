@@ -414,6 +414,29 @@ class RobotDoctorParserTests(unittest.TestCase):
         code, status, check, _, _ = Doctor.classify_wifi_management(text, "preflight")
         self.assertEqual((code, status, check), ("3.3", "PASS", "wifi_management"))
 
+    def test_wifi_classifier_accepts_netplan_networkd(self) -> None:
+        text = (
+            "SERVICES\n"
+            "inactive\n"
+            "active\n"
+            "inactive\n"
+            "PROCESSES\n"
+            "/sbin/wpa_supplicant -c /run/netplan/wpa-wlan0.conf -iwlan0 -Dnl80211,wext\n"
+            "/lib/systemd/systemd-networkd\n"
+            "NETPLAN\n"
+            "network:\n"
+            "  version: 2\n"
+            "  renderer: networkd\n"
+            "  wifis:\n"
+            "    wlan0:\n"
+            "      dhcp4: true\n"
+            "      access-points:\n"
+            "        \"DELTA_FLIGHT_ARENA\":\n"
+            "          password: \"ucl_delta_123\"\n"
+        )
+        code, status, check, _, _ = Doctor.classify_wifi_management(text, "preflight")
+        self.assertEqual((code, status, check), ("3.3", "PASS", "wifi_management"))
+
     def test_native_ros2_classifier_flags_bridge_when_expected(self) -> None:
         text = "ENV\nROS_DISTRO=humble\nROS_MASTER_URI=http://localhost:11311\nPROCESSES\n123 ros1_bridge dynamic_bridge\n"
         code, status, check, summary, next_action = Doctor.classify_native_ros2_stack(
@@ -661,6 +684,19 @@ class RobotDoctorParserTests(unittest.TestCase):
         self.assertEqual(status, "WARN")
         self.assertIn("multiple", summary)
         self.assertIn("disable duplicate", next_action)
+
+    def test_realsense_apt_source_deduplicates_same_capture(self) -> None:
+        text = (
+            "REALSENSE_APT_SOURCES\n"
+            "FILE:/etc/apt/sources.list.d/a.list\n"
+            "deb [signed-by=/key] https://librealsense.intel.com/Debian/apt-repo jammy main\n"
+            "FILE:/etc/apt/sources.list.d/a.list\n"
+            "deb [signed-by=/key] https://librealsense.intel.com/Debian/apt-repo jammy main\n"
+            "PYREALSENSE2\n"
+        )
+        status, summary, _ = Doctor.classify_realsense_apt_sources(text)
+        self.assertEqual(status, "PASS")
+        self.assertIn("signed-by keyring", summary)
 
     def test_pyrealsense2_import_error_parser(self) -> None:
         text = "PYREALSENSE2\nIMPORT_ERROR:ModuleNotFoundError:No module named pyrealsense2\nROS_REALSENSE_PACKAGE\n"

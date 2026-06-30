@@ -958,6 +958,13 @@ class Doctor:
             or re.search(r"wpa_supplicant[^\n]*-i\s*wlan0[^\n]*wpa_supplicant\.conf", text)
         )
         network_manager = "NetworkManager" in text and re.search(r"\bwlan0\s+wifi\s+connected\b", text)
+        networkd_wifi = (
+            re.search(r"\bactive\b", text)
+            and "systemd-networkd" in text
+            and re.search(r"renderer:\s*networkd", text)
+            and re.search(r"wifis:\s*\n\s*wlan0:", text)
+            and re.search(r"access-points:", text)
+        )
         if manual_dhclient or manual_wpa:
             status = FAIL if profile == "dataset" else WARN
             details = []
@@ -974,12 +981,14 @@ class Doctor:
             )
         if network_manager:
             return ("3.3", PASS, "wifi_management", "wlan0 is managed by NetworkManager without manual DHCP/WPA conflicts", "")
+        if networkd_wifi:
+            return ("3.3", PASS, "wifi_management", "wlan0 is managed by persistent netplan/systemd-networkd Wi-Fi without manual DHCP/WPA conflicts", "")
         return (
             "3.3",
             WARN,
             "wifi_management",
-            "could not prove stable NetworkManager-managed Wi-Fi",
-            "verify Wi-Fi persistence with nmcli, reboot, and SSH reconnect before lab collection",
+            "could not prove stable persistent Wi-Fi management",
+            "verify Wi-Fi persistence with NetworkManager or netplan, reboot, and SSH reconnect before lab collection",
         )
 
     def check_power_state(self) -> None:
@@ -1742,7 +1751,8 @@ class Doctor:
                 continue
             if ".disabled-by-setup-" in current_file:
                 continue
-            enabled_sources.append(stripped)
+            if stripped not in enabled_sources:
+                enabled_sources.append(stripped)
 
         if not enabled_sources:
             return (
