@@ -88,6 +88,13 @@ can perturb or mis-measure a healthy high-rate camera stream. Runtime watchdogs
 stay focused on lower-bandwidth base/scan/GT liveness; camera stream quality is
 decided by the mandatory pre-run gate and post-run bag validator.
 
+On Raspberry Pi robots the managed logger defaults to a 512 MB rosbag2 cache
+(`ROSBAG2_MAX_CACHE_SIZE=536870912`) and leaves the runtime watchdog disabled
+(`ENABLE_RUNTIME_WATCHDOG=false`). This was the smallest tested setting that
+kept LiDAR, odom, TF, RGB-D, and D455 IMU present without introducing recorder
+stalls. Enable the watchdog only for debugging, then validate the resulting bag
+before treating it as data.
+
 ## One-Time Provisioning
 
 For a freshly flashed ROS 2 robot, run the standard provisioning path first:

@@ -225,7 +225,7 @@ bash scripts/logging/start_session.sh agv110 home_test
 6. waits for /scan, /odom, RGB-D, and IMU topics
 7. runs the required live RealSense gate on the active bringup
 8. starts ros2 bag record with MCAP, sensor QoS overrides, and large cache
-9. runs a runtime watchdog for low-bandwidth liveness checks
+9. optionally runs a runtime watchdog when `ENABLE_RUNTIME_WATCHDOG=true`
 10. stops `ros2 bag` cleanly, stops bringup, checks post-run D455 enumeration
 11. writes the manifest and RealSense fault classification
 ```
@@ -235,6 +235,12 @@ recovers the RealSense HID/IMU path when a plain USB reset or authorize-cycle
 leaves motion frames wedged. Use `D455_RESET_MODE=authorize-cycle` or
 `D455_RESET_MODE=usb-reset` only when debugging older reset paths, and
 `D455_RESET_MODE=none` only for a deliberate no-reset test.
+
+The default recorder cache is `ROSBAG2_MAX_CACHE_SIZE=536870912` (512 MB). On
+Raspberry Pi robots this avoided RGB-D recorder stalls without starving the D455
+IMU path. The runtime watchdog is disabled by default because `ros2 topic hz`
+probes can perturb a publishable run; use post-run bag validation as the
+authority.
 
 Session artifacts are written to `~/agv_data`:
 
