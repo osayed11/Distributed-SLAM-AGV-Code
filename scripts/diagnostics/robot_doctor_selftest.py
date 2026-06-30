@@ -974,6 +974,28 @@ class RobotDoctorDecisionTests(unittest.TestCase):
         self.assertEqual(decision["primary_blocker"]["code"], "1.2")
         self.assertEqual(decision["recommendation"], "check LiDAR motor power")
 
+    def test_ydlidar_uart_alias_beats_scan_timeout(self) -> None:
+        decision = summarize_decision(
+            [
+                CheckResult(
+                    "1.2",
+                    "FAIL",
+                    "ydlidar_scan_frame_timeout",
+                    "scan command sent but no frames arrive",
+                    next_action="check LiDAR motor power",
+                ),
+                CheckResult(
+                    "2.1",
+                    "FAIL",
+                    "ydlidar_uart_alias",
+                    "/dev/ydlidar resolves to /dev/ttyAMA0, but /dev/serial0 resolves to /dev/ttyS0",
+                    next_action="fix ydlidar udev alias",
+                ),
+            ]
+        )
+        self.assertEqual(decision["primary_blocker"]["check"], "ydlidar_uart_alias")
+        self.assertEqual(decision["recommendation"], "fix ydlidar udev alias")
+
     def test_warning_allows_tests_but_blocks_dataset(self) -> None:
         decision = summarize_decision(
             [
@@ -1183,6 +1205,48 @@ class RobotDoctorConfigTests(unittest.TestCase):
                 (doctor.results[0].code, doctor.results[0].status, doctor.results[0].check),
                 ("1.2", "FAIL", "ydlidar_scan_frame_timeout"),
             )
+
+    def test_ydlidar_uart_alias_mismatch_is_classified(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            args = build_parser().parse_args(["agvtest", "--profile", "dataset", "--output-root", tmp])
+            doctor = Doctor(args)
+            log_path = doctor.log_dir / "serial_devices.log"
+            log_path.write_text(
+                "lrwxrwxrwx 1 root root 7 /dev/ydlidar -> ttyAMA0\n"
+                "ydlidar_resolved=/dev/ttyAMA0\n"
+                "serial0_resolved=/dev/ttyS0\n"
+            )
+
+            def fake_run(*_args, **_kwargs):
+                return CommandResult("serial_devices", "fake", 0, 0.0, False, str(log_path))
+
+            doctor.run = fake_run  # type: ignore[method-assign]
+            doctor.check_serial_devices()
+            matches = [item for item in doctor.results if item.check == "ydlidar_uart_alias"]
+            self.assertEqual(len(matches), 1)
+            self.assertEqual((matches[0].code, matches[0].status), ("2.1", "FAIL"))
+            self.assertIn("/dev/ttyAMA0", matches[0].summary)
+            self.assertIn("/dev/ttyS0", matches[0].summary)
+
+    def test_ydlidar_uart_alias_match_passes(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            args = build_parser().parse_args(["agvtest", "--profile", "dataset", "--output-root", tmp])
+            doctor = Doctor(args)
+            log_path = doctor.log_dir / "serial_devices.log"
+            log_path.write_text(
+                "lrwxrwxrwx 1 root root 5 /dev/ydlidar -> ttyS0\n"
+                "ydlidar_resolved=/dev/ttyS0\n"
+                "serial0_resolved=/dev/ttyS0\n"
+            )
+
+            def fake_run(*_args, **_kwargs):
+                return CommandResult("serial_devices", "fake", 0, 0.0, False, str(log_path))
+
+            doctor.run = fake_run  # type: ignore[method-assign]
+            doctor.check_serial_devices()
+            matches = [item for item in doctor.results if item.check == "ydlidar_uart_alias"]
+            self.assertEqual(len(matches), 1)
+            self.assertEqual((matches[0].code, matches[0].status), ("2.1", "PASS"))
 
 
 class RobotDoctorProcessTests(unittest.TestCase):

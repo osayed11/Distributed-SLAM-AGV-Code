@@ -430,19 +430,52 @@ ACTION=="add", SUBSYSTEM=="usb", ENV{DEVTYPE}=="usb_interface", ATTRS{idVendor}=
 install_ydlidar_uart_rule() {
     section "ydlidar uart rule"
     local rule_file="/etc/udev/rules.d/99-ydlidar-uart.rules"
+    local cmdline_file="/boot/firmware/cmdline.txt"
+    local target
     local rule_content
-    rule_content='# ORKAR AGV LiDAR is wired to the Raspberry Pi PL011 UART.
-KERNEL=="ttyAMA0", SUBSYSTEM=="tty", SYMLINK+="ydlidar", GROUP="dialout", MODE="0660"'
+    if [ ! -f "${cmdline_file}" ]; then
+        cmdline_file="/boot/cmdline.txt"
+    fi
+    target="$(basename "$(readlink -f /dev/serial0 2>/dev/null || true)")"
+    if [ -z "${target}" ] || [ ! -e "/dev/${target}" ]; then
+        if [ -e /dev/ttyS0 ]; then
+            target="ttyS0"
+        elif [ -e /dev/ttyAMA0 ]; then
+            target="ttyAMA0"
+        else
+            echo "ERROR: could not identify Raspberry Pi GPIO UART for YDLidar." >&2
+            echo "       Expected /dev/serial0, /dev/ttyS0, or /dev/ttyAMA0." >&2
+            exit 1
+        fi
+    fi
+    rule_content="# ORKAR AGV LiDAR is wired to the Raspberry Pi GPIO header primary UART.
+# Resolve /dev/serial0 during setup and bind /dev/ydlidar to that kernel device.
+KERNEL==\"${target}\", SUBSYSTEM==\"tty\", SYMLINK+=\"ydlidar\", GROUP=\"dialout\", MODE=\"0660\""
 
+    if [ -f "${cmdline_file}" ]; then
+        sudo_run cp "${cmdline_file}" "${cmdline_file}.bak.ydlidar.$(date +%Y%m%d_%H%M%S)"
+        python_script='from pathlib import Path
+import sys
+path = Path(sys.argv[1])
+parts = path.read_text().strip().split()
+parts = [item for item in parts if not item.startswith("console=serial") and not item.startswith("console=ttyS")]
+if "console=tty1" not in parts:
+    parts.insert(0, "console=tty1")
+path.write_text(" ".join(parts) + "\n")'
+        sudo_run python3 -c "${python_script}" "${cmdline_file}"
+    else
+        echo "WARN: boot cmdline file not found; cannot remove UART serial console."
+    fi
     sudo_run systemctl disable --now hciuart.service >/dev/null 2>&1 || true
+    sudo_run systemctl disable --now "serial-getty@${target}.service" serial-getty@serial0.service >/dev/null 2>&1 || true
     sudo_write_file "${rule_file}" 0644 "${rule_content}"
     sudo_run usermod -aG dialout "${USER}" >/dev/null 2>&1 || true
     sudo_run udevadm control --reload-rules
-    sudo_run udevadm trigger --subsystem-match=tty --name-match=ttyAMA0 || true
-    sudo_run ln -sfn ttyAMA0 /dev/ydlidar
-    sudo_run chgrp dialout /dev/ttyAMA0 || true
-    sudo_run chmod 0660 /dev/ttyAMA0 || true
-    echo "installed ${rule_file}; /dev/ydlidar -> /dev/ttyAMA0"
+    sudo_run udevadm trigger --subsystem-match=tty --name-match="${target}" || true
+    sudo_run ln -sfn "${target}" /dev/ydlidar
+    sudo_run chgrp dialout "/dev/${target}" || true
+    sudo_run chmod 0660 "/dev/${target}" || true
+    echo "installed ${rule_file}; /dev/ydlidar -> /dev/${target}"
 }
 
 check_python_binding() {

@@ -229,9 +229,10 @@ class CheckResult:
 
 
 ROOT_CAUSE_CHECK_PRIORITY = {
-    "ydlidar_scan_frame_timeout": 0,
-    "ydlidar_serial_bind": 1,
-    "ydlidar_device_health": 2,
+    "ydlidar_uart_alias": 0,
+    "ydlidar_scan_frame_timeout": 1,
+    "ydlidar_serial_bind": 2,
+    "ydlidar_device_health": 3,
     "realsense_stream_transport": 10,
     "realsense_stream_no_frames": 11,
     "realsense_control_query": 12,
@@ -1833,6 +1834,8 @@ class Doctor:
         result = self.run(
             "serial_devices",
             "ls -l /dev/ydlidar /dev/ttyS0 /dev/ttyAMA0 /dev/ttyACM* /dev/ttyUSB* 2>/dev/null || true; "
+            "printf 'ydlidar_resolved=%s\\n' \"$(readlink -f /dev/ydlidar 2>/dev/null || true)\"; "
+            "printf 'serial0_resolved=%s\\n' \"$(readlink -f /dev/serial0 2>/dev/null || true)\"; "
             "udevadm info -q property -n /dev/ydlidar 2>/dev/null | sed -n '1,80p' || true; "
             "udevadm info -q property -n /dev/ttyS0 2>/dev/null | sed -n '1,80p' || true",
             timeout=8,
@@ -1850,6 +1853,29 @@ class Doctor:
             )
         else:
             self.add("1.1", PASS, "serial_devices", "serial device candidates present", [result.log])
+        ydlidar_match = re.search(r"^ydlidar_resolved=(.+)$", text, flags=re.MULTILINE)
+        serial0_match = re.search(r"^serial0_resolved=(.+)$", text, flags=re.MULTILINE)
+        ydlidar_resolved = ydlidar_match.group(1).strip() if ydlidar_match else ""
+        serial0_resolved = serial0_match.group(1).strip() if serial0_match else ""
+        if ydlidar_resolved and serial0_resolved:
+            if ydlidar_resolved == serial0_resolved:
+                self.add(
+                    "2.1",
+                    PASS,
+                    "ydlidar_uart_alias",
+                    f"/dev/ydlidar resolves to GPIO UART {ydlidar_resolved}",
+                    [result.log],
+                )
+            else:
+                status = FAIL if self.args.profile == "dataset" else WARN
+                self.add(
+                    "2.1",
+                    status,
+                    "ydlidar_uart_alias",
+                    f"/dev/ydlidar resolves to {ydlidar_resolved}, but GPIO UART /dev/serial0 resolves to {serial0_resolved}",
+                    [result.log],
+                    "run setup_robot_ros2.sh or update /etc/udev/rules.d/99-ydlidar-uart.rules so /dev/ydlidar points at /dev/serial0",
+                )
 
     def check_kernel_logs(self) -> None:
         since_epoch = max(0, self.start_epoch - 60)

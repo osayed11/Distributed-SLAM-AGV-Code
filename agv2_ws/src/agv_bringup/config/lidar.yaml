@@ -2,8 +2,10 @@
 # Active ROS2 driver params live in agv2_ws/src/agv_bringup/config/ydlidar_x2_agv.yaml.
 # This file documents the physical mounting reference values.
 
-# Serial interface (YDLiDAR X2 is USB-serial, NOT TCP/IP)
-port: "/dev/ttyAMA0"   # UART on Raspberry Pi GPIO header; may be /dev/ttyUSB0 on other boards
+# Serial interface (YDLiDAR X2 is serial, NOT TCP/IP)
+# setup_robot_ros2.sh creates /dev/ydlidar from the Raspberry Pi GPIO header
+# primary UART (/dev/serial0, commonly ttyS0 on Ubuntu Raspberry Pi images).
+port: "/dev/ydlidar"
 baudrate: 115200
 device_type: 0         # 0 = YDLIDAR_TYPE_SERIAL
 
