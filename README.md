@@ -220,7 +220,7 @@ bash scripts/logging/start_session.sh agv110 home_test
 1. waits for clock sync before naming the session
 2. records chrony and hardware snapshots
 3. stops stale bringup/recording processes
-4. resets only the D455 USB device and disables D455 autosuspend
+4. resets only the D455 USB device with an authorize-cycle and disables D455 autosuspend
 5. launches ROS 2 bringup once
 6. waits for /scan, /odom, RGB-D, and IMU topics
 7. runs the required live RealSense gate on the active bringup
@@ -229,6 +229,11 @@ bash scripts/logging/start_session.sh agv110 home_test
 10. stops `ros2 bag` cleanly, stops bringup, checks post-run D455 enumeration
 11. writes the manifest and RealSense fault classification
 ```
+
+The default D455 reset mode is `D455_RESET_MODE=authorize-cycle`, because this
+also recovers the RealSense HID/IMU path when a plain USB reset leaves it
+wedged. Use `D455_RESET_MODE=usb-reset` only when debugging the older reset
+path, or `D455_RESET_MODE=none` only for a deliberate no-reset test.
 
 Session artifacts are written to `~/agv_data`:
 

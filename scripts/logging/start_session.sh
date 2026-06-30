@@ -57,6 +57,8 @@ BRINGUP_STOP_TIMEOUT="${BRINGUP_STOP_TIMEOUT:-60}"
 WATCHDOG_STOP_TIMEOUT="${WATCHDOG_STOP_TIMEOUT:-15}"
 RUN_REALSENSE_CAMERA_GATE="${RUN_REALSENSE_CAMERA_GATE:-true}"
 REALSENSE_CAMERA_GATE_SECONDS="${REALSENSE_CAMERA_GATE_SECONDS:-90}"
+D455_RESET_MODE="${D455_RESET_MODE:-authorize-cycle}"
+D455_RESET_REENUMERATE_WAIT="${D455_RESET_REENUMERATE_WAIT:-10}"
 STRICT_REALSENSE_UVC_LOG="${STRICT_REALSENSE_UVC_LOG:-false}"
 RATE_EPSILON_HZ="${RATE_EPSILON_HZ:-0.05}"
 REALSENSE_ACTIVE_RGBD_GAP_ABORT="${REALSENSE_ACTIVE_RGBD_GAP_ABORT:-false}"
@@ -406,6 +408,8 @@ rosbag2_storage_preset_profile: "${ROSBAG2_STORAGE_PRESET_PROFILE}"
 rosbag2_qos_overrides: "${ROSBAG2_QOS_OVERRIDES}"
 rosbag_stop_timeout_sec: ${ROSBAG_STOP_TIMEOUT}
 bringup_stop_timeout_sec: ${BRINGUP_STOP_TIMEOUT}
+d455_reset_mode: "${D455_RESET_MODE}"
+d455_reset_reenumerate_wait_sec: ${D455_RESET_REENUMERATE_WAIT}
 realsense_camera_gate_required: ${RUN_REALSENSE_CAMERA_GATE}
 realsense_camera_gate_seconds: ${REALSENSE_CAMERA_GATE_SECONDS}
 rgbd_warn_gate_gap_sec: ${RGBD_WARN_GATE_GAP_SEC}
@@ -1063,6 +1067,125 @@ write_sysfs_best_effort() {
     fi
 }
 
+write_sysfs_required() {
+    local path="$1"
+    local value="$2"
+
+    if [ -w "${path}" ]; then
+        echo "${value}" > "${path}"
+        return 0
+    fi
+    if sudo -n true >/dev/null 2>&1; then
+        echo "${value}" | sudo -n tee "${path}" > /dev/null
+        return 0
+    fi
+    if [ -n "${SUDO_PASSWORD:-}" ]; then
+        printf "%s\n" "${SUDO_PASSWORD}" | sudo -S tee "${path}" > /dev/null
+        return 0
+    fi
+    return 1
+}
+
+find_d455_sysfs() {
+    local p
+    for p in /sys/bus/usb/devices/*/idProduct; do
+        [ "$(cat "$p" 2>/dev/null)" = "0b5c" ] && dirname "$p" && return 0
+    done
+    return 1
+}
+
+apply_d455_power_policy() {
+    local rs_sysfs="$1"
+
+    [ -n "${rs_sysfs}" ] || return 0
+    write_sysfs_best_effort "${rs_sysfs}/power/control" on
+    write_sysfs_best_effort "${rs_sysfs}/power/autosuspend" -1
+    write_sysfs_best_effort "${rs_sysfs}/power/autosuspend_delay_ms" -1
+    echo "  D455 autosuspend disabled"
+}
+
+usb_reset_d455() {
+    local rs_sysfs="$1"
+    local bus dev devfile
+
+    bus="$(cat "${rs_sysfs}/busnum" 2>/dev/null || true)"
+    dev="$(cat "${rs_sysfs}/devnum" 2>/dev/null || true)"
+    if [ -z "${bus}" ] || [ -z "${dev}" ]; then
+        echo "  [WARN] D455 USB bus/dev unavailable; cannot send USBDEVFS_RESET"
+        return 1
+    fi
+
+    devfile="$(printf "/dev/bus/usb/%03d/%03d" "${bus}" "${dev}")"
+    python3 -c "
+import fcntl, os, sys
+USBDEVFS_RESET = 0x5514
+try:
+    fd = os.open('${devfile}', os.O_WRONLY)
+    fcntl.ioctl(fd, USBDEVFS_RESET, 0)
+    os.close(fd)
+    print('  D455 USB reset sent (${devfile})')
+except Exception as e:
+    print('  USB reset failed:', e, file=sys.stderr)
+    sys.exit(1)
+"
+}
+
+authorize_cycle_d455() {
+    local rs_sysfs="$1"
+
+    if [ ! -f "${rs_sysfs}/authorized" ]; then
+        echo "  [WARN] ${rs_sysfs}/authorized missing; cannot deauthorize/reauthorize D455"
+        return 1
+    fi
+
+    echo "  D455 deauthorize/reauthorize cycle (${rs_sysfs})"
+    write_sysfs_required "${rs_sysfs}/authorized" 0 || return 1
+    sleep 4
+    write_sysfs_required "${rs_sysfs}/authorized" 1 || return 1
+}
+
+reset_d455_before_bringup() {
+    local rs_sysfs
+
+    if [ "${D455_RESET_MODE}" = "none" ] || [ "${D455_RESET_MODE}" = "false" ]; then
+        echo "Skipping D455 reset before bringup (D455_RESET_MODE=${D455_RESET_MODE})"
+        return 0
+    fi
+
+    rs_sysfs="$(find_d455_sysfs || true)"
+    if [ -z "${rs_sysfs}" ]; then
+        echo "  [WARN] D455 not found in sysfs; camera may not work"
+        return 0
+    fi
+
+    case "${D455_RESET_MODE}" in
+        authorize-cycle)
+            echo "Resetting D455 (USB deauthorize/reauthorize cycle)..."
+            authorize_cycle_d455 "${rs_sysfs}" || {
+                echo "  [WARN] authorize cycle failed; falling back to USBDEVFS_RESET"
+                usb_reset_d455 "${rs_sysfs}" || true
+            }
+            sleep "${D455_RESET_REENUMERATE_WAIT}"
+            ;;
+        usb-reset)
+            echo "Resetting D455 (USBDEVFS_RESET)..."
+            usb_reset_d455 "${rs_sysfs}" || true
+            sleep "${D455_RESET_REENUMERATE_WAIT}"
+            ;;
+        *)
+            echo "ERROR: unsupported D455_RESET_MODE='${D455_RESET_MODE}' (use authorize-cycle, usb-reset, or none)." >&2
+            exit 1
+            ;;
+    esac
+
+    rs_sysfs="$(find_d455_sysfs || true)"
+    if [ -n "${rs_sysfs}" ]; then
+        apply_d455_power_policy "${rs_sysfs}"
+    else
+        echo "  [WARN] D455 did not reappear after reset; camera may not work"
+    fi
+}
+
 BRINGUP_LOG="${BAG_DIR}/${SESSION_ID}_bringup.log"
 
 # Kill any stale bringup from a previous session before starting a new one.
@@ -1080,36 +1203,7 @@ if [ -n "${STALE_PIDS}" ]; then
     sleep 1
 fi
 
-# Reset the D455 using USBDEVFS_RESET — resets only the camera at USB protocol
-# level, leaving the MCU and all other USB devices completely untouched.
-# Works for both the normal stale-UVC case and the stuck bConfigurationValue case.
-echo "Resetting D455 (USB device reset)..."
-RS_SYSFS=$(for p in /sys/bus/usb/devices/*/idProduct; do
-    [ "$(cat "$p" 2>/dev/null)" = "0b5c" ] && dirname "$p" && break
-done)
-if [ -n "${RS_SYSFS}" ]; then
-    _BUS=$(cat "${RS_SYSFS}/busnum")
-    _DEV=$(cat "${RS_SYSFS}/devnum")
-    _DEVFILE=$(printf "/dev/bus/usb/%03d/%03d" "${_BUS}" "${_DEV}")
-    python3 -c "
-import fcntl, os, sys
-USBDEVFS_RESET = 0x5514
-try:
-    fd = os.open('${_DEVFILE}', os.O_WRONLY)
-    fcntl.ioctl(fd, USBDEVFS_RESET, 0)
-    os.close(fd)
-    print('  D455 USB reset sent (${_DEVFILE})')
-except Exception as e:
-    print('  USB reset failed:', e, file=sys.stderr)
-"
-    sleep 6
-    # Disable autosuspend after re-enumeration
-    write_sysfs_best_effort "${RS_SYSFS}/power/control" on
-    write_sysfs_best_effort "${RS_SYSFS}/power/autosuspend" -1
-    echo "  D455 autosuspend disabled"
-else
-    echo "  [WARN] D455 not found in sysfs — camera may not work"
-fi
+reset_d455_before_bringup
 
 KERNEL_RUNTIME_START_LINE="$(kernel_line_count)"
 echo "Starting bringup; log: ${BRINGUP_LOG}"
