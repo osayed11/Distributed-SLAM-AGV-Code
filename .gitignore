@@ -1,11 +1,13 @@
 **/build/
 **/install/
+**/log/
 **/logs/
 .DS_Store
 __pycache__/
 *.py[cod]
 build/
 install/
+log/
 logs/
 *.bag
 *.db3
