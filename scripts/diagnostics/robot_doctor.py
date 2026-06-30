@@ -600,7 +600,14 @@ class Doctor:
 
     def wait_for_bringup_topics(self) -> None:
         deadline = time.time() + max(0, int(self.args.bringup_wait))
-        required = ["/scan", "/odom", "/tf"]
+        if self.args.profile == "dataset":
+            required = [
+                topic
+                for topic, spec in self.live_topic_specs().items()
+                if spec.get("min_hz", 0.0) > 0
+            ]
+        else:
+            required = ["/scan", "/odom", "/tf"]
         required.extend(topic for topic in self.args.required_topic if topic not in required)
         required = list(dict.fromkeys(required))
         last_seen: Dict[str, str] = {}

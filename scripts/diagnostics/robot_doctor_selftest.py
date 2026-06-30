@@ -1116,6 +1116,32 @@ class RobotDoctorConfigTests(unittest.TestCase):
             )
             self.assertIn("camera not expected", doctor.results[0].summary)
 
+    def test_dataset_bringup_wait_includes_camera_data_topics(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            args = build_parser().parse_args(
+                ["agvtest", "--profile", "dataset", "--output-root", tmp, "--bringup-wait", "1"]
+            )
+            doctor = Doctor(args)
+            log_path = doctor.log_dir / "topic_list.log"
+            log_path.write_text(
+                "/scan [sensor_msgs/msg/LaserScan]\n"
+                "/odom [nav_msgs/msg/Odometry]\n"
+                "/tf [tf2_msgs/msg/TFMessage]\n"
+                "/camera/color/image_raw [sensor_msgs/msg/Image]\n"
+                "/camera/aligned_depth_to_color/image_raw [sensor_msgs/msg/Image]\n"
+            )
+
+            def fake_ros_cmd(*_args, **_kwargs):
+                return CommandResult("topic_list", "fake", 0, 0.0, False, str(log_path))
+
+            doctor.ros_cmd = fake_ros_cmd  # type: ignore[method-assign]
+            doctor.wait_for_bringup_topics()
+            matches = [item for item in doctor.results if item.check == "bringup_wait"]
+            self.assertEqual(len(matches), 1)
+            self.assertEqual(matches[0].status, "PASS")
+            self.assertIn("/camera/color/image_raw", matches[0].summary)
+            self.assertIn("/camera/aligned_depth_to_color/image_raw", matches[0].summary)
+
     def test_dataset_bringup_context_flags_missing_existing_graph(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             args = build_parser().parse_args(["agvtest", "--profile", "dataset", "--output-root", tmp])
