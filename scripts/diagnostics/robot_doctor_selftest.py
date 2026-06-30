@@ -437,6 +437,21 @@ class RobotDoctorParserTests(unittest.TestCase):
         code, status, check, _, _ = Doctor.classify_wifi_management(text, "preflight")
         self.assertEqual((code, status, check), ("3.3", "PASS", "wifi_management"))
 
+    def test_wifi_classifier_accepts_netplan_runtime_process(self) -> None:
+        text = (
+            "SERVICES\n"
+            "inactive\n"
+            "active\n"
+            "inactive\n"
+            "PROCESSES\n"
+            "/sbin/wpa_supplicant -c /run/netplan/wpa-wlan0.conf -iwlan0 -Dnl80211,wext\n"
+            "/lib/systemd/systemd-networkd\n"
+            "/sbin/wpa_supplicant -u -s -O /run/wpa_supplicant\n"
+            "NETPLAN\n"
+        )
+        code, status, check, _, _ = Doctor.classify_wifi_management(text, "preflight")
+        self.assertEqual((code, status, check), ("3.3", "PASS", "wifi_management"))
+
     def test_native_ros2_classifier_flags_bridge_when_expected(self) -> None:
         text = "ENV\nROS_DISTRO=humble\nROS_MASTER_URI=http://localhost:11311\nPROCESSES\n123 ros1_bridge dynamic_bridge\n"
         code, status, check, summary, next_action = Doctor.classify_native_ros2_stack(

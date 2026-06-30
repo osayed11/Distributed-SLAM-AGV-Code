@@ -958,12 +958,17 @@ class Doctor:
             or re.search(r"wpa_supplicant[^\n]*-i\s*wlan0[^\n]*wpa_supplicant\.conf", text)
         )
         network_manager = "NetworkManager" in text and re.search(r"\bwlan0\s+wifi\s+connected\b", text)
-        networkd_wifi = (
+        networkd_yaml_wifi = (
             re.search(r"\bactive\b", text)
             and "systemd-networkd" in text
             and re.search(r"renderer:\s*networkd", text)
             and re.search(r"wifis:\s*\n\s*wlan0:", text)
             and re.search(r"access-points:", text)
+        )
+        networkd_runtime_wifi = (
+            re.search(r"\bactive\b", text)
+            and "systemd-networkd" in text
+            and "/run/netplan/wpa-wlan0.conf" in text
         )
         if manual_dhclient or manual_wpa:
             status = FAIL if profile == "dataset" else WARN
@@ -981,7 +986,7 @@ class Doctor:
             )
         if network_manager:
             return ("3.3", PASS, "wifi_management", "wlan0 is managed by NetworkManager without manual DHCP/WPA conflicts", "")
-        if networkd_wifi:
+        if networkd_yaml_wifi or networkd_runtime_wifi:
             return ("3.3", PASS, "wifi_management", "wlan0 is managed by persistent netplan/systemd-networkd Wi-Fi without manual DHCP/WPA conflicts", "")
         return (
             "3.3",
