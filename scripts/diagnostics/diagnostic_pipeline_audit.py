@@ -79,6 +79,7 @@ class Audit:
             "scripts/setup_robot_ros2.sh",
             "scripts/logging/validate_ros2_bag.py",
             "configs/robot_doctor_dataset_gate.json",
+            "configs/robot_doctor_sensor_logging_gate.json",
             "configs/sqlite_resilient.yaml",
             "docs/ROBOT_DIAGNOSTIC_PIPELINE.md",
             "docs/ROBOT_DEBUG_PIPELINE_COVERAGE_AUDIT.md",
@@ -249,6 +250,53 @@ class Audit:
             self.add(FAIL, "dataset_gate_stream_duration", "stream_test_seconds below 60")
         else:
             self.add(PASS, "dataset_gate_stream_duration", "stream gate duration is at least 60 seconds")
+
+    def require_sensor_logging_gate(self) -> None:
+        path = self.path("configs/robot_doctor_sensor_logging_gate.json")
+        try:
+            config = json.loads(path.read_text())
+        except Exception as exc:
+            self.add(FAIL, "sensor_logging_gate_json", f"cannot parse sensor logging gate config: {exc}")
+            return
+
+        required_values = {
+            "profile": "preflight",
+            "require_gt": False,
+            "require_imu": True,
+            "expect_camera": True,
+            "strict_versions": True,
+            "expected_d455_firmware": "5.17.0.10",
+            "expected_librealsense": "2.58.1",
+            "expected_realsense_ros_driver": "4.57.7",
+            "expected_realsense_ros_librealsense": "2.57.7",
+            "stream_test_motion": True,
+            "d455_motion_test_seconds": 10,
+            "expect_native_ros2": True,
+            "require_odom_mocap_sanity": False,
+        }
+        mismatches = [
+            f"{key}={config.get(key)!r}"
+            for key, expected in required_values.items()
+            if config.get(key) != expected
+        ]
+        if mismatches:
+            self.add(FAIL, "sensor_logging_gate_values", "unexpected gate values: " + ", ".join(mismatches))
+        else:
+            self.add(PASS, "sensor_logging_gate_values", "sensor logging gate pins expected no-GT values")
+
+        required_topics = set(config.get("required_topic", []))
+        expected_topics = {
+            "/scan",
+            "/odom",
+            "/tf",
+            "/camera/color/image_raw",
+            "/camera/aligned_depth_to_color/image_raw",
+        }
+        missing = sorted(expected_topics - required_topics)
+        if missing:
+            self.add(FAIL, "sensor_logging_gate_topics", "missing required topics: " + ", ".join(missing))
+        else:
+            self.add(PASS, "sensor_logging_gate_topics", "sensor logging gate includes required core topics")
 
     def require_report_and_remote_guards(self) -> None:
         self.require_source_patterns(
@@ -437,6 +485,7 @@ class Audit:
         self.require_failure_tree()
         self.require_branch_coverage()
         self.require_dataset_gate()
+        self.require_sensor_logging_gate()
         self.require_report_and_remote_guards()
         self.require_bag_validator_guards()
         self.require_docs_and_tests()

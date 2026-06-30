@@ -146,9 +146,29 @@ The standard is encoded in:
 
 ```text
 configs/robot_doctor_dataset_gate.json
+configs/robot_doctor_sensor_logging_gate.json
 configs/rosbag2_sensor_qos.yaml
 configs/sqlite_resilient.yaml
 ```
+
+## Sensor Logging Gate
+
+Use this when you want to prove the robot-local logging stack before MoCap is
+configured. It checks the D455, RealSense versions, RGB-D streams, camera IMU,
+LiDAR `/scan`, wheel `/odom`, `/tf`, stale processes, disk, USB/kernel evidence,
+and the diagnostic report itself. It deliberately does not require ground truth
+or the odom-vs-MoCap sanity JSON.
+
+```bash
+cd ~/slam_project
+ROS_LOCALHOST_ONLY=1 bash scripts/diagnostics/robot_doctor.sh agv110 \
+  --config configs/robot_doctor_sensor_logging_gate.json \
+  --bringup-cmd "ros2 launch agv_bringup bringup.launch.py agv_color_profile:=640x480x15 agv_depth_profile:=640x480x15 initial_reset:=false agv_cmd_vel_topic:=/agv110/cmd_vel" \
+  --bringup-wait 45
+```
+
+Healthy sensor-stack output has no `FAIL` checks. `dataset_ready=false` is
+normal here because this is not the publishable dataset gate.
 
 ## Pre-Run Readiness Gate
 

@@ -22,6 +22,22 @@ scripts, or mutate the robot. It either proves that the robot is ready under the
 configured pre-run gate or returns the exact failure-tree branch, evidence logs,
 and next action.
 
+For robot-local logging checks before MoCap is configured, use the sensor
+logging gate. It proves the D455, IMU, LiDAR, odom, TF, driver versions, USB
+evidence, stale-process state, and report pipeline without requiring ground
+truth:
+
+```bash
+cd ~/slam_project
+ROS_LOCALHOST_ONLY=1 bash scripts/diagnostics/robot_doctor.sh agv102 \
+  --config configs/robot_doctor_sensor_logging_gate.json \
+  --bringup-cmd "ros2 launch agv_bringup bringup.launch.py agv_color_profile:=640x480x15 agv_depth_profile:=640x480x15 initial_reset:=false agv_cmd_vel_topic:=/agv102/cmd_vel" \
+  --bringup-wait 45
+```
+
+For this gate, `dataset_ready=false` is expected because no bag/GT proof is
+being requested. Treat any `FAIL` as a real robot-local logging blocker.
+
 Run this after switching on a robot:
 
 ```bash

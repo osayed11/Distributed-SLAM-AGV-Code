@@ -3028,9 +3028,9 @@ PY
             else:
                 self.add(
                     "3.3",
-                    WARN,
+                    INFO,
                     "mocap_topic",
-                    "no mocap topic configured",
+                    "no mocap topic configured; ground truth is not required for this gate",
                     next_action="set --mocap-topic before any run that needs ground truth",
                 )
             return
@@ -3193,23 +3193,23 @@ PY
         if self.args.confirm_mocap:
             self.add("3.3", PASS, "mocap_operator_check", "operator confirmed MoCap rigid body and marker visibility")
         else:
-            status = FAIL if self.args.strict_ops and self.args.require_gt else WARN
+            status = FAIL if self.args.strict_ops and self.args.require_gt else (WARN if self.args.require_gt else INFO)
             self.add(
                 "3.3",
                 status,
                 "mocap_operator_check",
-                "MoCap rigid body/marker visibility not operator-confirmed",
+                "MoCap rigid body/marker visibility not operator-confirmed" if self.args.require_gt else "MoCap operator confirmation not required for this gate",
                 next_action="confirm rigid body name, marker visibility, and mocap coverage before scenario run",
             )
         if self.args.confirm_anchors:
             self.add("3.3", PASS, "anchors_operator_check", "operator confirmed anchors/obstacles surveyed")
         else:
-            status = FAIL if self.args.strict_ops else WARN
+            status = FAIL if self.args.strict_ops else (WARN if self.args.require_gt else INFO)
             self.add(
                 "3.3",
                 status,
                 "anchors_operator_check",
-                "anchors/obstacles survey not operator-confirmed",
+                "anchors/obstacles survey not operator-confirmed" if self.args.require_gt else "anchor/obstacle survey confirmation not required for this gate",
                 next_action="survey fixed anchors/obstacles before publishable scenario collection",
             )
 
