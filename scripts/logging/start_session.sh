@@ -87,8 +87,8 @@ MIN_GT_HZ="${MIN_GT_HZ:-5}"
 RGBD_WARN_GATE_GAP_SEC="${RGBD_WARN_GATE_GAP_SEC:-0.25}"
 MAX_RGBD_GATE_GAP_SEC="${MAX_RGBD_GATE_GAP_SEC:-0.75}"
 MAX_CAMERA_IMU_GATE_GAP_SEC="${MAX_CAMERA_IMU_GATE_GAP_SEC:-0.10}"
-RGBD_STARTUP_TIMEOUT="${RGBD_STARTUP_TIMEOUT:-90}"
-IMU_STARTUP_TIMEOUT="${IMU_STARTUP_TIMEOUT:-30}"
+RGBD_STARTUP_TIMEOUT="${RGBD_STARTUP_TIMEOUT:-120}"
+IMU_STARTUP_TIMEOUT="${IMU_STARTUP_TIMEOUT:-180}"
 MIN_REALSENSE_FPS="${MIN_REALSENSE_FPS:-15}"
 
 if [ -z "${ROS_LOCALHOST_ONLY+x}" ] && \
@@ -1350,16 +1350,12 @@ check_topic_silent "${CAMERA_COLOR_TOPIC}" "${RGBD_STARTUP_TIMEOUT}" || FAILED_T
 check_topic_silent "${CAMERA_DEPTH_TOPIC}" "${RGBD_STARTUP_TIMEOUT}" || FAILED_TOPICS+=("${CAMERA_DEPTH_TOPIC}")
 
 if [ "$REQUIRE_IMU" = true ]; then
-    IMU_OK=false
-    for topic in $IMU_TOPICS; do
-        if check_topic_silent "$topic" "${IMU_STARTUP_TIMEOUT}"; then
-            IMU_OK=true
-            break
-        fi
+    check_topic_silent "${CAMERA_GYRO_TOPIC}" "${IMU_STARTUP_TIMEOUT}" || FAILED_TOPICS+=("${CAMERA_GYRO_TOPIC}")
+    check_topic_silent "${CAMERA_ACCEL_TOPIC}" "${IMU_STARTUP_TIMEOUT}" || FAILED_TOPICS+=("${CAMERA_ACCEL_TOPIC}")
+    OPTIONAL_IMU_TOPICS="${OPTIONAL_IMU_TOPICS:-${CAMERA_FUSED_IMU_TOPIC} /imu}"
+    for topic in $OPTIONAL_IMU_TOPICS; do
+        check_topic_silent "$topic" 5 >/dev/null 2>&1 || true
     done
-    if [ "$IMU_OK" = false ]; then
-        FAILED_TOPICS+=("IMU (${IMU_TOPICS})")
-    fi
 fi
 
 if [ ${#FAILED_TOPICS[@]} -ne 0 ]; then

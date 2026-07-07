@@ -32,7 +32,7 @@ cd ~/slam_project
 ROS_LOCALHOST_ONLY=1 bash scripts/diagnostics/robot_doctor.sh agv102 \
   --config configs/robot_doctor_sensor_logging_gate.json \
   --bringup-cmd "ros2 launch agv_bringup bringup.launch.py agv_color_profile:=640x480x15 agv_depth_profile:=640x480x15 initial_reset:=false agv_cmd_vel_topic:=/agv102/cmd_vel" \
-  --bringup-wait 45
+  --bringup-wait 180
 ```
 
 For this gate, `dataset_ready=false` is expected because no bag/GT proof is
@@ -524,7 +524,7 @@ bash scripts/diagnostics/robot_doctor.sh agv102 \
   --profile dataset \
   --ros ros2 \
   --bringup-cmd "ros2 launch agv_bringup bringup.launch.py" \
-  --bringup-wait 90
+  --bringup-wait 180
 ```
 
 The process is stopped at the end of the diagnostic run.

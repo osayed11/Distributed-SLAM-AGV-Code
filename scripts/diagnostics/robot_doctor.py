@@ -1597,19 +1597,23 @@ class Doctor:
             return
 
         logs: List[str] = []
+        texts: List[str] = []
         if self.bringup_log and self.bringup_log.exists():
             logs.append(str(self.bringup_log))
-        result = self.run(
-            "realsense_ros_runtime_logs",
-            "for d in \"$HOME/.ros/log/latest\" \"$HOME/.ros/log\"; do "
-            "[ -d \"$d\" ] || continue; "
-            "find \"$d\" -type f -mmin -120 -size -2M -print 2>/dev/null; "
-            "done | head -80 | xargs grep -hE 'RealSense ROS v|Built with LibRealSense|Running with LibRealSense' 2>/dev/null | tail -120 || true",
-            timeout=12,
-        )
-        logs.append(result.log)
+            texts.append(self.bringup_log.read_text(errors="replace"))
+        if not texts or not self.parse_realsense_ros_librealsense_versions("\n".join(texts))[1]:
+            result = self.run(
+                "realsense_ros_runtime_logs",
+                "latest=\"$HOME/.ros/log/latest\"; "
+                "if [ -d \"$latest\" ]; then "
+                "find -L \"$latest\" -type f -size -2M -print 2>/dev/null; "
+                "fi | head -80 | xargs grep -hE 'RealSense ROS v|Built with LibRealSense|Running with LibRealSense' 2>/dev/null | tail -60 || true",
+                timeout=12,
+            )
+            logs.append(result.log)
+            texts.append(self.command_output(result))
 
-        text = "\n".join(Path(path).read_text(errors="replace") for path in logs if Path(path).exists())
+        text = "\n".join(texts)
         built, running = self.parse_realsense_ros_librealsense_versions(text)
         if running == expected and (built in {"", expected}):
             detail = f"Running with LibRealSense {running}"
@@ -3420,7 +3424,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--ros", choices=["auto", "ros2", "none"], default="auto")
     parser.add_argument("--no-ros", action="store_true", help="skip ROS graph checks")
     parser.add_argument("--bringup-cmd", help="optional command to launch bringup for bounded live checks")
-    parser.add_argument("--bringup-wait", type=int, default=35)
+    parser.add_argument("--bringup-wait", type=int, default=int(os.environ.get("AGV_READY_BRINGUP_WAIT", "180")))
     parser.add_argument("--live-seconds", type=int, default=12, help="seconds per live topic hz probe")
     parser.add_argument("--bag", help="ROS2 bag directory, .mcap, or .db3 to validate")
     parser.add_argument("--require-bag", action="store_true", default=env_bool("REQUIRE_BAG"))

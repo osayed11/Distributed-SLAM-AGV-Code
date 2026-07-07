@@ -164,7 +164,7 @@ cd ~/slam_project
 ROS_LOCALHOST_ONLY=1 bash scripts/diagnostics/robot_doctor.sh agv110 \
   --config configs/robot_doctor_sensor_logging_gate.json \
   --bringup-cmd "ros2 launch agv_bringup bringup.launch.py agv_color_profile:=640x480x15 agv_depth_profile:=640x480x15 initial_reset:=false agv_cmd_vel_topic:=/agv110/cmd_vel" \
-  --bringup-wait 45
+  --bringup-wait 180
 ```
 
 Healthy sensor-stack output has no `FAIL` checks. `dataset_ready=false` is
