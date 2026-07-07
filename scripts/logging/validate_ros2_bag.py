@@ -485,7 +485,9 @@ def gap_limits_for_topic(topic: str, target_hz: float) -> Tuple[float, float]:
             env_float("CAMERA_INFO_MINOR_GAP_SEC", 0.75),
             env_float("CAMERA_INFO_MAJOR_GAP_SEC", 2.0),
         )
-    if topic.startswith("/camera/") and topic.endswith("/image_raw"):
+    if topic.startswith("/camera/") and (
+        topic.endswith("/image_raw") or topic.endswith("/image_rect_raw")
+    ):
         return (
             env_float("RGBD_MINOR_GAP_SEC", 0.25),
             env_float("RGBD_MAJOR_GAP_SEC", 0.75),

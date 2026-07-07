@@ -40,7 +40,7 @@ Circle overrides:
   S1_MIN_LINEAR     Minimum linear speed while correcting. Default: 0.07
   S1_DIRECTION      ccw or cw. Default: ccw
   S1_POSE_TIMEOUT   Abort if MoCap pose is stale this long. Default: 2.5
-  S1_BEST_EFFORT_POSE true/false. Default: true for OptiTrack DDS streams.
+  S1_BEST_EFFORT_POSE true/false. Default: false for reliable OptiTrack DDS streams.
   S1_DRY_RUN       true/false. Default: false. Proves lifecycle without publishing motion.
 
 Recording/gates:
@@ -292,7 +292,7 @@ S1_HEADING_KP="${S1_HEADING_KP:-1.10}"
 S1_RADIUS_KP="${S1_RADIUS_KP:-1.50}"
 S1_MAX_ANGULAR="${S1_MAX_ANGULAR:-0.55}"
 S1_MAX_RADIUS_HEADING_OFFSET_DEG="${S1_MAX_RADIUS_HEADING_OFFSET_DEG:-35}"
-S1_BEST_EFFORT_POSE="${S1_BEST_EFFORT_POSE:-true}"
+S1_BEST_EFFORT_POSE="${S1_BEST_EFFORT_POSE:-false}"
 S1_DRY_RUN="${S1_DRY_RUN:-false}"
 S1_RECORD="${S1_RECORD:-true}"
 S1_VALIDATE="${S1_VALIDATE:-true}"
