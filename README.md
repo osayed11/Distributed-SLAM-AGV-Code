@@ -132,8 +132,8 @@ D455 firmware:                  5.17.0.10
 USB link:                       USB 3.x / 5000 Mb/s
 D455 IMU:                       BMI085
 Standalone librealsense tools:  2.58.1
-ROS driver package:             realsense2_camera 4.57.7
-ROS node LibRealSense runtime:  2.57.7
+ROS driver package:             realsense2_camera 4.58.2
+ROS node LibRealSense runtime:  2.58.2
 RGB-D profile:                  640x480 at 15 Hz
 D455 IMU rate:                  about 200 Hz live, >=150 Hz in recorded bags
 Gyro raw topic:                 /camera/gyro/sample at about 200 Hz
@@ -154,7 +154,7 @@ configs/sqlite_resilient.yaml
 ## Sensor Logging Gate
 
 Use this when you want to prove the robot-local logging stack before MoCap is
-configured. It checks the D455, RealSense versions, RGB-D streams, camera IMU,
+configured. It checks the D455, RealSense versions, RGB-D streams, raw D455 IMU,
 LiDAR `/scan`, wheel `/odom`, `/tf`, stale processes, disk, USB/kernel evidence,
 and the diagnostic report itself. It deliberately does not require ground truth
 or the odom-vs-MoCap sanity JSON.
@@ -271,8 +271,8 @@ authority.
 
 The D455 IMU recording keepalive is also disabled by default
 (`ENABLE_IMU_RECORDING_KEEPALIVE=false`). The bag recorder itself subscribes to
-`/camera/imu`, `/camera/gyro/sample`, and `/camera/accel/sample`; adding a
-second keepalive subscriber has been observed to wedge the RealSense motion path
+`/camera/gyro/sample` and `/camera/accel/sample`, with `/camera/imu` recorded
+only as an optional compatibility topic; adding a second keepalive subscriber has been observed to wedge the RealSense motion path
 on agv24 exactly when recording starts. Only enable the keepalive for a
 deliberate debug test, then validate the resulting bag with `REQUIRE_IMU=true`.
 

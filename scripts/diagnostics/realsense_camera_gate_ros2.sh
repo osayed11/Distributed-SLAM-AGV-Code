@@ -368,7 +368,7 @@ DEPTH_PROFILE="${CAMERA_DEPTH_WIDTH}x${CAMERA_DEPTH_HEIGHT}x${CAMERA_DEPTH_FPS}"
 setsid ros2 launch realsense2_camera rs_launch.py \
     camera_name:=camera \
     camera_namespace:=/ \
-    align_depth.enable:=true \
+    align_depth.enable:=false \
     pointcloud.enable:=false \
     enable_sync:="${ENABLE_REALSENSE_SYNC}" \
     rgb_camera.color_profile:="${COLOR_PROFILE}" \
@@ -376,7 +376,7 @@ setsid ros2 launch realsense2_camera rs_launch.py \
     depth_module.infra_profile:="${DEPTH_PROFILE}" \
     enable_accel:=true \
     enable_gyro:=true \
-    unite_imu_method:=2 \
+    unite_imu_method:=0 \
     enable_infra1:=false \
     enable_infra2:=false \
     initial_reset:=false \
@@ -393,23 +393,29 @@ DMESG_RUNTIME_OFFSET="$(log_size "${RUN_DIR}/dmesg_watch.txt")"
 timeout "${STREAM_SECONDS}" ros2 topic hz /camera/color/image_raw --window 40 \
     > "${RUN_DIR}/hz_color.txt" 2>&1 &
 HZ_COLOR_PID=$!
-timeout "${STREAM_SECONDS}" ros2 topic hz /camera/aligned_depth_to_color/image_raw --window 40 \
-    > "${RUN_DIR}/hz_aligned_depth.txt" 2>&1 &
+timeout "${STREAM_SECONDS}" ros2 topic hz /camera/depth/image_rect_raw --window 40 \
+    > "${RUN_DIR}/hz_depth.txt" 2>&1 &
 HZ_DEPTH_PID=$!
-timeout "${STREAM_SECONDS}" ros2 topic hz /camera/imu --window 80 \
-    > "${RUN_DIR}/hz_camera_imu.txt" 2>&1 &
-HZ_IMU_PID=$!
+timeout "${STREAM_SECONDS}" ros2 topic hz /camera/gyro/sample --window 120 \
+    > "${RUN_DIR}/hz_camera_gyro.txt" 2>&1 &
+HZ_GYRO_PID=$!
+timeout "${STREAM_SECONDS}" ros2 topic hz /camera/accel/sample --window 80 \
+    > "${RUN_DIR}/hz_camera_accel.txt" 2>&1 &
+HZ_ACCEL_PID=$!
 
 wait "${HZ_COLOR_PID}" 2>/dev/null || true
 wait "${HZ_DEPTH_PID}" 2>/dev/null || true
-wait "${HZ_IMU_PID}" 2>/dev/null || true
+wait "${HZ_GYRO_PID}" 2>/dev/null || true
+wait "${HZ_ACCEL_PID}" 2>/dev/null || true
 
 check_rate /camera/color/image_raw "${RUN_DIR}/hz_color.txt" "${MIN_RGBD_HZ}" "color stream"
-check_rate /camera/aligned_depth_to_color/image_raw "${RUN_DIR}/hz_aligned_depth.txt" "${MIN_RGBD_HZ}" "aligned depth stream"
-check_rate /camera/imu "${RUN_DIR}/hz_camera_imu.txt" "${MIN_CAMERA_IMU_HZ}" "camera imu stream"
+check_rate /camera/depth/image_rect_raw "${RUN_DIR}/hz_depth.txt" "${MIN_RGBD_HZ}" "depth stream"
+check_rate /camera/gyro/sample "${RUN_DIR}/hz_camera_gyro.txt" "${MIN_CAMERA_IMU_HZ}" "camera gyro stream"
+check_rate /camera/accel/sample "${RUN_DIR}/hz_camera_accel.txt" "60" "camera accel stream"
 check_gap /camera/color/image_raw "${RUN_DIR}/hz_color.txt" "color stream" "${RGBD_WARN_GATE_GAP_SEC}" "${MAX_RGBD_GATE_GAP_SEC}" 40
-check_gap /camera/aligned_depth_to_color/image_raw "${RUN_DIR}/hz_aligned_depth.txt" "aligned depth stream" "${RGBD_WARN_GATE_GAP_SEC}" "${MAX_RGBD_GATE_GAP_SEC}" 40
-check_gap /camera/imu "${RUN_DIR}/hz_camera_imu.txt" "camera imu stream" "${MAX_CAMERA_IMU_GATE_GAP_SEC}" "${MAX_CAMERA_IMU_GATE_GAP_SEC}" 80
+check_gap /camera/depth/image_rect_raw "${RUN_DIR}/hz_depth.txt" "depth stream" "${RGBD_WARN_GATE_GAP_SEC}" "${MAX_RGBD_GATE_GAP_SEC}" 40
+check_gap /camera/gyro/sample "${RUN_DIR}/hz_camera_gyro.txt" "camera gyro stream" "${MAX_CAMERA_IMU_GATE_GAP_SEC}" "${MAX_CAMERA_IMU_GATE_GAP_SEC}" 120
+check_gap /camera/accel/sample "${RUN_DIR}/hz_camera_accel.txt" "camera accel stream" "${MAX_CAMERA_IMU_GATE_GAP_SEC}" "${MAX_CAMERA_IMU_GATE_GAP_SEC}" 80
 
 cleanup
 trap - EXIT

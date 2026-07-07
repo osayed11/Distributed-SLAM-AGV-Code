@@ -8,6 +8,16 @@
   depth: 100
   reliability: best_effort
   durability: volatile
+/camera/depth/image_rect_raw:
+  history: keep_last
+  depth: 100
+  reliability: best_effort
+  durability: volatile
+/camera/depth/camera_info:
+  history: keep_last
+  depth: 100
+  reliability: best_effort
+  durability: volatile
 /camera/imu:
   history: keep_last
   depth: 1000

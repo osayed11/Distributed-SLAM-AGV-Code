@@ -371,9 +371,10 @@ The current ROS 2 dataset gate standard is:
 ```text
 D455 firmware:                  5.17.0.10
 standalone librealsense tools:  2.58.1
-RealSense ROS driver:           realsense2_camera 4.57.7
-RealSense ROS node runtime:     LibRealSense 2.57.7
+RealSense ROS driver:           realsense2_camera 4.58.2
+RealSense ROS node runtime:     LibRealSense 2.58.2
 RGB-D stream gate:              640x480 at 15 Hz
+D455 IMU gate:                  raw gyro + raw accel, not fused /camera/imu
 USB gate:                       USB 3.x / 5000 Mb/s
 ```
 

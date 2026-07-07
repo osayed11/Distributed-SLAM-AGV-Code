@@ -212,8 +212,8 @@ class Audit:
             "strict_versions": True,
             "expected_d455_firmware": "5.17.0.10",
             "expected_librealsense": "2.58.1",
-            "expected_realsense_ros_driver": "4.57.7",
-            "expected_realsense_ros_librealsense": "2.57.7",
+            "expected_realsense_ros_driver": "4.58.2",
+            "expected_realsense_ros_librealsense": "2.58.2",
             "stream_test_motion": True,
             "d455_motion_test_seconds": 10,
             "max_clock_offset_ms": 1.0,
@@ -238,7 +238,9 @@ class Audit:
             "/odom",
             "/tf",
             "/camera/color/image_raw",
-            "/camera/aligned_depth_to_color/image_raw",
+            "/camera/depth/image_rect_raw",
+            "/camera/gyro/sample",
+            "/camera/accel/sample",
         }
         missing = sorted(expected_topics - required_topics)
         if missing:
@@ -267,8 +269,8 @@ class Audit:
             "strict_versions": True,
             "expected_d455_firmware": "5.17.0.10",
             "expected_librealsense": "2.58.1",
-            "expected_realsense_ros_driver": "4.57.7",
-            "expected_realsense_ros_librealsense": "2.57.7",
+            "expected_realsense_ros_driver": "4.58.2",
+            "expected_realsense_ros_librealsense": "2.58.2",
             "stream_test_motion": True,
             "d455_motion_test_seconds": 10,
             "expect_native_ros2": True,
@@ -290,7 +292,9 @@ class Audit:
             "/odom",
             "/tf",
             "/camera/color/image_raw",
-            "/camera/aligned_depth_to_color/image_raw",
+            "/camera/depth/image_rect_raw",
+            "/camera/gyro/sample",
+            "/camera/accel/sample",
         }
         missing = sorted(expected_topics - required_topics)
         if missing:

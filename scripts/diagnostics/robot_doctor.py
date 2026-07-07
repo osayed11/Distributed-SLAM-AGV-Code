@@ -90,8 +90,10 @@ DEFAULT_TOPIC_SPECS = {
     "/tf": {"min_hz": 10.0, "target_hz": 50.0},
     "/camera/color/image_raw": {"min_hz": 12.0, "target_hz": 15.0},
     "/camera/color/camera_info": {"min_hz": 0.0, "target_hz": 0.0},
-    "/camera/aligned_depth_to_color/image_raw": {"min_hz": 12.0, "target_hz": 15.0},
-    "/camera/aligned_depth_to_color/camera_info": {"min_hz": 0.0, "target_hz": 0.0},
+    "/camera/depth/image_rect_raw": {"min_hz": 12.0, "target_hz": 15.0},
+    "/camera/depth/camera_info": {"min_hz": 0.0, "target_hz": 0.0},
+    "/camera/gyro/sample": {"min_hz": 150.0, "target_hz": 200.0},
+    "/camera/accel/sample": {"min_hz": 60.0, "target_hz": 100.0},
 }
 
 
@@ -2937,8 +2939,8 @@ PY
         )
         camera_topics = [
             "/camera/color/image_raw",
-            "/camera/aligned_depth_to_color/image_raw",
             "/camera/depth/image_rect_raw",
+            "/camera/aligned_depth_to_color/image_raw",
         ]
         present = [topic for topic in camera_topics if topic in self.topic_types]
         if standalone_ok and not present:
@@ -3074,10 +3076,10 @@ PY
 
     def check_imu_live(self) -> None:
         candidates = split_topics(os.environ.get("IMU_TOPICS", "")) or [
-            "/imu",
-            "/camera/imu",
             "/camera/gyro/sample",
             "/camera/accel/sample",
+            "/camera/imu",
+            "/imu",
         ]
         present = [topic for topic in candidates if topic in self.topic_types]
         if not present:
@@ -3090,6 +3092,17 @@ PY
                 next_action="start the base/camera IMU driver or configure IMU_TOPICS before recording",
             )
             return
+        if self.args.require_imu:
+            required_raw = ["/camera/gyro/sample", "/camera/accel/sample"]
+            missing_raw = [topic for topic in required_raw if topic not in self.topic_types]
+            if missing_raw:
+                self.add(
+                    "2.3",
+                    FAIL,
+                    "imu_topic",
+                    "required raw D455 IMU topic(s) missing: " + ", ".join(missing_raw),
+                    next_action="run the standard RealSense ROS launch with enable_gyro/enable_accel true and unite_imu_method:=0",
+                )
         for topic in present:
             rate = self.measure_topic_rate(topic, min(10, int(self.args.live_seconds))) if self.args.live_seconds > 0 else None
             if rate is None:
@@ -3101,7 +3114,7 @@ PY
                     next_action="rerun live checks with a positive --live-seconds value to prove IMU rate",
                 )
             else:
-                min_hz = 150.0 if "gyro" in topic or topic == "/camera/imu" else 10.0
+                min_hz = 150.0 if "gyro" in topic or topic == "/camera/imu" else 60.0 if "accel" in topic else 10.0
                 status = PASS if rate >= min_hz else (FAIL if self.args.require_imu else WARN)
                 self.add(
                     "2.3",

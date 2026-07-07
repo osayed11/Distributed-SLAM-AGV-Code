@@ -48,8 +48,8 @@ TOPICS = [
     ("/tf_static", "tf2_msgs/msg/TFMessage", 1),
     ("/camera/color/image_raw", "sensor_msgs/msg/Image", 15),
     ("/camera/color/camera_info", "sensor_msgs/msg/CameraInfo", 15),
-    ("/camera/aligned_depth_to_color/image_raw", "sensor_msgs/msg/Image", 15),
-    ("/camera/aligned_depth_to_color/camera_info", "sensor_msgs/msg/CameraInfo", 15),
+    ("/camera/depth/image_rect_raw", "sensor_msgs/msg/Image", 15),
+    ("/camera/depth/camera_info", "sensor_msgs/msg/CameraInfo", 15),
     ("/imu", "sensor_msgs/msg/Imu", 100),
     ("/camera/imu", "sensor_msgs/msg/Imu", 200),
     ("/camera/gyro/sample", "sensor_msgs/msg/Imu", 200),
@@ -250,8 +250,8 @@ class ValidateRos2BagTests(unittest.TestCase):
                 topic_hz_overrides={
                     "/camera/color/image_raw": 11.0,
                     "/camera/color/camera_info": 11.0,
-                    "/camera/aligned_depth_to_color/image_raw": 13.0,
-                    "/camera/aligned_depth_to_color/camera_info": 13.0,
+                    "/camera/depth/image_rect_raw": 13.0,
+                    "/camera/depth/camera_info": 13.0,
                 },
             )
             rc, report = run_validator(bag)
@@ -267,8 +267,8 @@ class ValidateRos2BagTests(unittest.TestCase):
                 topic_hz_overrides={
                     "/camera/color/image_raw": 11.0,
                     "/camera/color/camera_info": 11.0,
-                    "/camera/aligned_depth_to_color/image_raw": 13.0,
-                    "/camera/aligned_depth_to_color/camera_info": 13.0,
+                    "/camera/depth/image_rect_raw": 13.0,
+                    "/camera/depth/camera_info": 13.0,
                 },
             )
             rc, report = run_validator(bag, {"RGBD_BAG_MIN_HZ": "12", "CAMERA_INFO_MIN_HZ": "12"})
@@ -929,10 +929,12 @@ class RealSenseFaultClassifierTests(unittest.TestCase):
         text = """
 PASS color stream: /camera/color/image_raw 14.638 Hz
 WARN color stream steady max gap: 0.655s exceeds warning 0.25s but is <= hard 0.75s after window 40
-PASS aligned depth stream: /camera/aligned_depth_to_color/image_raw 14.986 Hz
-WARN aligned depth stream steady max gap: 0.651s exceeds warning 0.25s but is <= hard 0.75s after window 40
-PASS camera imu stream: /camera/imu 200.066 Hz
-PASS camera imu stream steady max gap: 0.011s <= warning 0.10s after window 80
+PASS depth stream: /camera/depth/image_rect_raw 14.986 Hz
+WARN depth stream steady max gap: 0.651s exceeds warning 0.25s but is <= hard 0.75s after window 40
+PASS camera gyro stream: /camera/gyro/sample 200.066 Hz
+PASS camera gyro stream steady max gap: 0.011s <= warning 0.10s after window 120
+PASS camera accel stream: /camera/accel/sample 100.066 Hz
+PASS camera accel stream steady max gap: 0.020s <= warning 0.10s after window 80
 PASS RealSense runtime log: no UVC/control timeout text observed
 speed=5000
 """
@@ -945,9 +947,11 @@ speed=5000
         text = """
 PASS color stream: /camera/color/image_raw 14.638 Hz
 FAIL color stream steady max gap: 1.250s exceeds hard 0.75s after window 40
-PASS aligned depth stream: /camera/aligned_depth_to_color/image_raw 14.986 Hz
-PASS camera imu stream: /camera/imu 200.066 Hz
-PASS camera imu stream steady max gap: 0.011s <= warning 0.10s after window 80
+PASS depth stream: /camera/depth/image_rect_raw 14.986 Hz
+PASS camera gyro stream: /camera/gyro/sample 200.066 Hz
+PASS camera gyro stream steady max gap: 0.011s <= warning 0.10s after window 120
+PASS camera accel stream: /camera/accel/sample 100.066 Hz
+PASS camera accel stream steady max gap: 0.020s <= warning 0.10s after window 80
 speed=5000
 """
         classification, _, _ = classify_realsense_fault(text)
@@ -956,7 +960,7 @@ speed=5000
     def test_raw_imu_fallback_allows_fused_imu_gap(self) -> None:
         text = """
 PASS color stream: /camera/color/image_raw 14.638 Hz
-PASS aligned depth stream: /camera/aligned_depth_to_color/image_raw 14.986 Hz
+PASS depth stream: /camera/depth/image_rect_raw 14.986 Hz
 FAIL camera imu stream steady max gap: 2.046s exceeds hard 0.10s after window 80
 WARN camera imu stream: fused /camera/imu failed; checking raw gyro+accel fallback
 PASS camera gyro stream: /camera/gyro/sample 199.900 Hz
@@ -1089,8 +1093,8 @@ class RobotDoctorConfigTests(unittest.TestCase):
                         "d455_swap_notes": "/tmp/d455_swap_notes.md",
                         "expected_d455_serial": "333422300768",
                         "expected_d455_firmware": "5.17.0.10",
-                        "expected_realsense_ros_driver": "4.57.7",
-                        "expected_realsense_ros_librealsense": "2.57.7",
+                        "expected_realsense_ros_driver": "4.58.2",
+                        "expected_realsense_ros_librealsense": "2.58.2",
                         "expect_native_ros2": True,
                         "expected_robot_namespace": ["/agv100", "/agv101"],
                         "require_odom_mocap_sanity": True,
@@ -1114,8 +1118,8 @@ class RobotDoctorConfigTests(unittest.TestCase):
             self.assertEqual(args.d455_swap_notes, "/tmp/d455_swap_notes.md")
             self.assertEqual(args.expected_d455_serial, "333422300768")
             self.assertEqual(args.expected_d455_firmware, "5.17.0.10")
-            self.assertEqual(args.expected_realsense_ros_driver, "4.57.7")
-            self.assertEqual(args.expected_realsense_ros_librealsense, "2.57.7")
+            self.assertEqual(args.expected_realsense_ros_driver, "4.58.2")
+            self.assertEqual(args.expected_realsense_ros_librealsense, "2.58.2")
             self.assertTrue(args.expect_native_ros2)
             self.assertEqual(args.expected_robot_namespace, ["/agv100", "/agv101"])
             self.assertTrue(args.require_odom_mocap_sanity)
@@ -1151,7 +1155,7 @@ class RobotDoctorConfigTests(unittest.TestCase):
             specs = doctor.live_topic_specs()
             self.assertIn("/scan", specs)
             self.assertNotIn("/camera/color/image_raw", specs)
-            self.assertNotIn("/camera/aligned_depth_to_color/image_raw", specs)
+            self.assertNotIn("/camera/depth/image_rect_raw", specs)
 
     def test_no_expect_camera_skips_realsense_stream_test(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -1179,7 +1183,9 @@ class RobotDoctorConfigTests(unittest.TestCase):
                 "/odom [nav_msgs/msg/Odometry]\n"
                 "/tf [tf2_msgs/msg/TFMessage]\n"
                 "/camera/color/image_raw [sensor_msgs/msg/Image]\n"
-                "/camera/aligned_depth_to_color/image_raw [sensor_msgs/msg/Image]\n"
+                "/camera/depth/image_rect_raw [sensor_msgs/msg/Image]\n"
+                "/camera/gyro/sample [sensor_msgs/msg/Imu]\n"
+                "/camera/accel/sample [sensor_msgs/msg/Imu]\n"
             )
 
             def fake_ros_cmd(*_args, **_kwargs):
@@ -1191,7 +1197,7 @@ class RobotDoctorConfigTests(unittest.TestCase):
             self.assertEqual(len(matches), 1)
             self.assertEqual(matches[0].status, "PASS")
             self.assertIn("/camera/color/image_raw", matches[0].summary)
-            self.assertIn("/camera/aligned_depth_to_color/image_raw", matches[0].summary)
+            self.assertIn("/camera/depth/image_rect_raw", matches[0].summary)
 
     def test_dataset_bringup_context_flags_missing_existing_graph(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -1251,8 +1257,10 @@ class RobotDoctorConfigTests(unittest.TestCase):
                 "/tf": "tf2_msgs/msg/TFMessage",
                 "/camera/color/image_raw": "sensor_msgs/msg/Image",
                 "/camera/color/camera_info": "sensor_msgs/msg/CameraInfo",
-                "/camera/aligned_depth_to_color/image_raw": "sensor_msgs/msg/Image",
-                "/camera/aligned_depth_to_color/camera_info": "sensor_msgs/msg/CameraInfo",
+                "/camera/depth/image_rect_raw": "sensor_msgs/msg/Image",
+                "/camera/depth/camera_info": "sensor_msgs/msg/CameraInfo",
+                "/camera/gyro/sample": "sensor_msgs/msg/Imu",
+                "/camera/accel/sample": "sensor_msgs/msg/Imu",
             }
             doctor.check_dataset_bringup_context()
             self.assertEqual(len(doctor.results), 1)

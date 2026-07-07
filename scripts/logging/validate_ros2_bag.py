@@ -95,10 +95,10 @@ def split_topics(value: str) -> List[str]:
 def required_specs() -> List[TopicSpec]:
     cmd_topic = os.environ.get("CMD_TOPIC", "/cmd_vel")
     require_cmd_vel = env_bool("REQUIRE_CMD_VEL", True)
-    depth_topic = os.environ.get("DEPTH_TOPIC", "/camera/aligned_depth_to_color/image_raw")
-    depth_info_topic = os.environ.get(
-        "DEPTH_INFO_TOPIC", "/camera/aligned_depth_to_color/camera_info"
-    )
+    color_topic = os.environ.get("COLOR_TOPIC", "/camera/color/image_raw")
+    color_info_topic = os.environ.get("COLOR_INFO_TOPIC", "/camera/color/camera_info")
+    depth_topic = os.environ.get("DEPTH_TOPIC", "/camera/depth/image_rect_raw")
+    depth_info_topic = os.environ.get("DEPTH_INFO_TOPIC", "/camera/depth/camera_info")
     rgbd_min_hz = env_float("RGBD_BAG_MIN_HZ", 10.0)
     rgbd_target_hz = env_float("RGBD_TARGET_HZ", 15.0)
     camera_info_min_hz = env_float("CAMERA_INFO_MIN_HZ", 10.0)
@@ -109,17 +109,39 @@ def required_specs() -> List[TopicSpec]:
         TopicSpec("cmd_vel", [cmd_topic, "/cmd_vel"], 0.0, 0.0, required=require_cmd_vel),
         TopicSpec("tf", ["/tf"], 10.0, 12.5),
         TopicSpec("tf_static", ["/tf_static"], 0.0, 0.0),
-        TopicSpec("color_image", ["/camera/color/image_raw"], rgbd_min_hz, rgbd_target_hz),
-        TopicSpec("color_info", ["/camera/color/camera_info"], camera_info_min_hz, rgbd_target_hz),
+        TopicSpec(
+            "color_image",
+            [color_topic, "/camera/color/image_raw", "/camera/camera/color/image_raw"],
+            rgbd_min_hz,
+            rgbd_target_hz,
+        ),
+        TopicSpec(
+            "color_info",
+            [color_info_topic, "/camera/color/camera_info", "/camera/camera/color/camera_info"],
+            camera_info_min_hz,
+            rgbd_target_hz,
+        ),
         TopicSpec(
             "depth_image",
-            [depth_topic, "/camera/aligned_depth_to_color/image_raw", "/camera/depth/image_rect_raw"],
+            [
+                depth_topic,
+                "/camera/depth/image_rect_raw",
+                "/camera/camera/depth/image_rect_raw",
+                "/camera/aligned_depth_to_color/image_raw",
+                "/camera/camera/aligned_depth_to_color/image_raw",
+            ],
             rgbd_min_hz,
             rgbd_target_hz,
         ),
         TopicSpec(
             "depth_info",
-            [depth_info_topic, "/camera/aligned_depth_to_color/camera_info", "/camera/depth/camera_info"],
+            [
+                depth_info_topic,
+                "/camera/depth/camera_info",
+                "/camera/camera/depth/camera_info",
+                "/camera/aligned_depth_to_color/camera_info",
+                "/camera/camera/aligned_depth_to_color/camera_info",
+            ],
             camera_info_min_hz,
             rgbd_target_hz,
         ),
@@ -148,7 +170,15 @@ def ground_truth_topics() -> List[str]:
 
 
 def imu_topics() -> List[str]:
-    topics = ["/imu", "/camera/imu", "/camera/accel/sample", "/camera/gyro/sample"]
+    topics = [
+        "/camera/gyro/sample",
+        "/camera/accel/sample",
+        "/camera/camera/gyro/sample",
+        "/camera/camera/accel/sample",
+        "/camera/imu",
+        "/camera/camera/imu",
+        "/imu",
+    ]
     for topic in split_topics(os.environ.get("IMU_TOPICS", "")):
         if topic not in topics:
             topics.append(topic)

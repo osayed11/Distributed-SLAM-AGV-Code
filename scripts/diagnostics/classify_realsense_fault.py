@@ -15,20 +15,21 @@ from pathlib import Path
 
 VIDEO_TOPICS = (
     "/camera/color/image_raw",
-    "/camera/aligned_depth_to_color/image_raw",
     "/camera/depth/image_rect_raw",
+    "/camera/aligned_depth_to_color/image_raw",
 )
 REQUIRED_VIDEO_TOPICS = (
     "/camera/color/image_raw",
-    "/camera/aligned_depth_to_color/image_raw",
+    "/camera/depth/image_rect_raw",
 )
 IMU_TOPICS = (
-    "/camera/imu",
-    "/camera/accel/sample",
     "/camera/gyro/sample",
+    "/camera/accel/sample",
+    "/camera/imu",
 )
 REQUIRED_IMU_TOPICS = (
-    "/camera/imu",
+    "/camera/gyro/sample",
+    "/camera/accel/sample",
 )
 CORE_TOPICS = (
     "/scan",
@@ -192,9 +193,9 @@ def classify(text: str) -> tuple[str, list[str], list[str]]:
     if disconnect:
         evidence.append("USB disconnect/device-drop text was observed")
     required_video_pass = all(topic in video_pass for topic in REQUIRED_VIDEO_TOPICS)
-    fused_imu_pass = all(topic in imu_pass for topic in REQUIRED_IMU_TOPICS)
-    raw_imu_pass = "/camera/gyro/sample" in imu_pass and "/camera/accel/sample" in imu_pass
-    required_imu_pass = fused_imu_pass or raw_imu_pass
+    raw_imu_pass = all(topic in imu_pass for topic in REQUIRED_IMU_TOPICS)
+    fused_imu_pass = "/camera/imu" in imu_pass
+    required_imu_pass = raw_imu_pass
     critical_imu_fail = bool(imu_fail) and not required_imu_pass
     all_stream_rates_pass = required_video_pass and required_imu_pass and not video_fail and not critical_imu_fail
 

@@ -41,7 +41,14 @@ if [ -z "${REQUIRE_CLOCK_SYNC+x}" ]; then
     fi
 fi
 REQUIRE_IMU="${REQUIRE_IMU:-false}"
-IMU_TOPICS="${IMU_TOPICS:-/camera/imu /imu}"
+CAMERA_COLOR_TOPIC="${CAMERA_COLOR_TOPIC:-/camera/color/image_raw}"
+CAMERA_COLOR_INFO_TOPIC="${CAMERA_COLOR_INFO_TOPIC:-/camera/color/camera_info}"
+CAMERA_DEPTH_TOPIC="${CAMERA_DEPTH_TOPIC:-/camera/depth/image_rect_raw}"
+CAMERA_DEPTH_INFO_TOPIC="${CAMERA_DEPTH_INFO_TOPIC:-/camera/depth/camera_info}"
+CAMERA_GYRO_TOPIC="${CAMERA_GYRO_TOPIC:-/camera/gyro/sample}"
+CAMERA_ACCEL_TOPIC="${CAMERA_ACCEL_TOPIC:-/camera/accel/sample}"
+CAMERA_FUSED_IMU_TOPIC="${CAMERA_FUSED_IMU_TOPIC:-/camera/imu}"
+IMU_TOPICS="${IMU_TOPICS:-${CAMERA_GYRO_TOPIC} ${CAMERA_ACCEL_TOPIC} ${CAMERA_FUSED_IMU_TOPIC} /imu}"
 ENABLE_IMU_RECORDING_KEEPALIVE="${ENABLE_IMU_RECORDING_KEEPALIVE:-false}"
 IMU_RECORDING_KEEPALIVE_SECONDS="${IMU_RECORDING_KEEPALIVE_SECONDS:-30}"
 ENABLE_REALSENSE_SYNC="${ENABLE_REALSENSE_SYNC:-false}"
@@ -339,7 +346,7 @@ echo "  [i] hardware snapshot: ${HARDWARE_PRE_LOG}"
 # Check required topics are publishing (best-effort, bounded timeout).
 # If logging.launch is allowed to start bringup itself these checks may warn
 # before sensors exist; validate_ros2_bag.py remains the authoritative post-run gate.
-REQUIRED_TOPICS="/scan /odom /tf /camera/color/image_raw /camera/aligned_depth_to_color/image_raw"
+REQUIRED_TOPICS="/scan /odom /tf ${CAMERA_COLOR_TOPIC} ${CAMERA_DEPTH_TOPIC}"
 OPTIONAL_TOPICS=""
 GROUND_TRUTH_TOPICS="${MOCAP_TOPIC} /mocap"
 ALL_OK=true
@@ -452,7 +459,7 @@ camera_profile:
   depth_height: ${CAMERA_DEPTH_HEIGHT}
   depth_fps: ${CAMERA_DEPTH_FPS}
 notes: ""
-usb_mode_note: "D455 observed on USB 3.x; RGB-D and /camera/imu are recorded when available."
+usb_mode_note: "D455 observed on USB 3.x; RGB-D plus raw /camera/gyro/sample and /camera/accel/sample are recorded when available."
 EOF
 
 echo ""
@@ -562,7 +569,7 @@ finalise_manifest() {
     echo "Manifest written: ${MANIFEST_FILE}"
     echo ""
     echo "Run quality check:"
-    echo "  REQUIRE_IMU=${REQUIRE_IMU} CMD_TOPIC=${CMD_TOPIC} python3 scripts/logging/validate_ros2_bag.py ${BAG_PATH} --require-resilient-storage"
+    echo "  REQUIRE_IMU=${REQUIRE_IMU} CMD_TOPIC=${CMD_TOPIC} DEPTH_TOPIC=${CAMERA_DEPTH_TOPIC} IMU_TOPICS=\"${IMU_TOPICS}\" python3 scripts/logging/validate_ros2_bag.py ${BAG_PATH} --require-resilient-storage"
 }
 
 run_camera_pre_gate() {
@@ -571,7 +578,7 @@ run_camera_pre_gate() {
     fi
 
     local color_log="${BAG_DIR}/${SESSION_ID}_camera_gate_pre_color_hz.txt"
-    local depth_log="${BAG_DIR}/${SESSION_ID}_camera_gate_pre_aligned_depth_hz.txt"
+    local depth_log="${BAG_DIR}/${SESSION_ID}_camera_gate_pre_depth_hz.txt"
     local imu_log="${BAG_DIR}/${SESSION_ID}_camera_gate_pre_imu_hz.txt"
     local gyro_log="${BAG_DIR}/${SESSION_ID}_camera_gate_pre_gyro_hz.txt"
     local accel_log="${BAG_DIR}/${SESSION_ID}_camera_gate_pre_accel_hz.txt"
@@ -597,7 +604,7 @@ run_camera_pre_gate() {
         echo "active_rgbd_gap_abort: ${REALSENSE_ACTIVE_RGBD_GAP_ABORT}"
         echo "active_imu_gap_abort: ${REALSENSE_ACTIVE_IMU_GAP_ABORT}"
         echo "color_log: $(basename "${color_log}")"
-        echo "aligned_depth_log: $(basename "${depth_log}")"
+        echo "depth_log: $(basename "${depth_log}")"
         echo "imu_log: $(basename "${imu_log}")"
         echo "gyro_log: $(basename "${gyro_log}")"
         echo "accel_log: $(basename "${accel_log}")"
@@ -606,19 +613,23 @@ run_camera_pre_gate() {
     } > "${CAMERA_GATE_PRE_LOG}"
 
     gate_start_line="$(wc -l < "${BRINGUP_LOG}" 2>/dev/null || echo 0)"
-    timeout "${REALSENSE_CAMERA_GATE_SECONDS}" ros2 topic hz /camera/color/image_raw --window 40 \
+    timeout "${REALSENSE_CAMERA_GATE_SECONDS}" ros2 topic hz "${CAMERA_COLOR_TOPIC}" --window 40 \
         > "${color_log}" 2>&1 &
     local color_pid=$!
-    timeout "${REALSENSE_CAMERA_GATE_SECONDS}" ros2 topic hz /camera/aligned_depth_to_color/image_raw --window 40 \
+    timeout "${REALSENSE_CAMERA_GATE_SECONDS}" ros2 topic hz "${CAMERA_DEPTH_TOPIC}" --window 40 \
         > "${depth_log}" 2>&1 &
     local depth_pid=$!
-    timeout "${REALSENSE_CAMERA_GATE_SECONDS}" ros2 topic hz /camera/imu --window 80 \
-        > "${imu_log}" 2>&1 &
-    local imu_pid=$!
+    timeout "${REALSENSE_CAMERA_GATE_SECONDS}" ros2 topic hz "${CAMERA_GYRO_TOPIC}" --window 80 \
+        > "${gyro_log}" 2>&1 &
+    local gyro_pid=$!
+    timeout "${REALSENSE_CAMERA_GATE_SECONDS}" ros2 topic hz "${CAMERA_ACCEL_TOPIC}" --window 40 \
+        > "${accel_log}" 2>&1 &
+    local accel_pid=$!
 
     wait "${color_pid}" 2>/dev/null || true
     wait "${depth_pid}" 2>/dev/null || true
-    wait "${imu_pid}" 2>/dev/null || true
+    wait "${gyro_pid}" 2>/dev/null || true
+    wait "${accel_pid}" 2>/dev/null || true
 
     if printf "%s" "${gate_start_line}" | grep -Eq '^[0-9]+$'; then
         tail -n "+$((gate_start_line + 1))" "${BRINGUP_LOG}" > "${gate_bringup_log}" 2>/dev/null || \
@@ -708,21 +719,10 @@ run_camera_pre_gate() {
         return 0
     }
 
-    _camera_check_rate_log /camera/color/image_raw "${color_log}" "${MIN_RGBD_HZ}" "color stream" "${RGBD_WARN_GATE_GAP_SEC}" "${MAX_RGBD_GATE_GAP_SEC}" 40 "${REALSENSE_ACTIVE_RGBD_GAP_ABORT}" || failures=$((failures + 1))
-    _camera_check_rate_log /camera/aligned_depth_to_color/image_raw "${depth_log}" "${MIN_RGBD_HZ}" "aligned depth stream" "${RGBD_WARN_GATE_GAP_SEC}" "${MAX_RGBD_GATE_GAP_SEC}" 40 "${REALSENSE_ACTIVE_RGBD_GAP_ABORT}" || failures=$((failures + 1))
-    if ! _camera_check_rate_log /camera/imu "${imu_log}" "${MIN_CAMERA_IMU_HZ}" "camera imu stream" "${MAX_CAMERA_IMU_GATE_GAP_SEC}" "${MAX_CAMERA_IMU_GATE_GAP_SEC}" 80 "${REALSENSE_ACTIVE_IMU_GAP_ABORT}"; then
-        echo "WARN camera imu stream: fused /camera/imu failed; checking raw gyro+accel fallback" | tee -a "${CAMERA_GATE_PRE_LOG}"
-        timeout 30 ros2 topic hz /camera/gyro/sample --window 80 > "${gyro_log}" 2>&1 || true
-        timeout 30 ros2 topic hz /camera/accel/sample --window 40 > "${accel_log}" 2>&1 || true
-        raw_failures=0
-        _camera_check_rate_log /camera/gyro/sample "${gyro_log}" "150" "camera gyro stream" "${MAX_CAMERA_IMU_GATE_GAP_SEC}" "${MAX_CAMERA_IMU_GATE_GAP_SEC}" 80 || raw_failures=$((raw_failures + 1))
-        _camera_check_rate_log /camera/accel/sample "${accel_log}" "60" "camera accel stream" "${MAX_CAMERA_IMU_GATE_GAP_SEC}" "${MAX_CAMERA_IMU_GATE_GAP_SEC}" 40 || raw_failures=$((raw_failures + 1))
-        if [ "${raw_failures}" -eq 0 ]; then
-            echo "PASS camera imu fallback: raw gyro+accel streams satisfy IMU gate" | tee -a "${CAMERA_GATE_PRE_LOG}"
-        else
-            failures=$((failures + 1))
-        fi
-    fi
+    _camera_check_rate_log "${CAMERA_COLOR_TOPIC}" "${color_log}" "${MIN_RGBD_HZ}" "color stream" "${RGBD_WARN_GATE_GAP_SEC}" "${MAX_RGBD_GATE_GAP_SEC}" 40 "${REALSENSE_ACTIVE_RGBD_GAP_ABORT}" || failures=$((failures + 1))
+    _camera_check_rate_log "${CAMERA_DEPTH_TOPIC}" "${depth_log}" "${MIN_RGBD_HZ}" "depth stream" "${RGBD_WARN_GATE_GAP_SEC}" "${MAX_RGBD_GATE_GAP_SEC}" 40 "${REALSENSE_ACTIVE_RGBD_GAP_ABORT}" || failures=$((failures + 1))
+    _camera_check_rate_log "${CAMERA_GYRO_TOPIC}" "${gyro_log}" "150" "camera gyro stream" "${MAX_CAMERA_IMU_GATE_GAP_SEC}" "${MAX_CAMERA_IMU_GATE_GAP_SEC}" 80 "${REALSENSE_ACTIVE_IMU_GAP_ABORT}" || failures=$((failures + 1))
+    _camera_check_rate_log "${CAMERA_ACCEL_TOPIC}" "${accel_log}" "60" "camera accel stream" "${MAX_CAMERA_IMU_GATE_GAP_SEC}" "${MAX_CAMERA_IMU_GATE_GAP_SEC}" 40 "${REALSENSE_ACTIVE_IMU_GAP_ABORT}" || failures=$((failures + 1))
 
     if grep -Eiq "The device has been disconnected|USB disconnect|No such device|device removed" "${gate_bringup_log}" 2>/dev/null; then
         echo "FAIL RealSense runtime log: camera disconnect/device-drop errors observed" | tee -a "${CAMERA_GATE_PRE_LOG}"
@@ -826,16 +826,17 @@ run_runtime_watchdog() {
         watchdog_rate_check /scan "${MIN_SCAN_HZ}" "${RUNTIME_WATCHDOG_HZ_TIMEOUT}" 20 || failures=$((failures + 1))
         watchdog_rate_check /odom "${MIN_ODOM_HZ}" "${RUNTIME_WATCHDOG_HZ_TIMEOUT}" 20 || failures=$((failures + 1))
         if [ "${ENABLE_RUNTIME_RGBD_WATCHDOG}" = true ]; then
-            watchdog_liveness_check /camera/color/image_raw 8 || failures=$((failures + 1))
-            watchdog_liveness_check /camera/aligned_depth_to_color/image_raw 8 || failures=$((failures + 1))
+            watchdog_liveness_check "${CAMERA_COLOR_TOPIC}" 8 || failures=$((failures + 1))
+            watchdog_liveness_check "${CAMERA_DEPTH_TOPIC}" 8 || failures=$((failures + 1))
         else
-            echo "SKIP /camera/color/image_raw: high-bandwidth stream checked by pre-run gate and post-run bag audit" >> "${RUNTIME_WATCHDOG_LOG}"
-            echo "SKIP /camera/aligned_depth_to_color/image_raw: high-bandwidth stream checked by pre-run gate and post-run bag audit" >> "${RUNTIME_WATCHDOG_LOG}"
+            echo "SKIP ${CAMERA_COLOR_TOPIC}: high-bandwidth stream checked by pre-run gate and post-run bag audit" >> "${RUNTIME_WATCHDOG_LOG}"
+            echo "SKIP ${CAMERA_DEPTH_TOPIC}: high-bandwidth stream checked by pre-run gate and post-run bag audit" >> "${RUNTIME_WATCHDOG_LOG}"
         fi
         if [ "${ENABLE_RUNTIME_CAMERA_IMU_WATCHDOG}" = true ]; then
-            watchdog_liveness_check /camera/imu 8 || failures=$((failures + 1))
+            watchdog_liveness_check "${CAMERA_GYRO_TOPIC}" 8 || failures=$((failures + 1))
+            watchdog_liveness_check "${CAMERA_ACCEL_TOPIC}" 8 || failures=$((failures + 1))
         else
-            echo "SKIP /camera/imu: high-rate camera stream checked by pre-run gate and post-run bag audit" >> "${RUNTIME_WATCHDOG_LOG}"
+            echo "SKIP ${CAMERA_GYRO_TOPIC}/${CAMERA_ACCEL_TOPIC}: high-rate camera streams checked by pre-run gate and post-run bag audit" >> "${RUNTIME_WATCHDOG_LOG}"
         fi
         if [ "${REQUIRE_GT}" = true ]; then
             watchdog_rate_check "${MOCAP_TOPIC}" "${MIN_GT_HZ}" "${RUNTIME_WATCHDOG_HZ_TIMEOUT}" 20 || failures=$((failures + 1))
@@ -1018,6 +1019,13 @@ export MOCAP_TOPIC="$MOCAP_TOPIC"
 export CMD_TOPIC="$CMD_TOPIC"
 export REQUIRE_GT="$REQUIRE_GT"
 export REQUIRE_IMU="$REQUIRE_IMU"
+export CAMERA_COLOR_TOPIC="$CAMERA_COLOR_TOPIC"
+export CAMERA_COLOR_INFO_TOPIC="$CAMERA_COLOR_INFO_TOPIC"
+export CAMERA_DEPTH_TOPIC="$CAMERA_DEPTH_TOPIC"
+export CAMERA_DEPTH_INFO_TOPIC="$CAMERA_DEPTH_INFO_TOPIC"
+export CAMERA_GYRO_TOPIC="$CAMERA_GYRO_TOPIC"
+export CAMERA_ACCEL_TOPIC="$CAMERA_ACCEL_TOPIC"
+export CAMERA_FUSED_IMU_TOPIC="$CAMERA_FUSED_IMU_TOPIC"
 export IMU_TOPICS="$IMU_TOPICS"
 export ENABLE_IMU_RECORDING_KEEPALIVE="$ENABLE_IMU_RECORDING_KEEPALIVE"
 export IMU_RECORDING_KEEPALIVE_SECONDS="$IMU_RECORDING_KEEPALIVE_SECONDS"
@@ -1338,8 +1346,8 @@ check_topic_silent() {
 
 check_topic_silent /scan 30 || FAILED_TOPICS+=("/scan")
 check_topic_silent /odom 20 || FAILED_TOPICS+=("/odom")
-check_topic_silent /camera/color/image_raw "${RGBD_STARTUP_TIMEOUT}" || FAILED_TOPICS+=("/camera/color/image_raw")
-check_topic_silent /camera/aligned_depth_to_color/image_raw "${RGBD_STARTUP_TIMEOUT}" || FAILED_TOPICS+=("/camera/aligned_depth_to_color/image_raw")
+check_topic_silent "${CAMERA_COLOR_TOPIC}" "${RGBD_STARTUP_TIMEOUT}" || FAILED_TOPICS+=("${CAMERA_COLOR_TOPIC}")
+check_topic_silent "${CAMERA_DEPTH_TOPIC}" "${RGBD_STARTUP_TIMEOUT}" || FAILED_TOPICS+=("${CAMERA_DEPTH_TOPIC}")
 
 if [ "$REQUIRE_IMU" = true ]; then
     IMU_OK=false
@@ -1375,15 +1383,16 @@ ROS2_RECORD_TOPICS=(
     "${CMD_TOPIC}"
     /tf
     /tf_static
-    /camera/color/image_raw
-    /camera/color/camera_info
-    /camera/depth/camera_info
-    /camera/aligned_depth_to_color/image_raw
-    /camera/aligned_depth_to_color/camera_info
+    "${CAMERA_COLOR_TOPIC}"
+    "${CAMERA_COLOR_INFO_TOPIC}"
+    "${CAMERA_DEPTH_TOPIC}"
+    "${CAMERA_DEPTH_INFO_TOPIC}"
     /camera/extrinsics/depth_to_color
-    /camera/imu
-    /camera/gyro/sample
-    /camera/accel/sample
+    /camera/extrinsics/depth_to_gyro
+    /camera/extrinsics/depth_to_accel
+    "${CAMERA_FUSED_IMU_TOPIC}"
+    "${CAMERA_GYRO_TOPIC}"
+    "${CAMERA_ACCEL_TOPIC}"
     /imu
     /diagnostics
     /tag_detections
@@ -1416,9 +1425,9 @@ if [ -n "${ROSBAG2_MAX_BAG_SIZE}" ] && [ "${ROSBAG2_MAX_BAG_SIZE}" != "0" ]; the
 fi
 
 if [ "${REQUIRE_IMU}" = true ] && [ "${ENABLE_IMU_RECORDING_KEEPALIVE}" = true ]; then
-    echo "Starting bounded IMU recording keepalive (${IMU_RECORDING_KEEPALIVE_SECONDS}s on /camera/imu)..."
+    echo "Starting bounded IMU recording keepalive (${IMU_RECORDING_KEEPALIVE_SECONDS}s on ${CAMERA_GYRO_TOPIC})..."
     timeout "${IMU_RECORDING_KEEPALIVE_SECONDS}" \
-        ros2 topic echo --qos-reliability best_effort /camera/imu \
+        ros2 topic echo --qos-reliability best_effort "${CAMERA_GYRO_TOPIC}" \
         > /dev/null 2>&1 &
     IMU_KEEPALIVE_PID=$!
     sleep 1

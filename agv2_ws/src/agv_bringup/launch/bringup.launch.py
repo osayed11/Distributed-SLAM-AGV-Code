@@ -120,7 +120,7 @@ def generate_launch_description():
         launch_arguments={
             'camera_namespace':                 '',
             'camera_name':                      'camera',
-            'align_depth.enable':               'true',
+            'align_depth.enable':               'false',
             'pointcloud.enable':                'false',
             'enable_sync':                      LaunchConfiguration('enable_sync'),
             'rgb_camera.color_profile':         LaunchConfiguration('agv_color_profile'),
@@ -128,7 +128,7 @@ def generate_launch_description():
             'depth_module.infra_profile':       LaunchConfiguration('agv_depth_profile'),
             'enable_accel':                     'true',
             'enable_gyro':                      'true',
-            'unite_imu_method':                 '2',
+            'unite_imu_method':                 '0',
             'enable_infra1':                    'false',
             'enable_infra2':                    'false',
             'rgb_camera.enable_auto_exposure':  'true',

@@ -49,7 +49,7 @@ Recording/gates:
   S1_STORAGE_ID     mcap/sqlite3/auto. Default: auto, prefer MCAP when installed.
   S1_TOPIC_WAIT_SEC Wait per required topic. Default: 180
   REQUIRE_GT        Require MoCap in validator. Default: true
-  REQUIRE_IMU       Require camera IMU in validator. Default: true
+  REQUIRE_IMU       Require raw D455 gyro+accel in validator. Default: true
 EOF
 }
 
@@ -374,8 +374,9 @@ required_topics=(
     "/scan"
     "/odom"
     "/camera/color/image_raw"
-    "/camera/aligned_depth_to_color/image_raw"
-    "/camera/imu"
+    "/camera/depth/image_rect_raw"
+    "/camera/gyro/sample"
+    "/camera/accel/sample"
     "${MOCAP_TOPIC}"
 )
 
@@ -471,10 +472,11 @@ if bool_true "${S1_RECORD}"; then
         "/tf_static"
         "/camera/color/image_raw"
         "/camera/color/camera_info"
+        "/camera/depth/image_rect_raw"
         "/camera/depth/camera_info"
-        "/camera/aligned_depth_to_color/image_raw"
-        "/camera/aligned_depth_to_color/camera_info"
         "/camera/extrinsics/depth_to_color"
+        "/camera/extrinsics/depth_to_gyro"
+        "/camera/extrinsics/depth_to_accel"
         "/camera/imu"
         "/camera/gyro/sample"
         "/camera/accel/sample"
@@ -538,6 +540,9 @@ if bool_true "${S1_RECORD}" && bool_true "${S1_VALIDATE}"; then
     MOCAP_TOPIC="${MOCAP_TOPIC}" \
     REQUIRE_GT="${REQUIRE_GT}" \
     REQUIRE_IMU="${REQUIRE_IMU}" \
+    DEPTH_TOPIC="/camera/depth/image_rect_raw" \
+    DEPTH_INFO_TOPIC="/camera/depth/camera_info" \
+    IMU_TOPICS="/camera/gyro/sample /camera/accel/sample /camera/imu /imu" \
     python3 scripts/logging/validate_ros2_bag.py "${BAG}" "${VALIDATE_ARGS[@]}"
     VALIDATE_RC=$?
     set -e
