@@ -143,34 +143,45 @@ configure_bridge() {
         echo "ERROR: provide at least one NAME=/gt/ROBOT/pose mapping." >&2
         exit 2
     }
-    local mapping mappings="" first_name=""
+    local mapping mappings="" names=""
     for mapping in "$@"; do
         [[ "${mapping}" =~ ^[A-Za-z0-9_.-]+=/gt/[A-Za-z0-9_.-]+/pose$ ]] || {
             echo "ERROR: invalid rigid-body mapping: ${mapping}" >&2
             exit 2
         }
-        if [ -z "${first_name}" ]; then
-            first_name="${mapping%%=*}"
-        fi
+        names+="${names:+ }${mapping%%=*}"
         mappings+="${mappings:+ }${mapping}"
     done
     python3 -m pip install --user --disable-pip-version-check "natnet==0.2.0"
     local multicast=""
     case "${NATNET_MODE:-auto}" in
         auto)
-            echo "Probing NatNet unicast for ${first_name}..."
-            if timeout 8 python3 "${ROOT}/scripts/mocap/natnet_watch.py" \
-                --server "${natnet_server}" --name "${first_name}" --once >/dev/null 2>&1; then
-                multicast=false
-            else
-                echo "Unicast frames absent; probing NatNet multicast..."
-                if timeout 8 python3 "${ROOT}/scripts/mocap/natnet_watch.py" \
-                    --server "${natnet_server}" --name "${first_name}" --multicast --once >/dev/null 2>&1; then
-                    multicast=true
-                else
-                    echo "ERROR: neither NatNet unicast nor multicast produced ${first_name}." >&2
-                    exit 1
+            local probe_name found=false
+            echo "Probing NatNet unicast for active configured bodies..."
+            for probe_name in ${names}; do
+                if timeout 6 python3 "${ROOT}/scripts/mocap/natnet_watch.py" \
+                    --server "${natnet_server}" --name "${probe_name}" --once >/dev/null 2>&1; then
+                    multicast=false
+                    found=true
+                    echo "NatNet unicast frame received for ${probe_name}."
+                    break
                 fi
+            done
+            if [ "${found}" != true ]; then
+                echo "Unicast frames absent; probing NatNet multicast..."
+                for probe_name in ${names}; do
+                    if timeout 6 python3 "${ROOT}/scripts/mocap/natnet_watch.py" \
+                        --server "${natnet_server}" --name "${probe_name}" --multicast --once >/dev/null 2>&1; then
+                        multicast=true
+                        found=true
+                        echo "NatNet multicast frame received for ${probe_name}."
+                        break
+                    fi
+                done
+            fi
+            if [ "${found}" != true ]; then
+                echo "ERROR: neither NatNet unicast nor multicast produced an active configured body (${names})." >&2
+                exit 1
             fi
             ;;
         unicast) multicast=false ;;
