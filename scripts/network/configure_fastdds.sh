@@ -124,7 +124,7 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-ExecStart=/bin/bash /opt/ros/${ROS_DISTRO}/bin/fastdds discovery -i ${SERVER_ID} -p ${port}
+ExecStart=/bin/bash -lc 'source /opt/ros/${ROS_DISTRO}/setup.bash && /bin/bash /opt/ros/${ROS_DISTRO}/bin/fastdds discovery -i ${SERVER_ID} -p ${port}'
 Restart=on-failure
 RestartSec=2
 
@@ -143,18 +143,46 @@ configure_bridge() {
         echo "ERROR: provide at least one NAME=/gt/ROBOT/pose mapping." >&2
         exit 2
     }
-    local mapping mappings=""
+    local mapping mappings="" first_name=""
     for mapping in "$@"; do
         [[ "${mapping}" =~ ^[A-Za-z0-9_.-]+=/gt/[A-Za-z0-9_.-]+/pose$ ]] || {
             echo "ERROR: invalid rigid-body mapping: ${mapping}" >&2
             exit 2
         }
+        if [ -z "${first_name}" ]; then
+            first_name="${mapping%%=*}"
+        fi
         mappings+="${mappings:+ }${mapping}"
     done
     python3 -m pip install --user --disable-pip-version-check "natnet==0.2.0"
+    local multicast=""
+    case "${NATNET_MODE:-auto}" in
+        auto)
+            echo "Probing NatNet unicast for ${first_name}..."
+            if timeout 8 python3 "${ROOT}/scripts/mocap/natnet_watch.py" \
+                --server "${natnet_server}" --name "${first_name}" --once >/dev/null 2>&1; then
+                multicast=false
+            else
+                echo "Unicast frames absent; probing NatNet multicast..."
+                if timeout 8 python3 "${ROOT}/scripts/mocap/natnet_watch.py" \
+                    --server "${natnet_server}" --name "${first_name}" --multicast --once >/dev/null 2>&1; then
+                    multicast=true
+                else
+                    echo "ERROR: neither NatNet unicast nor multicast produced ${first_name}." >&2
+                    exit 1
+                fi
+            fi
+            ;;
+        unicast) multicast=false ;;
+        multicast) multicast=true ;;
+        *)
+            echo "ERROR: NATNET_MODE must be auto, unicast, or multicast." >&2
+            exit 2
+            ;;
+    esac
     install_text /etc/orkar/mocap_bridge.env 0644 \
 "NATNET_SERVER=${natnet_server}
-NATNET_MULTICAST=false
+NATNET_MULTICAST=${multicast}
 MOCAP_FRAME_ID=world
 MOCAP_FRAME_TIMEOUT_SEC=5
 MOCAP_RIGID_BODIES=\"${mappings}\""
@@ -179,7 +207,9 @@ RestartSec=2
 WantedBy=multi-user.target"
     sudo_run systemctl daemon-reload
     sudo_run systemctl enable --now orkar-mocap-bridge.service
-    echo "MoCap bridge configured: ${mappings}"
+    local mode_name=unicast
+    [ "${multicast}" = true ] && mode_name=multicast
+    echo "MoCap bridge configured (${mode_name}): ${mappings}"
 }
 
 show_status() {

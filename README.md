@@ -448,6 +448,10 @@ bash scripts/network/configure_fastdds.sh bridge 192.168.50.200 \
   orkar_agv103=/gt/agv103/pose
 ```
 
+Bridge setup probes NatNet unicast and multicast and stores whichever mode
+actually produces tracked frames; override only with `NATNET_MODE=unicast` or
+`NATNET_MODE=multicast` when intentionally changing Motive configuration.
+
 On every other robot:
 
 ```bash
