@@ -124,7 +124,7 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-ExecStart=/opt/ros/${ROS_DISTRO}/bin/fastdds discovery -i ${SERVER_ID} -p ${port}
+ExecStart=/bin/bash /opt/ros/${ROS_DISTRO}/bin/fastdds discovery -i ${SERVER_ID} -p ${port}
 Restart=on-failure
 RestartSec=2
 

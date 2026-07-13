@@ -60,7 +60,7 @@ class NatNetPosePublisher(Node):
         self.target_by_name = {target.name: target for target in self.targets}
         self.name_by_id: Dict[int, str] = {}
         self.printed_defs = False
-        self.publishers = {
+        self.pose_publishers = {
             target.name: self.create_publisher(PoseStamped, target.topic, 20)
             for target in self.targets
         }
@@ -158,7 +158,7 @@ class NatNetPosePublisher(Node):
             msg.pose.orientation.y = float(rb.rot[1])
             msg.pose.orientation.z = float(rb.rot[2])
             msg.pose.orientation.w = float(rb.rot[3])
-            self.publishers[name].publish(msg)
+            self.pose_publishers[name].publish(msg)
             self.published[name] += 1
             published_names.append(name)
 
