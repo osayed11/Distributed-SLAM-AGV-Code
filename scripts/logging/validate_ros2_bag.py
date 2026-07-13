@@ -13,6 +13,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import sqlite3
 import sys
 from dataclasses import dataclass, asdict
@@ -153,7 +154,10 @@ def required_specs() -> List[TopicSpec]:
     return specs
 
 
-def ground_truth_topics() -> List[str]:
+GT_POSE_TOPIC_RE = re.compile(r"^/gt/[^/]+/pose$")
+
+
+def ground_truth_topics(available_topics: Sequence[str] = ()) -> List[str]:
     topics = [
         "/mocap",
         "/ground_truth",
@@ -165,6 +169,9 @@ def ground_truth_topics() -> List[str]:
         topics.insert(0, env_topic)
     for topic in split_topics(os.environ.get("GROUND_TRUTH_TOPICS", "")):
         if topic not in topics:
+            topics.append(topic)
+    for topic in available_topics:
+        if GT_POSE_TOPIC_RE.fullmatch(topic) and topic not in topics:
             topics.append(topic)
     return topics
 
@@ -657,13 +664,14 @@ def validate_ground_truth(
     bag_end_ns: Optional[int],
 ) -> None:
     print("\n--- Ground truth ---")
-    present = [stats[topic] for topic in ground_truth_topics() if topic in stats]
+    candidates = ground_truth_topics(stats.keys())
+    present = [stats[topic] for topic in candidates if topic in stats]
     if not present:
         record(
             results,
             FAIL if require_gt else WARN,
             "ground_truth",
-            "missing; checked {}".format(", ".join(ground_truth_topics())),
+            "missing; checked {} and /gt/<robot>/pose".format(", ".join(ground_truth_topics())),
         )
         return
     for item in present:

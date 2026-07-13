@@ -78,9 +78,13 @@ class CircleSummary:
     elapsed_sec: float
     laps: float
     radius_m: float
+    initial_radius_error_m: float
     final_radius_error_m: float
     max_radius_error_m: float
+    initial_heading_error_deg: float
     max_heading_error_deg: float
+    pose_samples: int
+    max_pose_age_sec: float
     abort_reason: str
 
 
@@ -89,6 +93,7 @@ class MocapCircleNode(Node):
         super().__init__("drive_mocap_circle_ros2")
         self.args = args
         self.pose: Optional[PoseSample] = None
+        self.pose_samples = 0
         qos = QoSProfile(
             history=HistoryPolicy.KEEP_LAST,
             depth=20,
@@ -109,6 +114,7 @@ class MocapCircleNode(Node):
             stamp_sec=stamp_sec,
             wall_time=time.time(),
         )
+        self.pose_samples += 1
 
     def publish_zero(self, seconds: float = 0.8):
         msg = Twist()
@@ -185,10 +191,15 @@ def drive(node: MocapCircleNode, args) -> CircleSummary:
 
     first = node.pose or start_pose
     last_theta = math.atan2(first.y - center_y, first.x - center_x)
+    initial_radius = math.hypot(first.x - center_x, first.y - center_y)
+    initial_radius_error = initial_radius - args.radius
+    initial_tangent_yaw = last_theta + args.turn_sign * math.pi * 0.5
+    initial_heading_error = angle_delta(initial_tangent_yaw, first.yaw + forward_offset)
     progress = 0.0
     max_abs_radius_error = 0.0
     max_abs_heading_error = 0.0
     final_radius_error = 0.0
+    max_pose_age = 0.0
     abort_reason = ""
     reached_duration = False
     last_progress = 0.0
@@ -212,6 +223,7 @@ def drive(node: MocapCircleNode, args) -> CircleSummary:
             break
 
         pose_age = now - sample.wall_time
+        max_pose_age = max(max_pose_age, pose_age)
         if pose_age > args.pose_timeout:
             abort_reason = "mocap pose stale for %.3fs" % pose_age
             break
@@ -294,14 +306,19 @@ def drive(node: MocapCircleNode, args) -> CircleSummary:
         elapsed_sec=elapsed,
         laps=progress / (2.0 * math.pi),
         radius_m=args.radius,
+        initial_radius_error_m=initial_radius_error,
         final_radius_error_m=final_radius_error,
         max_radius_error_m=max_abs_radius_error,
+        initial_heading_error_deg=math.degrees(initial_heading_error),
         max_heading_error_deg=math.degrees(max_abs_heading_error),
+        pose_samples=node.pose_samples,
+        max_pose_age_sec=max_pose_age,
         abort_reason=abort_reason,
     )
     print(
         "Mocap circle complete: reached_duration=%s elapsed=%.1fs laps=%.2f "
-        "final_radius_error=%+.3fm max_radius_error=%.3fm max_heading=%.1fdeg%s"
+        "final_radius_error=%+.3fm max_radius_error=%.3fm max_heading=%.1fdeg "
+        "pose_samples=%d max_pose_age=%.3fs%s"
         % (
             summary.reached_duration,
             summary.elapsed_sec,
@@ -309,6 +326,8 @@ def drive(node: MocapCircleNode, args) -> CircleSummary:
             summary.final_radius_error_m,
             summary.max_radius_error_m,
             summary.max_heading_error_deg,
+            summary.pose_samples,
+            summary.max_pose_age_sec,
             (" abort='%s'" % summary.abort_reason) if summary.abort_reason else "",
         ),
         flush=True,

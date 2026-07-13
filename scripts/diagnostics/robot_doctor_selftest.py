@@ -200,6 +200,26 @@ class ValidateRos2BagTests(unittest.TestCase):
             self.assertEqual(report["counts"]["fail"], 0)
             self.assertIn(report["verdict"], {"PASS", "WARN"})
 
+    def test_ros2_validator_accepts_namespaced_gt_pose(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            bag = Path(tmp) / "namespaced_gt"
+            write_ros2_bag(bag)
+            conn = sqlite3.connect(str(bag / "test_0.db3"))
+            conn.execute(
+                "UPDATE topics SET name = ? WHERE name = ?",
+                ("/gt/agv103/pose", "/optitrack/rigid_bodies/agv"),
+            )
+            conn.commit()
+            conn.close()
+            rc, report = run_validator(bag, {"MOCAP_TOPIC": ""})
+            self.assertEqual(rc, 0)
+            self.assertTrue(
+                any(
+                    item["check"] == "/gt/agv103/pose" and item["level"] == "PASS"
+                    for item in report["results"]
+                )
+            )
+
     def test_missing_required_topic_fails(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             bag = Path(tmp) / "missing_scan"

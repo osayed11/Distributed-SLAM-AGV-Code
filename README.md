@@ -431,6 +431,55 @@ because the `ros2 bag` recorder and drivers shut down at different speeds after
 
 Mid-run gaps still fail.
 
+## Fast DDS And MoCap
+
+Fleet collection uses one Fast DDS Discovery Server and one direct NatNet
+bridge. Every ROS process, including the bridge and recorder, reads the same
+robot-local `/etc/orkar/fastdds.env`; do not mix this session with default DDS
+participants.
+
+On the machine hosting discovery and the bridge:
+
+```bash
+cd ~/slam_project
+bash scripts/network/configure_fastdds.sh server 192.168.50.176 11811
+bash scripts/network/configure_fastdds.sh bridge 192.168.50.200 \
+  orkar_agv102=/gt/agv102/pose \
+  orkar_agv103=/gt/agv103/pose
+```
+
+On every other robot:
+
+```bash
+cd ~/slam_project
+bash scripts/network/configure_fastdds.sh client 192.168.50.176 11811
+```
+
+Reboot or restart all ROS processes after changing discovery. Check the full
+graph through the generated Super Client profile:
+
+```bash
+bash scripts/network/fastdds_ros2.sh topic list --no-daemon
+bash scripts/network/configure_fastdds.sh status
+```
+
+The standard S1 command runs sensor gates, then a required 5-second unrecorded
+motion precheck, then starts the recorder and runs the full circle. For a local
+inferred counter-clockwise circle, place the robot 0.8 m from the marked center
+and tangent with the center on its left. Put the center on its right and set
+`S1_DIRECTION=cw` for clockwise.
+
+```bash
+ROS_DOMAIN_ID=0 \
+S1_RADIUS=0.8 \
+S1_DURATION=60 \
+bash scripts/scenarios/run_s1_mocap_pilot_robot.sh agv103 s1_circle_0p8
+```
+
+The recorder cannot start unless GT is fresh, direction-normalised progress is
+positive, and the precheck radius error stays within 0.15 m. The post-run bag
+validator accepts both configured MoCap topics and `/gt/<robot>/pose`.
+
 ## Motion Helpers
 
 Run motion only after the recorder is active and the arena is clear.
@@ -486,6 +535,8 @@ Production paths:
 
 ```text
 scripts/setup_robot_ros2.sh                    one-time ROS 2 robot provisioning
+scripts/network/configure_fastdds.sh           discovery server/client and MoCap bridge setup
+scripts/network/fastdds_ros2.sh                ROS 2 CLI through a Fast DDS Super Client
 scripts/logging/start_session.sh               managed bringup, gate, recording, manifest
 scripts/logging/validate_ros2_bag.py           ROS 2 .mcap/.db3 post-run validator
 scripts/diagnostics/dataset_ready_gate.sh      read-only pre-run dataset gate
@@ -511,6 +562,7 @@ scripts/calibration/imu_static_test.py          stationary IMU characterization
 scripts/diagnostics/odom_motion_test.py        ROS 2 odom/base response test
 scripts/logging/drive_mocap_straight_ros2.py   mocap-feedback straight segment
 scripts/logging/drive_mocap_square_ros2.py     mocap-feedback square
+scripts/scenarios/run_s1_mocap_pilot_robot.sh  gated S1 precheck, recording, motion, validation
 scripts/logging/drive_circle.py                odom-feedback circle scenario
 scripts/logging/drive_square.py                odom-feedback square test
 scripts/logging/drive_lawnmower.py             timed shuttle scenario helper

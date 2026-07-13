@@ -22,13 +22,17 @@ set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+if [ -r "${ROOT}/scripts/network/load_fastdds_env.sh" ]; then
+    # shellcheck disable=SC1091
+    source "${ROOT}/scripts/network/load_fastdds_env.sh"
+fi
 
 # ---------------------------------------------------------------------------
 # Args
 # ---------------------------------------------------------------------------
 ROBOT_NAME="${1:-agv_unknown}"
 SCENARIO="${2:-unknown_scenario}"
-MOCAP_TOPIC="${MOCAP_TOPIC:-/optitrack/rigid_bodies/orkar_agv1}"
+MOCAP_TOPIC="${MOCAP_TOPIC:-/gt/${ROBOT_NAME}/pose}"
 CMD_TOPIC="${CMD_TOPIC:-/cmd_vel}"
 REQUIRE_GT="${REQUIRE_GT:-false}"
 WAIT_FOR_CLOCK_SYNC="${WAIT_FOR_CLOCK_SYNC:-true}"

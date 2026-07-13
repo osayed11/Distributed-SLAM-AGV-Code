@@ -53,14 +53,18 @@ def main():
     local_ip = args.local or guess_local_ip(args.server)
 
     state = {
-        "names": [],
+        "name_by_id": {},
         "printed_defs": False,
         "last_print": 0.0,
         "seen_target": False,
     }
 
     def on_descriptions(desc):
-        state["names"] = [rb.name for rb in desc.rigid_bodies]
+        state["name_by_id"] = {
+            int(rb.id_num): str(rb.name)
+            for rb in desc.rigid_bodies
+            if rb.name is not None
+        }
         if state["printed_defs"]:
             return
 
@@ -70,18 +74,21 @@ def main():
         for rb in desc.rigid_bodies:
             marker_count = len(rb.markers) if rb.markers is not None else 0
             print("  name=%s id=%s markers=%d" % (rb.name, rb.id_num, marker_count))
-        if args.name not in state["names"]:
+        if args.name not in state["name_by_id"].values():
             print("WARN: requested rigid body '%s' is not in model definitions." % args.name)
         state["printed_defs"] = True
 
     def on_frame(frame):
-        if args.name not in state["names"]:
+        rb = next(
+            (
+                item
+                for item in frame.rigid_bodies
+                if state["name_by_id"].get(int(item.id_num)) == args.name
+            ),
+            None,
+        )
+        if rb is None:
             return
-        index = state["names"].index(args.name)
-        if index >= len(frame.rigid_bodies):
-            return
-
-        rb = frame.rigid_bodies[index]
         now = time.time()
         if now - state["last_print"] < args.period and not args.once:
             return

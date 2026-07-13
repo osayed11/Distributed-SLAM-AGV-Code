@@ -27,7 +27,7 @@ Typical agv102 lab run:
   bash scripts/scenarios/run_s1_mocap_pilot_robot.sh agv102 s1_circle_1m
 
 Required/important environment:
-  MOCAP_TOPIC       MoCap PoseStamped topic. Example: /optitrack/rigid_bodies/orkar_agv102
+  MOCAP_TOPIC       MoCap PoseStamped topic. Default: /gt/<robot_name>/pose
   CMD_TOPIC         Namespaced cmd_vel topic. Default: /<robot_name>/cmd_vel
   ROS_DOMAIN_ID     ROS 2 domain. Default: 0
 
@@ -44,6 +44,10 @@ Circle overrides:
   S1_DRY_RUN       true/false. Default: false. Proves lifecycle without publishing motion.
 
 Recording/gates:
+  S1_PRECHECK       Run a 5s unrecorded motion gate before recording. Default: true
+  S1_PRECHECK_DURATION  Precheck motion seconds. Default: 5
+  S1_PRECHECK_MAX_RADIUS_ERROR  Allowed precheck radius error. Default: 0.15m
+  S1_PRECHECK_MIN_LAPS  Required direction-normalised progress. Default: 0.02
   S1_RECORD         true/false. Default: true
   S1_VALIDATE       true/false. Default: true
   S1_STORAGE_ID     mcap/sqlite3/auto. Default: auto, prefer MCAP when installed.
@@ -69,6 +73,13 @@ SCENARIO="${2:-s1_mocap_circle}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 cd "${ROOT}"
+
+# Every ROS participant in this script must use the same discovery path. The
+# robot-local file is installed by scripts/network/configure_fastdds.sh.
+if [ -r "${ROOT}/scripts/network/load_fastdds_env.sh" ]; then
+    # shellcheck disable=SC1091
+    source "${ROOT}/scripts/network/load_fastdds_env.sh"
+fi
 
 source_ros2() {
     local restore_nounset=false
@@ -277,7 +288,7 @@ rclpy.shutdown()
 PY
 }
 
-MOCAP_TOPIC="${MOCAP_TOPIC:-}"
+MOCAP_TOPIC="${MOCAP_TOPIC:-/gt/${ROBOT_NAME}/pose}"
 CMD_TOPIC="${CMD_TOPIC:-/${ROBOT_NAME}/cmd_vel}"
 ROS_DOMAIN_ID="${ROS_DOMAIN_ID:-0}"
 S1_RADIUS="${S1_RADIUS:-1.0}"
@@ -287,13 +298,19 @@ S1_MIN_LINEAR="${S1_MIN_LINEAR:-0.07}"
 S1_DIRECTION="${S1_DIRECTION:-ccw}"
 S1_MAX_RADIUS_ERROR="${S1_MAX_RADIUS_ERROR:-0.45}"
 S1_FORWARD_YAW_OFFSET_DEG="${S1_FORWARD_YAW_OFFSET_DEG:-0}"
-S1_POSE_TIMEOUT="${S1_POSE_TIMEOUT:-2.5}"
+S1_POSE_TIMEOUT="${S1_POSE_TIMEOUT:-0.30}"
 S1_HEADING_KP="${S1_HEADING_KP:-1.10}"
 S1_RADIUS_KP="${S1_RADIUS_KP:-1.50}"
 S1_MAX_ANGULAR="${S1_MAX_ANGULAR:-0.55}"
 S1_MAX_RADIUS_HEADING_OFFSET_DEG="${S1_MAX_RADIUS_HEADING_OFFSET_DEG:-35}"
 S1_BEST_EFFORT_POSE="${S1_BEST_EFFORT_POSE:-false}"
 S1_DRY_RUN="${S1_DRY_RUN:-false}"
+S1_PRECHECK="${S1_PRECHECK:-true}"
+S1_PRECHECK_DURATION="${S1_PRECHECK_DURATION:-5}"
+S1_PRECHECK_MAX_RADIUS_ERROR="${S1_PRECHECK_MAX_RADIUS_ERROR:-0.15}"
+S1_PRECHECK_MIN_LAPS="${S1_PRECHECK_MIN_LAPS:-0.02}"
+S1_PRECHECK_MAX_POSE_AGE="${S1_PRECHECK_MAX_POSE_AGE:-0.20}"
+S1_PRECHECK_MIN_POSE_SAMPLES="${S1_PRECHECK_MIN_POSE_SAMPLES:-30}"
 S1_RECORD="${S1_RECORD:-true}"
 S1_VALIDATE="${S1_VALIDATE:-true}"
 S1_STORAGE_ID="${S1_STORAGE_ID:-auto}"
@@ -321,6 +338,7 @@ BAG="${HOME}/agv_data/${SESSION_ID}"
 BRINGUP_LOG="${HOME}/agv_data/${SESSION_ID}_bringup.log"
 RECORD_LOG="${HOME}/agv_data/${SESSION_ID}_record.log"
 SUMMARY_JSON="${HOME}/agv_data/${SESSION_ID}_circle_summary.json"
+PRECHECK_JSON="${HOME}/agv_data/${SESSION_ID}_circle_precheck.json"
 VALIDATION_JSON="${HOME}/agv_data/${SESSION_ID}_validate.json"
 
 BRINGUP_PID=""
@@ -356,6 +374,8 @@ echo "radius:       ${S1_RADIUS} m"
 echo "duration:     ${S1_DURATION} s"
 echo "linear:       ${S1_LINEAR} m/s"
 echo "pose_qos:     $(bool_true "${S1_BEST_EFFORT_POSE}" && echo best_effort || echo reliable)"
+echo "discovery:    ${ROS_DISCOVERY_SERVER:-simple DDS (not configured)}"
+echo "precheck:     ${S1_PRECHECK} (${S1_PRECHECK_DURATION}s)"
 echo "dry_run:      ${S1_DRY_RUN}"
 echo "storage:      ${S1_STORAGE_ID}"
 echo "========================================================================"
@@ -437,6 +457,26 @@ esac
 
 DRIVE_RC=0
 VALIDATE_RC=0
+
+if bool_true "${S1_PRECHECK}" && ! bool_true "${S1_DRY_RUN}"; then
+    echo "Running required ${S1_PRECHECK_DURATION}s unrecorded circle precheck..."
+    PRECHECK_ARGS=("${CIRCLE_ARGS[@]}")
+    PRECHECK_ARGS+=(
+        --duration "${S1_PRECHECK_DURATION}"
+        --max-radius-error "${S1_PRECHECK_MAX_RADIUS_ERROR}"
+        --summary-json "${PRECHECK_JSON}"
+    )
+    python3 scripts/logging/drive_mocap_circle_ros2.py "${PRECHECK_ARGS[@]}"
+    python3 scripts/scenarios/validate_s1_circle_summary.py \
+        "${PRECHECK_JSON}" \
+        --max-radius-error "${S1_PRECHECK_MAX_RADIUS_ERROR}" \
+        --min-laps "${S1_PRECHECK_MIN_LAPS}" \
+        --max-pose-age "${S1_PRECHECK_MAX_POSE_AGE}" \
+        --min-pose-samples "${S1_PRECHECK_MIN_POSE_SAMPLES}"
+    publish_zero
+    sleep 2
+    echo "Precheck passed; recording may start."
+fi
 
 if bool_true "${S1_RECORD}"; then
     STORAGE_ID="${S1_STORAGE_ID}"
@@ -555,6 +595,7 @@ echo "S1 COMPLETE"
 echo "drive_rc:      ${DRIVE_RC}"
 echo "validate_rc:   ${VALIDATE_RC}"
 echo "bag:           ${BAG}"
+echo "precheck_json: ${PRECHECK_JSON}"
 echo "summary_json:  ${SUMMARY_JSON}"
 echo "validate_json: ${VALIDATION_JSON}"
 echo "========================================================================"

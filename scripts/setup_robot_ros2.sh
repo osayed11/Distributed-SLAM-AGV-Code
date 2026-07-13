@@ -586,7 +586,7 @@ if [ "${INSTALL_SYSTEM}" = "true" ]; then
         "${ROS_DISTRO:+ros-${ROS_DISTRO}-visualization-msgs}" \
         "${ROS_DISTRO:+ros-${ROS_DISTRO}-xacro}"
 
-    python3 -m pip install --user "mcap>=1.2,<2"
+    python3 -m pip install --user "mcap>=1.2,<2" "natnet==0.2.0"
 
     if [ "${INSTALL_REALSENSE}" = "true" ]; then
         ensure_realsense_repo
