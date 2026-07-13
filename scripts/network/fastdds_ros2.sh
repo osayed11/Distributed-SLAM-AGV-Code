@@ -7,6 +7,12 @@ set +u
 # shellcheck disable=SC1091
 source /opt/ros/humble/setup.bash
 set -u
+if [ -r /etc/orkar/fastdds.env ]; then
+    set -a
+    # shellcheck disable=SC1091
+    source /etc/orkar/fastdds.env
+    set +a
+fi
 
 PROFILE="${FASTRTPS_DEFAULT_PROFILES_FILE:-/etc/orkar/fastdds_super_client.xml}"
 if [ ! -r "${PROFILE}" ]; then

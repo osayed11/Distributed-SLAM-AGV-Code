@@ -234,9 +234,13 @@ kill_local_robot_graph() {
 wait_for_topic_once() {
     local topic="$1"
     local timeout_sec="$2"
+    local discovery_setup=""
+    if [ -n "${ROS_DISCOVERY_SERVER:-}" ] && [ -r "${FAST_DDS_SUPER_CLIENT_PROFILE}" ]; then
+        discovery_setup="export FASTRTPS_DEFAULT_PROFILES_FILE='${FAST_DDS_SUPER_CLIENT_PROFILE}'; unset ROS_DISCOVERY_SERVER;"
+    fi
     echo "Waiting for ${topic}..."
     timeout "${timeout_sec}" bash -lc \
-        "source /opt/ros/humble/setup.bash; [ -f '${ROOT}/agv2_ws/install/setup.bash' ] && source '${ROOT}/agv2_ws/install/setup.bash'; export ROS_DOMAIN_ID='${ROS_DOMAIN_ID:-0}'; until ros2 topic echo --once '${topic}' >/dev/null 2>&1; do sleep 1; done"
+        "source /opt/ros/humble/setup.bash; [ -f '${ROOT}/agv2_ws/install/setup.bash' ] && source '${ROOT}/agv2_ws/install/setup.bash'; export ROS_DOMAIN_ID='${ROS_DOMAIN_ID:-0}'; ${discovery_setup} until ros2 topic echo '${topic}' --no-daemon --spin-time 2 --once >/dev/null 2>&1; do sleep 1; done"
 }
 
 stop_process_group() {
@@ -322,6 +326,7 @@ S1_MIN_BAG_DURATION="${S1_MIN_BAG_DURATION:-30}"
 REQUIRE_GT="${REQUIRE_GT:-true}"
 REQUIRE_IMU="${REQUIRE_IMU:-true}"
 REQUIRE_RESILIENT_STORAGE="${REQUIRE_RESILIENT_STORAGE:-false}"
+FAST_DDS_SUPER_CLIENT_PROFILE="${FAST_DDS_SUPER_CLIENT_PROFILE:-/etc/orkar/fastdds_super_client.xml}"
 
 require_nonempty "MOCAP_TOPIC" "${MOCAP_TOPIC}"
 if [ "${CMD_TOPIC}" = "/cmd_vel" ]; then
@@ -527,7 +532,17 @@ if bool_true "${S1_RECORD}"; then
     )
 
     echo "Starting detached ros2 bag record (${STORAGE_ID})..."
-    setsid ros2 bag record \
+    RECORDER_PREFIX=()
+    if [ -n "${ROS_DISCOVERY_SERVER:-}" ] && [ -r "${FAST_DDS_SUPER_CLIENT_PROFILE}" ]; then
+        RECORDER_PREFIX=(
+            env -u ROS_DISCOVERY_SERVER
+            "FASTRTPS_DEFAULT_PROFILES_FILE=${FAST_DDS_SUPER_CLIENT_PROFILE}"
+            "RMW_IMPLEMENTATION=rmw_fastrtps_cpp"
+            "ROS_LOCALHOST_ONLY=0"
+            "ROS_DOMAIN_ID=${ROS_DOMAIN_ID}"
+        )
+    fi
+    setsid "${RECORDER_PREFIX[@]}" ros2 bag record \
         --max-cache-size "${ROSBAG2_MAX_CACHE_SIZE:-1073741824}" \
         "${ROS2_STORAGE_ARGS[@]}" \
         -o "${BAG}" \
