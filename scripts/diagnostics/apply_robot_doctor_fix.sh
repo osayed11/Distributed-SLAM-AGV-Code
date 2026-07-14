@@ -32,11 +32,7 @@ Usage:
   bash scripts/diagnostics/apply_robot_doctor_fix.sh --apply --fix realsense-standalone-tools
 
 For non-interactive SSH automation:
-  SUDO_PASSWORD=ubuntu bash scripts/diagnostics/apply_robot_doctor_fix.sh --apply --fix d455-autosuspend
-  SUDO_PASSWORD=ubuntu bash scripts/diagnostics/apply_robot_doctor_fix.sh --apply --fix d455-uvc-bind
-  SUDO_PASSWORD=ubuntu bash scripts/diagnostics/apply_robot_doctor_fix.sh --apply --fix d455-usb-reset
-  SUDO_PASSWORD=ubuntu bash scripts/diagnostics/apply_robot_doctor_fix.sh --apply --fix d455-authorize-cycle
-  SUDO_PASSWORD=ubuntu bash scripts/diagnostics/apply_robot_doctor_fix.sh --apply --fix realsense-standalone-tools
+  SUDO_PASSWORD="$ROBOT_SUDO_PASSWORD" bash scripts/diagnostics/apply_robot_doctor_fix.sh --apply --fix <fix-name>
 
 EOF
 }

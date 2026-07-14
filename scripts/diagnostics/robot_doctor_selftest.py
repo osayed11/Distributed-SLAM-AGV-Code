@@ -164,8 +164,12 @@ def write_ros2_bag(
     conn.close()
 
 
-def run_validator(bag_dir: Path, extra_env: Optional[dict[str, str]] = None) -> tuple[int, dict]:
-    report = bag_dir / "report.json"
+def run_validator(
+    bag_dir: Path | list[Path],
+    extra_env: Optional[dict[str, str]] = None,
+) -> tuple[int, dict]:
+    bag_dirs = [bag_dir] if isinstance(bag_dir, Path) else bag_dir
+    report = bag_dirs[0] / "report.json"
     env = os.environ.copy()
     env["MOCAP_TOPIC"] = "/optitrack/rigid_bodies/agv"
     if extra_env:
@@ -174,7 +178,7 @@ def run_validator(bag_dir: Path, extra_env: Optional[dict[str, str]] = None) -> 
         [
             sys.executable,
             str(VALIDATOR),
-            str(bag_dir),
+            *(str(path) for path in bag_dirs),
             "--require-gt",
             "--require-imu",
             "--min-duration",
@@ -242,6 +246,35 @@ class ValidateRos2BagTests(unittest.TestCase):
             self.assertTrue(any(item["check"] == "/camera/gyro/sample" and item["level"] == "PASS" for item in report["results"]))
             self.assertTrue(any(item["check"] == "/camera/accel/sample" and item["level"] == "PASS" for item in report["results"]))
 
+    def test_ros2_validator_aggregates_topic_partitioned_bags(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            sensor_bag = root / "sensor_shard"
+            imu_bag = root / "imu_shard"
+            imu_topics = {
+                "/imu",
+                "/camera/imu",
+                "/camera/gyro/sample",
+                "/camera/accel/sample",
+            }
+            write_ros2_bag(sensor_bag, missing_topics=imu_topics)
+            write_ros2_bag(
+                imu_bag,
+                missing_topics={name for name, _, _ in TOPICS if name not in imu_topics},
+            )
+
+            rc, report = run_validator([sensor_bag, imu_bag])
+
+            self.assertEqual(rc, 0)
+            self.assertEqual(report["counts"]["fail"], 0)
+            self.assertEqual(report["bags"], [str(sensor_bag), str(imu_bag)])
+            self.assertTrue(
+                any(
+                    item["check"] == "/camera/gyro/sample" and item["level"] == "PASS"
+                    for item in report["results"]
+                )
+            )
+
     def test_major_gap_fails(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             bag = Path(tmp) / "scan_gap"
@@ -268,16 +301,33 @@ class ValidateRos2BagTests(unittest.TestCase):
             write_ros2_bag(
                 bag,
                 topic_hz_overrides={
-                    "/camera/color/image_raw": 11.0,
-                    "/camera/color/camera_info": 11.0,
-                    "/camera/depth/image_rect_raw": 13.0,
-                    "/camera/depth/camera_info": 13.0,
+                    "/camera/color/image_raw": 12.2,
+                    "/camera/color/camera_info": 12.2,
+                    "/camera/depth/image_rect_raw": 13.2,
+                    "/camera/depth/camera_info": 13.2,
                 },
             )
             rc, report = run_validator(bag)
             self.assertEqual(rc, 0)
             failures = [item for item in report["results"] if item["level"] == "FAIL"]
             self.assertFalse(failures)
+
+    def test_default_full_system_rgbd_bag_rate_policy_rejects_low_color(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            bag = Path(tmp) / "low_color_rate"
+            write_ros2_bag(
+                bag,
+                topic_hz_overrides={
+                    "/camera/color/image_raw": 11.0,
+                    "/camera/color/camera_info": 11.0,
+                    "/camera/depth/image_rect_raw": 13.2,
+                    "/camera/depth/camera_info": 13.2,
+                },
+            )
+            rc, report = run_validator(bag)
+            self.assertEqual(rc, 1)
+            failures = [item for item in report["results"] if item["level"] == "FAIL"]
+            self.assertTrue(any(item["check"] == "color_image" for item in failures))
 
     def test_rgbd_bag_rate_policy_can_be_tightened(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -291,7 +341,14 @@ class ValidateRos2BagTests(unittest.TestCase):
                     "/camera/depth/camera_info": 13.0,
                 },
             )
-            rc, report = run_validator(bag, {"RGBD_BAG_MIN_HZ": "12", "CAMERA_INFO_MIN_HZ": "12"})
+            rc, report = run_validator(
+                bag,
+                {
+                    "COLOR_BAG_MIN_HZ": "13",
+                    "DEPTH_BAG_MIN_HZ": "14",
+                    "CAMERA_INFO_MIN_HZ": "12",
+                },
+            )
             self.assertEqual(rc, 1)
             failures = [item for item in report["results"] if item["level"] == "FAIL"]
             self.assertTrue(any(item["check"] == "color_image" for item in failures))
@@ -424,13 +481,13 @@ class RobotDoctorParserTests(unittest.TestCase):
         self.assertFalse(Doctor.ping_succeeded(0, "2 packets transmitted, 0 received, 100% packet loss"))
 
     def test_wifi_classifier_detects_manual_processes(self) -> None:
-        text = "NMCLI\nwlan0          wifi      connected     VM3090788\nPROCESSES\nwpa_supplicant -B -i wlan0 -c /etc/wpa_supplicant/wpa_supplicant.conf\ndhclient wlan0\n"
+        text = "NMCLI\nwlan0          wifi      connected     TEST_NETWORK\nPROCESSES\nwpa_supplicant -B -i wlan0 -c /etc/wpa_supplicant/wpa_supplicant.conf\ndhclient wlan0\n"
         code, status, check, summary, _ = Doctor.classify_wifi_management(text, "dataset")
         self.assertEqual((code, status, check), ("3.3", "FAIL", "wifi_management"))
         self.assertIn("manual dhclient", summary)
 
     def test_wifi_classifier_accepts_networkmanager(self) -> None:
-        text = "PROCESSES\n/usr/sbin/NetworkManager --no-daemon\nNMCLI\nwlan0          wifi      connected     VM3090788\n"
+        text = "PROCESSES\n/usr/sbin/NetworkManager --no-daemon\nNMCLI\nwlan0          wifi      connected     TEST_NETWORK\n"
         code, status, check, _, _ = Doctor.classify_wifi_management(text, "preflight")
         self.assertEqual((code, status, check), ("3.3", "PASS", "wifi_management"))
 
@@ -451,8 +508,8 @@ class RobotDoctorParserTests(unittest.TestCase):
             "    wlan0:\n"
             "      dhcp4: true\n"
             "      access-points:\n"
-            "        \"DELTA_FLIGHT_ARENA\":\n"
-            "          password: \"ucl_delta_123\"\n"
+            "        \"TEST_NETWORK\":\n"
+            "          password: \"test-password-placeholder\"\n"
         )
         code, status, check, _, _ = Doctor.classify_wifi_management(text, "preflight")
         self.assertEqual((code, status, check), ("3.3", "PASS", "wifi_management"))
@@ -549,8 +606,13 @@ class RobotDoctorParserTests(unittest.TestCase):
         text = "USB_DEVICE=/sys/bus/usb/devices/2-1\nidVendor=8086\nidProduct=0b5c\nproduct=Intel RealSense D455\nspeed=5000\npower_control=on\npower_autosuspend_delay_ms=-1\nCMDLINE\nusbcore.quirks=8086:0b5c:kn\n"
         results = Doctor.classify_usb_power_policy(text)
         self.assertIn(("2.1", "PASS", "d455_usb_autosuspend", "D455 USB autosuspend disabled (power/control=on)", ""), results)
-        self.assertIn(("1.2", "PASS", "d455_usb_autosuspend_delay", "D455 autosuspend_delay_ms=-1", ""), results)
+        self.assertIn(("1.2", "PASS", "d455_usb_autosuspend_delay", "D455 autosuspend_delay_ms=-1 (disabled)", ""), results)
         self.assertIn(("2.1", "PASS", "d455_usb_boot_quirk", "D455 usbcore quirk is present in kernel cmdline", ""), results)
+
+    def test_usb_power_classifier_accepts_kernel_negative_delay_representation(self) -> None:
+        text = "USB_DEVICE=/sys/bus/usb/devices/2-1\nidVendor=8086\nidProduct=0b5c\nproduct=Intel RealSense D455\nspeed=5000\npower_control=on\npower_autosuspend_delay_ms=-1000\nCMDLINE\nusbcore.quirks=8086:0b5c:kn\n"
+        results = Doctor.classify_usb_power_policy(text, "dataset")
+        self.assertTrue(any(item[0:3] == ("1.2", "PASS", "d455_usb_autosuspend_delay") for item in results))
 
     def test_d455_uvc_binding_classifier_accepts_bound_interfaces(self) -> None:
         text = (
@@ -943,6 +1005,43 @@ average rate: 10.696
 """
         self.assertAlmostEqual(Doctor.parse_topic_hz(text) or 0.0, 14.984, places=3)
 
+    def test_mocap_rate_gate_accepts_source_rate_and_rejects_amplification(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            args = build_parser().parse_args(
+                [
+                    "agvtest",
+                    "--output-root",
+                    tmp,
+                    "--ros",
+                    "ros2",
+                    "--require-gt",
+                    "--mocap-topic",
+                    "/ground_truth/pose",
+                    "--mocap-min-hz",
+                    "20",
+                    "--mocap-max-hz",
+                    "120",
+                ]
+            )
+
+            class FakeDoctor(Doctor):
+                measured_rate = 64.0
+
+                def measure_topic_rate(self, topic: str, seconds: int) -> Optional[float]:
+                    return self.measured_rate
+
+            doctor = FakeDoctor(args)
+            doctor.ros_mode = "ros2"
+            doctor.topic_types = {"/ground_truth/pose": "geometry_msgs/msg/PoseStamped"}
+            doctor.check_mocap_live()
+            self.assertEqual(doctor.results[-1].status, "PASS")
+
+            doctor.results.clear()
+            doctor.measured_rate = 1744.0
+            doctor.check_mocap_live()
+            self.assertEqual((doctor.results[-1].check, doctor.results[-1].status), ("mocap_rate", "FAIL"))
+            self.assertIn("duplicate bridge routes", doctor.results[-1].next_action)
+
 
 class RealSenseFaultClassifierTests(unittest.TestCase):
     def test_bounded_rgbd_gap_is_pass_with_stream_warnings(self) -> None:
@@ -1106,6 +1205,8 @@ class RobotDoctorConfigTests(unittest.TestCase):
                     {
                         "profile": "dataset",
                         "require_gt": True,
+                        "mocap_min_hz": 20,
+                        "mocap_max_hz": 120,
                         "require_bag": True,
                         "confirm_d455_camera_swap": True,
                         "confirm_d455_cable_swap": True,
@@ -1131,6 +1232,8 @@ class RobotDoctorConfigTests(unittest.TestCase):
             self.assertEqual(loaded["profile"], "dataset")
             self.assertEqual(args.profile, "dataset")
             self.assertTrue(args.require_gt)
+            self.assertEqual(args.mocap_min_hz, 20)
+            self.assertEqual(args.mocap_max_hz, 120)
             self.assertTrue(args.require_bag)
             self.assertTrue(args.confirm_d455_camera_swap)
             self.assertTrue(args.confirm_d455_cable_swap)

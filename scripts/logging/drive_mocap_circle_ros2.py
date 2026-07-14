@@ -2,8 +2,8 @@
 """Drive a MoCap-feedback circle with ROS 2 PoseStamped input.
 
 This is the Scenario 1 pilot driver. It uses OptiTrack/ground-truth position
-as feedback and publishes a namespaced Twist command, for example
-`/agv102/cmd_vel`. It refuses to move unless `--yes` is provided.
+as feedback and publishes a caller-supplied, namespaced Twist command. It
+refuses to move unless `--yes` is provided.
 """
 
 import argparse
@@ -96,7 +96,7 @@ class MocapCircleNode(Node):
         self.pose_samples = 0
         qos = QoSProfile(
             history=HistoryPolicy.KEEP_LAST,
-            depth=20,
+            depth=1,
             reliability=ReliabilityPolicy.BEST_EFFORT if args.best_effort_pose else ReliabilityPolicy.RELIABLE,
         )
         self.create_subscription(PoseStamped, args.pose_topic, self.pose_cb, qos)
@@ -210,13 +210,14 @@ def drive(node: MocapCircleNode, args) -> CircleSummary:
     msg = Twist()
 
     while rclpy.ok() and not stop_requested:
+        cycle_started = time.time()
+        rclpy.spin_once(node, timeout_sec=0.0)
         now = time.time()
         elapsed = now - start_time
         if elapsed >= args.duration:
             reached_duration = True
             break
 
-        rclpy.spin_once(node, timeout_sec=0.0)
         sample = node.pose
         if sample is None:
             abort_reason = "no mocap pose"
@@ -295,9 +296,10 @@ def drive(node: MocapCircleNode, args) -> CircleSummary:
             )
             last_report = now
 
-        sleep_until = now + 1.0 / args.rate
-        while rclpy.ok() and time.time() < sleep_until:
-            rclpy.spin_once(node, timeout_sec=min(0.02, sleep_until - time.time()))
+        sleep_until = cycle_started + 1.0 / args.rate
+        sleep_remaining = sleep_until - time.time()
+        if sleep_remaining > 0.0:
+            time.sleep(sleep_remaining)
 
     node.publish_zero(1.0)
     elapsed = time.time() - start_time
@@ -338,8 +340,18 @@ def drive(node: MocapCircleNode, args) -> CircleSummary:
 
 def parse_args(argv):
     parser = argparse.ArgumentParser(description="Drive a MoCap-feedback circle using ROS 2")
-    parser.add_argument("--pose-topic", default=os.environ.get("MOCAP_TOPIC", "/optitrack/rigid_bodies/orkar_agv1"))
-    parser.add_argument("--cmd-topic", default=os.environ.get("CMD_TOPIC", "/cmd_vel"))
+    parser.add_argument(
+        "--pose-topic",
+        default=os.environ.get("MOCAP_TOPIC"),
+        required=not bool(os.environ.get("MOCAP_TOPIC")),
+        help="PoseStamped feedback topic (or set MOCAP_TOPIC).",
+    )
+    parser.add_argument(
+        "--cmd-topic",
+        default=os.environ.get("CMD_TOPIC"),
+        required=not bool(os.environ.get("CMD_TOPIC")),
+        help="Namespaced Twist command topic (or set CMD_TOPIC).",
+    )
     parser.add_argument("--radius", type=float, default=0.5)
     parser.add_argument("--center-x", type=float, default=None, help="Marked floor center x in MoCap frame")
     parser.add_argument("--center-y", type=float, default=None, help="Marked floor center y in MoCap frame")

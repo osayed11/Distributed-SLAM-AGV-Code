@@ -412,9 +412,9 @@ USB gate:                       USB 3.x / 5000 Mb/s
 | `3.3 clock_sync` / `3.3 chrony_offset` | Multi-robot timestamps are not trustworthy or parsed Chrony offset exceeds the gate threshold | Repair chrony/NTP before publishable collection |
 | `3.3 wifi_management` | Manual `wpa_supplicant`/`dhclient` conflicts or unstable Wi-Fi management | Use one persistent NetworkManager/netplan path and reboot-test SSH |
 | `3.3 remote_ssh_interrupted` | Remote wrapper lost SSH before robot_doctor wrote `summary.json` | Check Wi-Fi signal, robot power, and partial copied logs before rerunning |
-| `3.3 mocap_topic` | Ground truth is absent or wrong | Fix OptiTrack/NatNet bridge, ROS domain, or rigid-body name |
-| `3.3 dds_discovery` | Not all expected robot namespaces are visible in `ros2 node list` | Check ROS_DOMAIN_ID, robot bringup, Wi-Fi multicast, and switch larger fleets to `ROS_DISCOVERY_SERVER` |
-| `3.3 dds_discovery_server` | More than four robots are configured without a Fast-DDS discovery server | Run a discovery server and set `ROS_DISCOVERY_SERVER` on each robot before fleet collection |
+| `3.3 mocap_topic` | Ground truth is absent or wrong | Confirm Motive is streaming, the rigid body is tracked, the Zenoh router/client are active, and the exact topic name matches |
+| `3.3 zenoh_gt_transport` | Robot GT bridge is inactive or robot DDS is not loopback-only | Run `scripts/network/configure_zenoh.sh status`; restore the router connection and source `/etc/orkar/ros_transport.env` |
+| `3.3 dds_discovery` | Expected robot namespaces are missing in legacy shared-DDS mode | Fix the legacy DDS configuration, or migrate the fleet to the allowlisted Zenoh GT transport; Zenoh robots intentionally do not share full ROS graphs |
 | `1.3 odom_mocap_sanity` | The required 1 m `/odom` vs MoCap check is missing or exceeds 10% error | Fix wheels/chassis/floor slip, reduce speed, or treat wheel odom as unreliable for that session |
 
 ## Targeted Remediation
@@ -475,12 +475,12 @@ checks `rs-enumerate-devices`. If the same control-query failure returns after
 reset plus authorize-cycle, treat it as persistent USB/camera/host-path
 evidence and move to the physical A/B swap branch.
 
-`scripts/logging/start_session.sh` uses an even stronger RealSense
-`hardware_reset()` by default before bringup (`D455_RESET_MODE=hardware-reset`)
-and then retriggers udev so the publishable logging path recovers the HID/IMU
-motion path as well as the video path. Set `D455_RESET_MODE=authorize-cycle` or
-`D455_RESET_MODE=usb-reset` only to compare older reset paths, or
-`D455_RESET_MODE=none` only for a deliberate no-reset experiment.
+`scripts/logging/start_session.sh` defaults to `D455_RESET_MODE=none`. Routine
+collection leaves a healthy camera untouched and lets the live gate prove its
+video and motion streams. Use `hardware-reset`, `authorize-cycle`, or
+`usb-reset` only as an explicit recovery experiment; a reset is not evidence
+of recovery, so rerun standalone enumeration and the live stream gate before
+recording.
 
 ### D455 Physical A/B Swap Evidence
 

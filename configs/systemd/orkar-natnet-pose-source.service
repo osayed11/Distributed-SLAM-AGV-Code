@@ -1,0 +1,25 @@
+[Unit]
+Description=ORKAR NatNet to ROS 2 pose source
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=60
+StartLimitBurst=10
+
+[Service]
+Type=simple
+User=ubuntu
+Environment=HOME=/home/ubuntu
+Environment=ROS_DISTRO=humble
+Environment=RMW_IMPLEMENTATION=rmw_fastrtps_cpp
+Environment=ROS_DOMAIN_ID=0
+Environment=ROS_LOCALHOST_ONLY=0
+EnvironmentFile=/etc/orkar/natnet_pose_source.env
+WorkingDirectory=/home/ubuntu/slam_project
+ExecStart=/usr/bin/bash /home/ubuntu/slam_project/scripts/network/run_natnet_pose_source.sh
+Restart=on-failure
+RestartSec=2
+KillSignal=SIGINT
+TimeoutStopSec=10
+
+[Install]
+WantedBy=multi-user.target

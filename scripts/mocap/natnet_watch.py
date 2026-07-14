@@ -7,14 +7,16 @@ import sys
 import time
 
 try:
-    from natnet import NatNetClient
+    from orkar_natnet_sdk_client import NatNetClient
 except ImportError:
-    print(
-        "Missing Python package 'natnet'. Install it with: python3 -m pip install natnet",
-        file=sys.stderr,
-    )
-    raise
-
+    try:
+        from orkar_natnet_client import NatNetClient
+    except ImportError:
+        print(
+            "Missing OptiTrack NatNet SDK 4.4 and fallback package 'natnet'.",
+            file=sys.stderr,
+        )
+        raise
 
 def guess_local_ip(server):
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -31,11 +33,11 @@ def fmt_tuple(values):
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Watch one rigid body from a NatNet stream.")
-    parser.add_argument("--server", default="192.168.50.200",
+    parser.add_argument("--server", required=True,
                         help="Motive/NatNet server IP")
     parser.add_argument("--local", default=None,
                         help="Local interface IP. Defaults to auto-detect.")
-    parser.add_argument("--name", default="orkar_agv1",
+    parser.add_argument("--name", required=True,
                         help="Rigid body name to print")
     parser.add_argument("--period", type=float, default=0.25,
                         help="Print period in seconds")

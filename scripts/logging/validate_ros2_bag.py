@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
-"""Validate a ROS 2 rosbag2 dataset using metadata plus SQLite/MCAP timing.
+"""Validate one logical ROS 2 dataset using SQLite/MCAP storage timing.
 
 This is intentionally dependency-light so it can run on the robot after a
-session. It checks required topics, average rates, timestamp gaps, storage
-timestamp monotonicity, IMU presence, ground truth, and bag readability. It
-does not deserialize ROS messages; rosbag2 storage timestamps are enough to
-detect missing streams, time source regressions, and frame drop patterns.
+session. A dataset may be one bag or several topic-partitioned bag shards. It
+checks required topics, average rates, timestamp gaps, storage timestamp
+monotonicity, IMU presence, ground truth, and bag readability. It does not
+deserialize ROS messages; rosbag2 storage timestamps are enough to detect
+missing streams, time source regressions, and frame drop patterns.
 """
 
 from __future__ import annotations
@@ -100,7 +101,14 @@ def required_specs() -> List[TopicSpec]:
     color_info_topic = os.environ.get("COLOR_INFO_TOPIC", "/camera/color/camera_info")
     depth_topic = os.environ.get("DEPTH_TOPIC", "/camera/depth/image_rect_raw")
     depth_info_topic = os.environ.get("DEPTH_INFO_TOPIC", "/camera/depth/camera_info")
-    rgbd_min_hz = env_float("RGBD_BAG_MIN_HZ", 10.0)
+    legacy_rgbd_min_hz = os.environ.get("RGBD_BAG_MIN_HZ")
+    if legacy_rgbd_min_hz is None:
+        color_min_hz = env_float("COLOR_BAG_MIN_HZ", 12.0)
+        depth_min_hz = env_float("DEPTH_BAG_MIN_HZ", 13.0)
+    else:
+        shared_min_hz = env_float("RGBD_BAG_MIN_HZ", 10.0)
+        color_min_hz = env_float("COLOR_BAG_MIN_HZ", shared_min_hz)
+        depth_min_hz = env_float("DEPTH_BAG_MIN_HZ", shared_min_hz)
     rgbd_target_hz = env_float("RGBD_TARGET_HZ", 15.0)
     camera_info_min_hz = env_float("CAMERA_INFO_MIN_HZ", 10.0)
 
@@ -113,7 +121,7 @@ def required_specs() -> List[TopicSpec]:
         TopicSpec(
             "color_image",
             [color_topic, "/camera/color/image_raw", "/camera/camera/color/image_raw"],
-            rgbd_min_hz,
+            color_min_hz,
             rgbd_target_hz,
         ),
         TopicSpec(
@@ -131,7 +139,7 @@ def required_specs() -> List[TopicSpec]:
                 "/camera/aligned_depth_to_color/image_raw",
                 "/camera/camera/aligned_depth_to_color/image_raw",
             ],
-            rgbd_min_hz,
+            depth_min_hz,
             rgbd_target_hz,
         ),
         TopicSpec(
@@ -155,6 +163,7 @@ def required_specs() -> List[TopicSpec]:
 
 
 GT_POSE_TOPIC_RE = re.compile(r"^/gt/[^/]+/pose$")
+OPTITRACK_RIGID_BODY_TOPIC_RE = re.compile(r"^/optitrack/rigid_bodies/[^/]+$")
 
 
 def ground_truth_topics(available_topics: Sequence[str] = ()) -> List[str]:
@@ -171,7 +180,10 @@ def ground_truth_topics(available_topics: Sequence[str] = ()) -> List[str]:
         if topic not in topics:
             topics.append(topic)
     for topic in available_topics:
-        if GT_POSE_TOPIC_RE.fullmatch(topic) and topic not in topics:
+        if (
+            GT_POSE_TOPIC_RE.fullmatch(topic)
+            or OPTITRACK_RIGID_BODY_TOPIC_RE.fullmatch(topic)
+        ) and topic not in topics:
             topics.append(topic)
     return topics
 
@@ -671,7 +683,9 @@ def validate_ground_truth(
             results,
             FAIL if require_gt else WARN,
             "ground_truth",
-            "missing; checked {} and /gt/<robot>/pose".format(", ".join(ground_truth_topics())),
+            "missing; checked {} plus per-robot /gt/.../pose and /optitrack/rigid_bodies/... topics".format(
+                ", ".join(ground_truth_topics())
+            ),
         )
         return
     for item in present:
@@ -744,8 +758,14 @@ def bag_duration(stats: Dict[str, TopicStats]) -> float:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Validate a ROS 2 rosbag2 directory or .db3 file.")
-    parser.add_argument("bag", help="rosbag2 directory or .db3 file")
+    parser = argparse.ArgumentParser(
+        description="Validate one ROS 2 dataset from one or more topic-partitioned bags."
+    )
+    parser.add_argument(
+        "bags",
+        nargs="+",
+        help="rosbag2 directories or storage files belonging to the same run",
+    )
     parser.add_argument("--strict", action="store_true", help="return WARN as non-zero")
     parser.add_argument("--require-gt", action="store_true", default=env_bool("REQUIRE_GT"))
     parser.add_argument("--require-imu", action="store_true", default=env_bool("REQUIRE_IMU"))
@@ -759,18 +779,40 @@ def main() -> int:
     parser.add_argument("--json-out", help="write machine-readable validation report")
     args = parser.parse_args()
 
-    path = Path(args.bag).expanduser()
-    db3_files = find_db3_files(path)
-    mcap_files = find_mcap_files(path)
+    paths = [Path(value).expanduser() for value in args.bags]
+    files_by_path = [
+        (path, find_db3_files(path), find_mcap_files(path))
+        for path in paths
+    ]
+    db3_files = [item for _, files, _ in files_by_path for item in files]
+    mcap_files = [item for _, _, files in files_by_path for item in files]
     results: List[Result] = []
 
     print("=" * 68)
     print("AGV ROS 2 Dataset Bag Validator")
-    print(f"Bag: {path}")
+    if len(paths) == 1:
+        print(f"Bag: {paths[0]}")
+    else:
+        print("Bag shards:")
+        for path in paths:
+            print(f"  - {path}")
     print("=" * 68)
 
-    if not db3_files and not mcap_files:
-        record(results, FAIL, "bag_integrity", "no .db3 or .mcap files found")
+    missing_storage = [
+        path for path, path_db3, path_mcap in files_by_path
+        if not path_db3 and not path_mcap
+    ]
+    for path in missing_storage:
+        record(results, FAIL, "bag_integrity", f"no .db3 or .mcap files found: {path}")
+
+    if missing_storage or (db3_files and mcap_files):
+        if db3_files and mcap_files:
+            record(
+                results,
+                FAIL,
+                "bag_integrity",
+                "a logical bag set must not mix SQLite and MCAP storage",
+            )
         duration_sec = 0.0
         stats: Dict[str, TopicStats] = {}
     elif db3_files:
@@ -785,8 +827,15 @@ def main() -> int:
         except Exception as exc:
             record(results, FAIL, "bag_integrity", f"SQLite aggregate read failed: {exc}")
             stats = {}
-        validate_ros2_metadata(path, db3_files, results)
-        validate_storage_resilience(path, db3_files, mcap_files, args.require_resilient_storage, results)
+        for path, path_db3, path_mcap in files_by_path:
+            validate_ros2_metadata(path, path_db3, results)
+            validate_storage_resilience(
+                path,
+                path_db3,
+                path_mcap,
+                args.require_resilient_storage,
+                results,
+            )
         bag_start_ns, bag_end_ns, duration_sec = bag_bounds(stats)
     else:
         try:
@@ -796,8 +845,15 @@ def main() -> int:
         except Exception as exc:
             record(results, FAIL, "bag_integrity", str(exc))
             stats = {}
-        validate_ros2_metadata(path, mcap_files, results)
-        validate_storage_resilience(path, db3_files, mcap_files, args.require_resilient_storage, results)
+        for path, path_db3, path_mcap in files_by_path:
+            validate_ros2_metadata(path, path_mcap, results)
+            validate_storage_resilience(
+                path,
+                path_db3,
+                path_mcap,
+                args.require_resilient_storage,
+                results,
+            )
         bag_start_ns, bag_end_ns, duration_sec = bag_bounds(stats)
 
     print("\n--- Duration ---")
@@ -837,7 +893,8 @@ def main() -> int:
     print(f"Verdict: {verdict}")
 
     report = {
-        "bag": str(path),
+        "bag": str(paths[0]),
+        "bags": [str(path) for path in paths],
         "duration_sec": duration_sec,
         "verdict": verdict,
         "counts": {"pass": n_pass, "warn": n_warn, "fail": n_fail},

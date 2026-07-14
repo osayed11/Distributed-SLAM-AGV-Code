@@ -3,7 +3,7 @@
 #
 # Usage:
 #   ./start_session.sh <robot_name> <scenario>
-#   REQUIRE_IMU=true REQUIRE_GT=true ./start_session.sh agv110 corridor_loop
+#   REQUIRE_IMU=true REQUIRE_GT=true ./start_session.sh <robot_id> corridor_loop
 #
 # What it does:
 #   1. Waits for clock sync before naming the session.
@@ -22,9 +22,9 @@ set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
-if [ -r "${ROOT}/scripts/network/load_fastdds_env.sh" ]; then
+if [ -r "${ROOT}/scripts/network/load_ros_transport_env.sh" ]; then
     # shellcheck disable=SC1091
-    source "${ROOT}/scripts/network/load_fastdds_env.sh"
+    source "${ROOT}/scripts/network/load_ros_transport_env.sh"
 fi
 
 # ---------------------------------------------------------------------------
@@ -419,6 +419,7 @@ camera_imu: enabled
 enable_realsense_sync: ${ENABLE_REALSENSE_SYNC}
 ros_localhost_only: "${ROS_LOCALHOST_ONLY:-}"
 ros_localhost_only_auto: ${ROS_LOCALHOST_ONLY_AUTO}
+ros_transport: "${ORKAR_ROS_TRANSPORT:-local-dds}"
 rosbag2_max_cache_size_bytes: ${ROSBAG2_MAX_CACHE_SIZE}
 rosbag2_max_bag_size_bytes: ${ROSBAG2_MAX_BAG_SIZE}
 rosbag2_storage_id_requested: "${ROSBAG2_STORAGE_ID}"
@@ -1360,6 +1361,10 @@ if [ "$REQUIRE_IMU" = true ]; then
     for topic in $OPTIONAL_IMU_TOPICS; do
         check_topic_silent "$topic" 5 >/dev/null 2>&1 || true
     done
+fi
+
+if [ "${REQUIRE_GT}" = true ]; then
+    check_topic_silent "${MOCAP_TOPIC}" 20 || FAILED_TOPICS+=("${MOCAP_TOPIC}")
 fi
 
 if [ ${#FAILED_TOPICS[@]} -ne 0 ]; then

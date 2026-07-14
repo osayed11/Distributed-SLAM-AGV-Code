@@ -4,6 +4,8 @@
   "profile": "dataset",
   "ros": "auto",
   "require_gt": true,
+  "mocap_min_hz": 20,
+  "mocap_max_hz": 120,
   "require_imu": true,
   "require_bag": false,
   "expect_native_ros2": true,

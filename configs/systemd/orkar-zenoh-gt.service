@@ -1,0 +1,20 @@
+[Unit]
+Description=ORKAR Zenoh ROS 2 ground-truth bridge
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ubuntu
+Environment=HOME=/home/ubuntu
+Environment=ROS_DISTRO=humble
+Environment=ROS_DOMAIN_ID=0
+Environment=ROS_LOCALHOST_ONLY=1
+EnvironmentFile=/etc/orkar/zenoh.env
+ExecStartPre=+/usr/sbin/ip link set lo multicast on
+ExecStart=/usr/local/bin/zenoh-bridge-ros2dds -c /etc/orkar/zenoh_robot_gt.json5 -e ${ZENOH_ROUTER_ENDPOINT}
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

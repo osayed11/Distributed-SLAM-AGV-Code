@@ -1,0 +1,32 @@
+{
+  mode: "router",
+  listen: {
+    endpoints: ["tcp/0.0.0.0:7447"],
+  },
+  scouting: {
+    multicast: { enabled: false },
+    gossip: { enabled: false },
+  },
+  plugins: {
+    ros2dds: {
+      nodename: "orkar_zenoh_mocap_router",
+      domain: 0,
+      ros_localhost_only: true,
+      allow: {
+        publishers: ["/optitrack/rigid_bodies/orkar_agv[0-9]+"],
+        subscribers: [],
+        service_servers: [],
+        service_clients: [],
+        action_servers: [],
+        action_clients: [],
+      },
+      pub_priorities: [
+        "/optitrack/rigid_bodies/orkar_agv[0-9]+=1:express",
+      ],
+      reliable_routes_blocking: true,
+    },
+    rest: {
+      http_port: "127.0.0.1:8000",
+    },
+  },
+}

@@ -1,0 +1,29 @@
+[workspace]
+name = "orkar-mocap-tools"
+version = "0.1.0"
+description = "ROS 2 tools for the ORKAR laptop ground-truth source."
+channels = ["robostack-humble", "conda-forge"]
+platforms = ["osx-arm64"]
+
+[activation.env]
+ROS_DISTRO = "humble"
+ROS_DOMAIN_ID = "0"
+ROS_LOCALHOST_ONLY = "1"
+RMW_IMPLEMENTATION = "rmw_cyclonedds_cpp"
+
+[tasks]
+ros2-topic-list = "ros2 topic list --no-daemon --spin-time 5"
+ros2-topic-list-types = "ros2 topic list -t --no-daemon --spin-time 5"
+ros2-node-list = "ros2 node list --no-daemon --spin-time 5"
+ros2-doctor = "ros2 doctor --report"
+mocap-router = "bash scripts/network/configure_zenoh.sh router-run"
+
+[dependencies]
+ros-humble-ros-base = "*"
+ros-humble-ros2topic = "*"
+ros-humble-ros2node = "*"
+ros-humble-ros2doctor = "*"
+ros-humble-rmw-cyclonedds-cpp = "*"
+
+[pypi-dependencies]
+natnet = ">=0.2.0, <0.3"

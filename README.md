@@ -247,7 +247,7 @@ bash scripts/logging/start_session.sh agv110 home_test
 1. waits for clock sync before naming the session
 2. records chrony and hardware snapshots
 3. stops stale bringup/recording processes
-4. resets only the D455 with a RealSense hardware reset and disables D455 autosuspend
+4. leaves a healthy D455 untouched unless an explicit recovery reset is requested
 5. launches ROS 2 bringup once
 6. waits for /scan, /odom, RGB-D, and IMU topics
 7. runs the required live RealSense gate on the active bringup
@@ -257,11 +257,11 @@ bash scripts/logging/start_session.sh agv110 home_test
 11. writes the manifest and RealSense fault classification
 ```
 
-The default D455 reset mode is `D455_RESET_MODE=hardware-reset`, because this
-recovers the RealSense HID/IMU path when a plain USB reset or authorize-cycle
-leaves motion frames wedged. Use `D455_RESET_MODE=authorize-cycle` or
-`D455_RESET_MODE=usb-reset` only when debugging older reset paths, and
-`D455_RESET_MODE=none` only for a deliberate no-reset test.
+The default is `D455_RESET_MODE=none`. A healthy, enumerated camera must not be
+reset as routine session setup: a USB reset can itself wedge UVC control on
+some camera/host pairs. Use `hardware-reset`, `authorize-cycle`, or `usb-reset`
+only as an explicit diagnostic recovery step, then require standalone
+enumeration and the normal live stream gate before recording.
 
 The default recorder cache is `ROSBAG2_MAX_CACHE_SIZE=536870912` (512 MB). On
 Raspberry Pi robots this avoided RGB-D recorder stalls without starving the D455
@@ -431,41 +431,80 @@ because the `ros2 bag` recorder and drivers shut down at different speeds after
 
 Mid-run gaps still fail.
 
-## Fast DDS And MoCap
+## Zenoh Ground Truth Transport
 
-Fleet collection uses one Fast DDS Discovery Server and one direct NatNet
-bridge. Every ROS process, including the bridge and recorder, reads the same
-robot-local `/etc/orkar/fastdds.env`; do not mix this session with default DDS
-participants.
+Fleet collection uses the maintained Eclipse
+[`zenoh-bridge-ros2dds`](https://github.com/eclipse-zenoh/zenoh-plugin-ros2dds).
+One router beside the MoCap DDS publisher exports only
+`/optitrack/rigid_bodies/orkar_agv*`. One client bridge on each robot imports
+those small pose messages into loopback-only DDS. RGB-D, IMU, LiDAR, odometry,
+TF, commands, and bags stay local to each robot.
 
-On the machine hosting discovery and the bridge:
+This avoids fleet-wide DDS multicast without replacing ROS 2 or changing the
+MoCap publisher. Do not combine this mode with `ROS_DISCOVERY_SERVER`.
+
+On the MoCap-side laptop, create the Pixi environment and install the official
+router once:
+
+```bash
+cd /path/to/agv-on-board
+pixi install
+bash scripts/network/configure_zenoh.sh router-install
+```
+
+For each lab session, start the NatNet pose source first. Repeat
+`--rigid-body` for every active robot:
+
+```bash
+NATNET_SDK_PYTHON_PATH=/path/to/NatNetSDK/Samples/PythonClient \
+pixi run python scripts/mocap/natnet_ros2_pose_publisher.py \
+  --server MOTIVE_IP \
+  --local LAPTOP_LAB_IP \
+  --rigid-body RIGID_BODY_NAME=/optitrack/rigid_bodies/RIGID_BODY_NAME \
+  --frame-timeout 5 \
+  --reconnect-delay 5
+```
+
+Then start the router in a second terminal:
+
+```bash
+cd /path/to/agv-on-board
+bash scripts/network/configure_zenoh.sh router-run
+```
+
+Keep both processes running during collection. If the pose-source process is
+manually restarted, restart the router afterwards so it discovers exactly one
+current publisher route per topic. Internal NatNet reconnects do not require a
+router restart.
+
+On each robot, point the client at the laptop's lab Wi-Fi address:
 
 ```bash
 cd ~/slam_project
-bash scripts/network/configure_fastdds.sh server 192.168.50.176 11811
-bash scripts/network/configure_fastdds.sh bridge 192.168.50.200 \
-  orkar_agv102=/gt/agv102/pose \
-  orkar_agv103=/gt/agv103/pose
+bash scripts/network/configure_zenoh.sh robot LAPTOP_IP 7447
+source scripts/network/load_ros_transport_env.sh
+bash scripts/network/configure_zenoh.sh status
 ```
 
-Bridge setup probes NatNet unicast and multicast and stores whichever mode
-actually produces tracked frames; override only with `NATNET_MODE=unicast` or
-`NATNET_MODE=multicast` when intentionally changing Motive configuration.
+The installer pins the official bridge release by version and SHA256, enables
+`orkar-zenoh-gt.service`, disables the old discovery/NatNet services, and sets:
 
-On every other robot:
+```text
+RMW_IMPLEMENTATION=rmw_fastrtps_cpp
+ROS_DOMAIN_ID=0
+ROS_LOCALHOST_ONLY=1
+```
+
+Prove actual samples, not just discovery, before motion:
 
 ```bash
-cd ~/slam_project
-bash scripts/network/configure_fastdds.sh client 192.168.50.176 11811
+ros2 topic echo /optitrack/rigid_bodies/orkar_agv102 --once --no-daemon --spin-time 3
+timeout 10 ros2 topic hz /optitrack/rigid_bodies/orkar_agv102 --window 100
 ```
 
-Reboot or restart all ROS processes after changing discovery. Check the full
-graph through the generated Super Client profile:
-
-```bash
-bash scripts/network/fastdds_ros2.sh topic list --no-daemon
-bash scripts/network/configure_fastdds.sh status
-```
+If the topic is listed but both commands receive no samples, check that Motive
+is streaming and the rigid body is actively tracked. A discovered publisher is
+not evidence that the upstream node is emitting poses.
 
 The standard S1 command runs sensor gates, then a required 5-second unrecorded
 motion precheck, then starts the recorder and runs the full circle. For a local
@@ -475,14 +514,55 @@ and tangent with the center on its left. Put the center on its right and set
 
 ```bash
 ROS_DOMAIN_ID=0 \
+MOCAP_TOPIC=/optitrack/rigid_bodies/orkar_agv103 \
+CMD_TOPIC=/agv103/cmd_vel \
 S1_RADIUS=0.8 \
 S1_DURATION=60 \
 bash scripts/scenarios/run_s1_mocap_pilot_robot.sh agv103 s1_circle_0p8
 ```
 
-The recorder cannot start unless GT is fresh, direction-normalised progress is
-positive, and the precheck radius error stays within 0.15 m. The post-run bag
+The recorder cannot start unless GT is fresh, its measured transport rate is
+inside the configured `MOCAP_MIN_HZ` to `MOCAP_MAX_HZ` band (20 to 120 Hz by
+default), direction-normalised progress is positive, and the precheck radius
+error stays within 0.15 m. The upper rate bound rejects duplicate publishers or
+amplified bridge routes instead of recording repeated poses. The post-run bag
 validator accepts both configured MoCap topics and `/gt/<robot>/pose`.
+
+The MoCap rate bounds are dataset policy, not robot-specific control logic.
+Change them only when the authoritative source rate changes, and apply the same
+values to every robot. Repeated pose amplification after manual source/router
+lifecycle changes is a deployment failure mode; restart the source first and
+the router second to clear stale routes rather than adding a per-robot
+deduplicator.
+
+The runner records two topic-partitioned MCAP shards by default:
+`*_sensors` for RGB-D, LiDAR, odometry, TF, and commands; and `*_aux` for
+raw IMU, diagnostics, and optional GT. This uses standard concurrent
+`ros2 bag record` processes so high-rate IMU callbacks cannot starve image
+recording on the Pi. `validate_ros2_bag.py` treats both shards as one logical
+dataset and checks their shared time coverage. No merge is required on the
+robot; standard `ros2 bag convert` can merge them later if one bag is desired.
+
+For fleet runs, record one authoritative GT bag on the supervising laptop and
+keep each robot's high-bandwidth sensor data local:
+
+```bash
+MOCAP_TOPIC=/optitrack/rigid_bodies/orkar_agv103 \
+CMD_TOPIC=/agv103/cmd_vel \
+S1_RECORD_GT=false \
+REQUIRE_GT=false \
+bash scripts/scenarios/run_s1_mocap_pilot_robot.sh agv103 s1_circle_0p8
+```
+
+The post-run fleet audit must then verify that every robot shard overlaps the
+central GT bag. Do not use `REQUIRE_GT=false` unless that central recorder is
+active. Marker-to-forward yaw remains a measured per-robot calibration passed
+with `S1_FORWARD_YAW_OFFSET_DEG`; it is never inferred from a robot ID.
+
+Robot IDs, topic names, NatNet/router addresses, credentials, circle geometry,
+and marker yaw are runtime inputs. ROS/RealSense versions, camera profiles,
+recording format, and validation limits are fleet-wide configuration. There are
+no robot-ID conditionals in the collection path.
 
 ## Motion Helpers
 
@@ -539,8 +619,10 @@ Production paths:
 
 ```text
 scripts/setup_robot_ros2.sh                    one-time ROS 2 robot provisioning
-scripts/network/configure_fastdds.sh           discovery server/client and MoCap bridge setup
-scripts/network/fastdds_ros2.sh                ROS 2 CLI through a Fast DDS Super Client
+scripts/network/configure_zenoh.sh             official Zenoh router/client installation
+scripts/network/load_ros_transport_env.sh      one robot-local ROS transport environment
+scripts/mocap/natnet_ros2_pose_publisher.py    supervised NatNet-to-PoseStamped source
+scripts/mocap/orkar_natnet_sdk_client.py       OptiTrack NatNet SDK 4.4 adapter
 scripts/logging/start_session.sh               managed bringup, gate, recording, manifest
 scripts/logging/validate_ros2_bag.py           ROS 2 .mcap/.db3 post-run validator
 scripts/diagnostics/dataset_ready_gate.sh      read-only pre-run dataset gate
@@ -570,8 +652,6 @@ scripts/scenarios/run_s1_mocap_pilot_robot.sh  gated S1 precheck, recording, mot
 scripts/logging/drive_circle.py                odom-feedback circle scenario
 scripts/logging/drive_square.py                odom-feedback square test
 scripts/logging/drive_lawnmower.py             timed shuttle scenario helper
-scripts/mocap/natnet_ros2_pose_publisher.py    direct NatNet-to-ROS2 helper
-scripts/mocap/natnet_watch.py                  direct NatNet inspection helper
 ```
 
 Repository layout:
@@ -582,7 +662,7 @@ slam_project/
 ├── scripts/
 │   ├── diagnostics/          readiness gates, failure classification, audits
 │   ├── logging/              session recording, validators, motion helpers
-│   ├── mocap/                NatNet/OptiTrack helper tools
+│   ├── mocap/                OptiTrack topic inspection helpers
 │   └── calibration/          calibration extraction and static tests
 ├── configs/                  dataset gate, recorder, RViz configs
 ├── docs/                     SOPs and diagnostic documentation

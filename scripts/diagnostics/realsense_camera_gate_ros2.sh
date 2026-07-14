@@ -327,6 +327,13 @@ check_gap() {
 
 source_ros
 
+# Use the same robot-local transport as bringup and the recorder.
+if [ -r "${ROOT}/scripts/network/load_ros_transport_env.sh" ]; then
+    # shellcheck disable=SC1091
+    source "${ROOT}/scripts/network/load_ros_transport_env.sh"
+fi
+ROS2_CLI_PREFIX=()
+
 {
     echo "run_dir=${RUN_DIR}"
     echo "stream_seconds=${STREAM_SECONDS}"
@@ -390,16 +397,16 @@ sleep "${STARTUP_WAIT_SECONDS}"
 LAUNCH_RUNTIME_OFFSET="$(log_size "${RUN_DIR}/realsense_launch.log")"
 DMESG_RUNTIME_OFFSET="$(log_size "${RUN_DIR}/dmesg_watch.txt")"
 
-timeout "${STREAM_SECONDS}" ros2 topic hz /camera/color/image_raw --window 40 \
+timeout "${STREAM_SECONDS}" "${ROS2_CLI_PREFIX[@]}" ros2 topic hz /camera/color/image_raw --window 40 \
     > "${RUN_DIR}/hz_color.txt" 2>&1 &
 HZ_COLOR_PID=$!
-timeout "${STREAM_SECONDS}" ros2 topic hz /camera/depth/image_rect_raw --window 40 \
+timeout "${STREAM_SECONDS}" "${ROS2_CLI_PREFIX[@]}" ros2 topic hz /camera/depth/image_rect_raw --window 40 \
     > "${RUN_DIR}/hz_depth.txt" 2>&1 &
 HZ_DEPTH_PID=$!
-timeout "${STREAM_SECONDS}" ros2 topic hz /camera/gyro/sample --window 120 \
+timeout "${STREAM_SECONDS}" "${ROS2_CLI_PREFIX[@]}" ros2 topic hz /camera/gyro/sample --window 120 \
     > "${RUN_DIR}/hz_camera_gyro.txt" 2>&1 &
 HZ_GYRO_PID=$!
-timeout "${STREAM_SECONDS}" ros2 topic hz /camera/accel/sample --window 80 \
+timeout "${STREAM_SECONDS}" "${ROS2_CLI_PREFIX[@]}" ros2 topic hz /camera/accel/sample --window 80 \
     > "${RUN_DIR}/hz_camera_accel.txt" 2>&1 &
 HZ_ACCEL_PID=$!
 

@@ -17,10 +17,10 @@ Usage:
   bash scripts/network/configure_fastdds.sh status
 
 Examples:
-  bash scripts/network/configure_fastdds.sh server 192.168.50.176 11811
-  bash scripts/network/configure_fastdds.sh client 192.168.50.176 11811
-  bash scripts/network/configure_fastdds.sh bridge 192.168.50.200 \
-    orkar_agv102=/gt/agv102/pose orkar_agv103=/gt/agv103/pose
+  bash scripts/network/configure_fastdds.sh server SERVER_IP 11811
+  bash scripts/network/configure_fastdds.sh client SERVER_IP 11811
+  bash scripts/network/configure_fastdds.sh bridge MOTIVE_IP \
+    RIGID_BODY=/gt/ROBOT/pose
 EOF
 }
 
@@ -29,8 +29,10 @@ sudo_run() {
         "$@"
     elif sudo -n true 2>/dev/null; then
         sudo "$@"
+    elif [ -n "${SUDO_PASSWORD:-}" ]; then
+        printf '%s\n' "${SUDO_PASSWORD}" | sudo -S -p "" "$@"
     else
-        printf '%s\n' "${SUDO_PASSWORD:-ubuntu}" | sudo -S -p "" "$@"
+        sudo "$@"
     fi
 }
 
@@ -82,8 +84,28 @@ fi'
 "<?xml version=\"1.0\" encoding=\"UTF-8\" ?>
 <dds>
   <profiles xmlns=\"http://www.eprosima.com/XMLSchemas/fastRTPS_Profiles\">
+    <transport_descriptors>
+      <transport_descriptor>
+        <transport_id>orkar_udp</transport_id>
+        <type>UDPv4</type>
+        <sendBufferSize>1048576</sendBufferSize>
+        <receiveBufferSize>1048576</receiveBufferSize>
+      </transport_descriptor>
+      <transport_descriptor>
+        <transport_id>orkar_large_shm</transport_id>
+        <type>SHM</type>
+        <maxMessageSize>4194304</maxMessageSize>
+        <segment_size>16777216</segment_size>
+        <port_queue_capacity>1024</port_queue_capacity>
+      </transport_descriptor>
+    </transport_descriptors>
     <participant profile_name=\"super_client_profile\" is_default_profile=\"true\">
       <rtps>
+        <userTransports>
+          <transport_id>orkar_udp</transport_id>
+          <transport_id>orkar_large_shm</transport_id>
+        </userTransports>
+        <useBuiltinTransports>false</useBuiltinTransports>
         <builtin>
           <discovery_config>
             <discoveryProtocol>SUPER_CLIENT</discoveryProtocol>

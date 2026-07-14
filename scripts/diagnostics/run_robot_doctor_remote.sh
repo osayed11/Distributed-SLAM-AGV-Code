@@ -2,7 +2,7 @@
 # Deploy the diagnostic pipeline to one robot, run it, and copy evidence back.
 #
 # Usage:
-#   SSH_PASS=ubuntu bash scripts/diagnostics/run_robot_doctor_remote.sh agv102 agv102.local -- --profile preflight
+#   SSH_PASS="$ROBOT_SSH_PASSWORD" bash scripts/diagnostics/run_robot_doctor_remote.sh <robot_id> <robot_host> -- --profile preflight
 #
 # Arguments before `--` are handled by this wrapper:
 #   <robot_id> <host>

@@ -12,18 +12,30 @@ try:
     import rclpy
     from geometry_msgs.msg import PoseStamped
     from rclpy.node import Node
+    from rclpy.qos import qos_profile_sensor_data
 except ImportError:
     print("Missing ROS 2 Python packages. Run this through the Pixi ROS 2 environment.", file=sys.stderr)
     raise
 
 try:
-    from natnet import NatNetClient
+    from orkar_natnet_sdk_client import NatNetClient
+
+    NATNET_BACKEND = "OptiTrack NatNet SDK 4.4 PythonClient"
 except ImportError:
-    print(
-        "Missing Python package 'natnet'. Install it with: python3 -m pip install natnet",
-        file=sys.stderr,
-    )
-    raise
+    try:
+        from orkar_natnet_client import NatNetClient
+        from natnet import NatNetError
+
+        NATNET_BACKEND = "python-natnet compatibility client"
+    except ImportError:
+        print(
+            "Missing OptiTrack NatNet SDK 4.4 and fallback package 'natnet'.",
+            file=sys.stderr,
+        )
+        raise
+    RECOVERABLE_NATNET_ERRORS = (NatNetError, OSError, RuntimeError, TimeoutError)
+else:
+    RECOVERABLE_NATNET_ERRORS = (OSError, RuntimeError, TimeoutError)
 
 
 def guess_local_ip(server):
@@ -46,7 +58,7 @@ def parse_target(value: str) -> RigidBodyTarget:
     if not separator or not name or not topic.startswith("/"):
         raise argparse.ArgumentTypeError(
             "rigid body must use NAME=/absolute/topic, for example "
-            "orkar_agv103=/gt/agv103/pose"
+            "rigid_body=/ground_truth/robot/pose"
         )
     return RigidBodyTarget(name=name, topic=topic)
 
@@ -61,7 +73,11 @@ class NatNetPosePublisher(Node):
         self.name_by_id: Dict[int, str] = {}
         self.printed_defs = False
         self.pose_publishers = {
-            target.name: self.create_publisher(PoseStamped, target.topic, 20)
+            target.name: self.create_publisher(
+                PoseStamped,
+                target.topic,
+                qos_profile_sensor_data,
+            )
             for target in self.targets
         }
         self.published = {target.name: 0 for target in self.targets}
@@ -70,23 +86,34 @@ class NatNetPosePublisher(Node):
         self.connected_at = 0.0
         self.last_frame_at = 0.0
         self.last_target_pose_at = 0.0
+        self.last_slow_publish_warning_at = 0.0
 
-        self.client = NatNetClient(
-            server_ip_address=args.server,
-            local_ip_address=local_ip,
-            use_multicast=args.multicast,
+        self.client = self.create_natnet_client()
+
+    def create_natnet_client(self):
+        client = NatNetClient(
+            server_ip_address=self.args.server,
+            local_ip_address=self.local_ip,
+            use_multicast=self.args.multicast,
         )
-        self.client.on_data_description_received_event.handlers.append(self.on_descriptions)
-        self.client.on_data_frame_received_event.handlers.append(self.on_frame)
+        client.on_data_description_received_event.handlers.append(self.on_descriptions)
+        client.on_data_frame_received_event.handlers.append(self.on_frame)
+        return client
 
     def connect(self):
         self.client.connect(timeout=3.0)
-        self.connected_at = time.time()
-        self.request_modeldef()
+        self.connected_at = time.monotonic()
+        # Model definitions are session metadata. Keep the last valid ID map
+        # across a transport reconnect instead of asking Motive to resend it.
+        # Some Motive/NatNet combinations intermittently truncate a repeated
+        # model-definition response while pose frames remain valid.
+        if not self.name_by_id:
+            self.request_modeldef()
         self.get_logger().info(
             "Publishing %d NatNet rigid body target(s) from %s"
             % (len(self.targets), self.args.server)
         )
+        self.get_logger().info("NatNet client: %s" % NATNET_BACKEND)
         for target in self.targets:
             self.get_logger().info("  %s -> %s" % (target.name, target.topic))
         self.get_logger().info("Local interface: %s" % self.local_ip)
@@ -94,13 +121,21 @@ class NatNetPosePublisher(Node):
     def close(self):
         self.client.shutdown()
 
+    def reconnect(self):
+        self.close()
+        self.connected_at = 0.0
+        self.last_frame_at = 0.0
+        self.last_target_pose_at = 0.0
+        self.client = self.create_natnet_client()
+        self.connect()
+
     def request_modeldef(self):
         self.client.request_modeldef()
-        self.last_modeldef_request = time.time()
+        self.last_modeldef_request = time.monotonic()
 
     def update(self):
         self.client.update_sync()
-        now = time.time()
+        now = time.monotonic()
         if not self.name_by_id and now - self.last_modeldef_request >= 2.0:
             self.request_modeldef()
         if now - self.connected_at >= self.args.frame_timeout:
@@ -137,7 +172,9 @@ class NatNetPosePublisher(Node):
         self.printed_defs = True
 
     def on_frame(self, frame):
-        now = time.time()
+        if not rclpy.ok():
+            return
+        now = time.monotonic()
         self.last_frame_at = now
         published_names = []
         stamp = self.get_clock().now().to_msg()
@@ -158,13 +195,24 @@ class NatNetPosePublisher(Node):
             msg.pose.orientation.y = float(rb.rot[1])
             msg.pose.orientation.z = float(rb.rot[2])
             msg.pose.orientation.w = float(rb.rot[3])
+            publish_started = time.monotonic()
             self.pose_publishers[name].publish(msg)
+            publish_elapsed = time.monotonic() - publish_started
+            if (
+                publish_elapsed >= 0.05
+                and now - self.last_slow_publish_warning_at >= 2.0
+            ):
+                self.get_logger().warning(
+                    "Slow DDS pose publish for %s: %.3fs"
+                    % (name, publish_elapsed)
+                )
+                self.last_slow_publish_warning_at = now
             self.published[name] += 1
             published_names.append(name)
 
         if published_names:
             self.last_target_pose_at = now
-        now = time.time()
+        now = time.monotonic()
         if now - self.last_status >= self.args.status_period:
             counts = ", ".join(
                 "%s=%d" % (target.name, self.published[target.name])
@@ -176,14 +224,12 @@ class NatNetPosePublisher(Node):
 
 def parse_args(argv=None):
     parser = argparse.ArgumentParser(description="Publish a NatNet rigid body as ROS 2 PoseStamped.")
-    parser.add_argument("--server", default="192.168.50.200",
+    parser.add_argument("--server", required=True,
                         help="Motive/NatNet server IP")
     parser.add_argument("--local", default=None,
                         help="Local interface IP. Defaults to auto-detect.")
-    parser.add_argument("--name", default="orkar_agv1",
-                        help="Rigid body name to publish")
-    parser.add_argument("--topic", default="/optitrack/rigid_bodies/orkar_agv1",
-                        help="ROS 2 PoseStamped output topic")
+    parser.add_argument("--name", help="Rigid body name to publish")
+    parser.add_argument("--topic", help="ROS 2 PoseStamped output topic")
     parser.add_argument(
         "--rigid-body",
         action="append",
@@ -201,9 +247,22 @@ def parse_args(argv=None):
     parser.add_argument("--status-period", type=float, default=2.0,
                         help="Console status print period in seconds")
     parser.add_argument("--frame-timeout", type=float, default=5.0,
-                        help="Exit when NatNet or tracked target frames stop this long")
+                        help="Reconnect when NatNet or tracked target frames stop this long")
+    parser.add_argument("--reconnect-delay", type=float, default=1.0,
+                        help="Delay before reconnecting after a NatNet outage; 0 disables recovery")
+    parser.add_argument("--poll-period", type=float, default=0.01,
+                        help="NatNet socket poll period in seconds")
     args = parser.parse_args(argv)
-    args.targets = args.rigid_body or [RigidBodyTarget(args.name, args.topic)]
+    if args.rigid_body:
+        if args.name or args.topic:
+            parser.error("use either --rigid-body or --name/--topic, not both")
+        args.targets = args.rigid_body
+    else:
+        if not args.name or not args.topic:
+            parser.error("provide --rigid-body NAME=/TOPIC or both --name and --topic")
+        if not args.topic.startswith("/"):
+            parser.error("--topic must be an absolute ROS topic")
+        args.targets = [RigidBodyTarget(args.name, args.topic)]
     names = [target.name for target in args.targets]
     topics = [target.topic for target in args.targets]
     if len(names) != len(set(names)):
@@ -212,6 +271,10 @@ def parse_args(argv=None):
         parser.error("duplicate output topic")
     if args.frame_timeout <= 0:
         parser.error("--frame-timeout must be positive")
+    if args.poll_period <= 0:
+        parser.error("--poll-period must be positive")
+    if args.reconnect_delay < 0:
+        parser.error("--reconnect-delay must be non-negative")
     return args
 
 
@@ -224,15 +287,35 @@ def main(argv=None):
     try:
         node.connect()
         while rclpy.ok():
-            node.update()
-            rclpy.spin_once(node, timeout_sec=0.0)
-            time.sleep(0.005)
+            try:
+                node.update()
+                time.sleep(args.poll_period)
+            except RECOVERABLE_NATNET_ERRORS as exc:
+                if args.reconnect_delay == 0:
+                    raise
+                node.get_logger().warning(
+                    "NatNet input unavailable (%s); reconnecting in %.1fs"
+                    % (exc, args.reconnect_delay)
+                )
+                time.sleep(args.reconnect_delay)
+                while rclpy.ok():
+                    try:
+                        node.reconnect()
+                        node.get_logger().info("NatNet input reconnected")
+                        break
+                    except RECOVERABLE_NATNET_ERRORS as reconnect_exc:
+                        node.get_logger().warning(
+                            "NatNet reconnect failed (%s); retrying in %.1fs"
+                            % (reconnect_exc, args.reconnect_delay)
+                        )
+                        time.sleep(args.reconnect_delay)
     except KeyboardInterrupt:
         pass
     finally:
         node.close()
         node.destroy_node()
-        rclpy.shutdown()
+        if rclpy.ok():
+            rclpy.shutdown()
 
 
 if __name__ == "__main__":

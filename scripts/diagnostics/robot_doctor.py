@@ -175,6 +175,8 @@ CONFIG_FLAG_MAP = {
     "require_gt": ["--require-gt"],
     "require_imu": ["--require-imu"],
     "mocap_topic": ["--mocap-topic"],
+    "mocap_min_hz": ["--mocap-min-hz"],
+    "mocap_max_hz": ["--mocap-max-hz"],
     "cmd_topic": ["--cmd-topic"],
     "required_topic": ["--required-topic"],
     "expect_native_ros2": ["--expect-native-ros2"],
@@ -911,11 +913,10 @@ class Doctor:
                 details.append("DNS ping failed")
             self.add(
                 "3.3",
-                WARN,
+                INFO,
                 "network_internet",
-                "; ".join(details),
+                "; ".join(details) + "; public Internet is not required for local dataset collection",
                 [ip_result.log, dns_result.log],
-                "check Wi-Fi profile, signal, DNS, and DHCP if setup/pull/SSH is unreliable",
             )
 
     @staticmethod
@@ -1144,10 +1145,15 @@ class Doctor:
         delay = delay_match.group(1).strip() if delay_match else "unknown"
         control_match = re.search(r"power_control=([^\n]+)", d455_block)
         control = control_match.group(1).strip() if control_match else "unknown"
+        try:
+            delay_disabled = int(delay) < 0
+        except ValueError:
+            delay_disabled = False
+
         if control == "on":
             results.append(("2.1", PASS, "d455_usb_autosuspend", "D455 USB autosuspend disabled (power/control=on)", ""))
-        elif control == "auto" and delay == "-1":
-            results.append(("2.1", PASS, "d455_usb_autosuspend", "D455 USB autosuspend disabled (power/control=auto, autosuspend_delay_ms=-1)", ""))
+        elif control == "auto" and delay_disabled:
+            results.append(("2.1", PASS, "d455_usb_autosuspend", f"D455 USB autosuspend disabled (power/control=auto, autosuspend_delay_ms={delay})", ""))
         elif control == "auto":
             results.append(
                 (
@@ -1168,8 +1174,8 @@ class Doctor:
                     "inspect /sys/bus/usb/devices/*/power/control for the D455 and disable autosuspend if uncertain",
                 )
             )
-        if delay == "-1":
-            results.append(("1.2", PASS, "d455_usb_autosuspend_delay", "D455 autosuspend_delay_ms=-1", ""))
+        if delay_disabled:
+            results.append(("1.2", PASS, "d455_usb_autosuspend_delay", f"D455 autosuspend_delay_ms={delay} (disabled)", ""))
         elif delay in {"", "unknown"}:
             status = FAIL if profile == "dataset" else WARN
             results.append(
@@ -1189,7 +1195,7 @@ class Doctor:
                     status,
                     "d455_usb_autosuspend_delay",
                     f"D455 autosuspend_delay_ms={delay}, expected -1",
-                    "run SUDO_PASSWORD=ubuntu bash scripts/diagnostics/apply_robot_doctor_fix.sh --apply --fix d455-autosuspend, then power-cycle and rerun",
+                    "run bash scripts/diagnostics/apply_robot_doctor_fix.sh --apply --fix d455-autosuspend, then power-cycle and rerun",
                 )
             )
 
@@ -1235,7 +1241,7 @@ class Doctor:
                     FAIL,
                     "d455_uvc_binding",
                     "D455 video interfaces are not bound to uvcvideo: " + ", ".join(unbound),
-                    "run SUDO_PASSWORD=ubuntu bash scripts/diagnostics/apply_robot_doctor_fix.sh --apply --fix d455-uvc-bind --fix d455-authorize-cycle, then rerun robot_doctor",
+                    "run bash scripts/diagnostics/apply_robot_doctor_fix.sh --apply --fix d455-uvc-bind --fix d455-authorize-cycle, then rerun robot_doctor",
                 )
             ]
 
@@ -1461,7 +1467,7 @@ class Doctor:
                 "d455_rs_enumerate",
                 "D455 not visible to librealsense",
                 [rs.log],
-                "run SUDO_PASSWORD=ubuntu bash scripts/diagnostics/apply_robot_doctor_fix.sh --apply --fix d455-usb-reset --fix d455-authorize-cycle once, then rerun robot_doctor; if it persists, do cable/port/camera A/B swap",
+                "run bash scripts/diagnostics/apply_robot_doctor_fix.sh --apply --fix d455-usb-reset --fix d455-authorize-cycle once, then rerun robot_doctor; if it persists, do cable/port/camera A/B swap",
             )
 
         serial = self.parse_realsense_serial(rs_text)
@@ -1518,7 +1524,7 @@ class Doctor:
                 "realsense_control_query",
                 "librealsense control query failed or timed out",
                 [controls.log],
-                "run SUDO_PASSWORD=ubuntu bash scripts/diagnostics/apply_robot_doctor_fix.sh --apply --fix d455-usb-reset --fix d455-authorize-cycle once, then rerun; persistent failure means USB/kernel/cable/port/camera, not ROS",
+                "run bash scripts/diagnostics/apply_robot_doctor_fix.sh --apply --fix d455-usb-reset --fix d455-authorize-cycle once, then rerun; persistent failure means USB/kernel/cable/port/camera, not ROS",
             )
 
     def check_realsense_setup_provenance(
@@ -2442,7 +2448,7 @@ PY
                 FAIL,
                 "realsense_stream_transport",
                 f"standalone stream probe produced no JSON because it {reason}",
-                "run SUDO_PASSWORD=ubuntu bash scripts/diagnostics/apply_robot_doctor_fix.sh --apply --fix d455-usb-reset --fix d455-authorize-cycle once, then rerun; persistent failure needs cable/port/camera A/B evidence",
+                "run bash scripts/diagnostics/apply_robot_doctor_fix.sh --apply --fix d455-usb-reset --fix d455-authorize-cycle once, then rerun; persistent failure needs cable/port/camera A/B evidence",
             )
         return (
             "3.2",
@@ -2546,7 +2552,7 @@ PY
                     FAIL,
                     "realsense_stream_exception",
                     f"standalone stream raised RealSense transport error: {detail[:180]}",
-                    "run SUDO_PASSWORD=ubuntu bash scripts/diagnostics/apply_robot_doctor_fix.sh --apply --fix d455-usb-reset --fix d455-authorize-cycle once if not already tried; persistent failure after reset needs cable/port/camera A/B evidence, not ROS debugging",
+                    "run bash scripts/diagnostics/apply_robot_doctor_fix.sh --apply --fix d455-usb-reset --fix d455-authorize-cycle once if not already tried; persistent failure after reset needs cable/port/camera A/B evidence, not ROS debugging",
                 )
             return (
                 "3.2",
@@ -2563,7 +2569,7 @@ PY
                 FAIL,
                 "realsense_stream_timeouts",
                 f"standalone stream had {timeouts} wait timeouts",
-                "run SUDO_PASSWORD=ubuntu bash scripts/diagnostics/apply_robot_doctor_fix.sh --apply --fix d455-usb-reset --fix d455-authorize-cycle once if not already tried; persistent failure after reset needs cable/port/camera A/B evidence, not ROS debugging",
+                "run bash scripts/diagnostics/apply_robot_doctor_fix.sh --apply --fix d455-usb-reset --fix d455-authorize-cycle once if not already tried; persistent failure after reset needs cable/port/camera A/B evidence, not ROS debugging",
             )
 
         min_frames = max(1, int(seconds * fps * 0.80))
@@ -2689,6 +2695,63 @@ PY
 
     def check_dds_discovery(self) -> None:
         expected = self.expected_robot_namespaces()
+        transport = os.environ.get("ORKAR_ROS_TRANSPORT", "")
+        if transport == "zenoh-bridge-ros2dds":
+            result = self.run(
+                "zenoh_transport",
+                "printf 'SERVICE='; systemctl is-active orkar-zenoh-gt.service 2>&1 || true; "
+                "printf 'CONNECTIONS='; ss -Htnp state established 2>/dev/null | grep -c zenoh-bridge-ro || true",
+                timeout=10,
+            )
+            transport_output = self.command_output(result)
+            service_active = "SERVICE=active" in transport_output
+            connection_match = re.search(r"CONNECTIONS=([0-9]+)", transport_output)
+            connected = bool(connection_match and int(connection_match.group(1)) > 0)
+            isolated = os.environ.get("ROS_LOCALHOST_ONLY", "") == "1"
+            legacy_server = os.environ.get("ROS_DISCOVERY_SERVER", "")
+            if not service_active:
+                self.add(
+                    "3.3",
+                    FAIL if self.args.profile == "dataset" else WARN,
+                    "zenoh_gt_transport",
+                    "Zenoh ground-truth bridge service is not active",
+                    [result.log],
+                    "run scripts/network/configure_zenoh.sh status and restore the router connection",
+                )
+            elif not connected:
+                self.add(
+                    "3.3",
+                    FAIL if self.args.profile == "dataset" else WARN,
+                    "zenoh_gt_transport",
+                    "Zenoh ground-truth bridge is active but not connected to the router",
+                    [result.log],
+                    "start the MoCap-side router and verify ZENOH_ROUTER_ENDPOINT and Wi-Fi reachability",
+                )
+            elif not isolated or legacy_server:
+                self.add(
+                    "3.3",
+                    FAIL if self.args.profile == "dataset" else WARN,
+                    "zenoh_gt_transport",
+                    "Zenoh is active but robot DDS is not cleanly isolated",
+                    [result.log],
+                    "source /etc/orkar/ros_transport.env and unset ROS_DISCOVERY_SERVER",
+                )
+            else:
+                self.add(
+                    "3.3",
+                    PASS,
+                    "zenoh_gt_transport",
+                    "Zenoh GT bridge is connected and robot DDS is loopback-only",
+                    [result.log],
+                )
+            if expected:
+                self.add(
+                    "3.3",
+                    INFO,
+                    "dds_discovery",
+                    "remote robot namespaces are intentionally hidden by Zenoh isolation; required GT topics are checked separately",
+                )
+            return
         if self.ros_mode != "ros2":
             if expected:
                 self.add(
@@ -3066,14 +3129,32 @@ PY
             )
             return
         rate = self.measure_topic_rate(topic, min(10, int(self.args.live_seconds))) if self.args.live_seconds > 0 else None
-        if rate is not None and rate < 20.0:
+        if self.args.live_seconds > 0 and rate is None:
             status = FAIL if self.args.require_gt else WARN
             self.add(
                 "3.3",
                 status,
                 "mocap_rate",
-                f"{topic} {rate:.1f} Hz below 20 Hz",
+                f"could not measure a live rate for {topic}",
+                next_action="repair the ground-truth source or transport before scenario motion",
+            )
+        elif rate is not None and rate < self.args.mocap_min_hz:
+            status = FAIL if self.args.require_gt else WARN
+            self.add(
+                "3.3",
+                status,
+                "mocap_rate",
+                f"{topic} {rate:.1f} Hz below {self.args.mocap_min_hz:.1f} Hz",
                 next_action="repair OptiTrack/NatNet/ROS_DOMAIN_ID or reduce mocap load until ground truth is stable",
+            )
+        elif rate is not None and rate > self.args.mocap_max_hz:
+            status = FAIL if self.args.require_gt else WARN
+            self.add(
+                "3.3",
+                status,
+                "mocap_rate",
+                f"{topic} {rate:.1f} Hz above {self.args.mocap_max_hz:.1f} Hz",
+                next_action="check for duplicate bridge routes or duplicate publishers; do not record amplified ground truth",
             )
         else:
             self.add("3.3", PASS, "mocap_topic", f"{topic} present" + (f" @ {rate:.1f} Hz" if rate else ""))
@@ -3408,7 +3489,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Run the AGV robot diagnostic pipeline and classify failures."
     )
-    parser.add_argument("robot_id", help="robot ID to stamp into reports, e.g. agv102")
+    parser.add_argument("robot_id", help="robot ID to stamp into reports")
     parser.add_argument("--config", help="JSON gate config; CLI flags override config values")
     parser.add_argument(
         "--profile",
@@ -3432,6 +3513,18 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--require-gt", action="store_true", default=env_bool("REQUIRE_GT"))
     parser.add_argument("--require-imu", action="store_true", default=env_bool("REQUIRE_IMU"))
     parser.add_argument("--mocap-topic", default=os.environ.get("MOCAP_TOPIC", ""))
+    parser.add_argument(
+        "--mocap-min-hz",
+        type=float,
+        default=float(os.environ.get("MOCAP_MIN_HZ", "20")),
+        help="minimum accepted live ground-truth rate",
+    )
+    parser.add_argument(
+        "--mocap-max-hz",
+        type=float,
+        default=float(os.environ.get("MOCAP_MAX_HZ", "120")),
+        help="maximum accepted live ground-truth rate; catches duplicate bridge routes",
+    )
     parser.add_argument("--cmd-topic", default=os.environ.get("CMD_TOPIC", ""))
     parser.add_argument("--required-topic", action="append", default=[])
     parser.add_argument(
@@ -3525,6 +3618,12 @@ def main() -> int:
         args.loaded_config = apply_gate_config(args, sys.argv[1:])
     except Exception as exc:
         print(f"ERROR: could not load diagnostic config: {exc}", file=sys.stderr)
+        return 2
+    if args.mocap_min_hz <= 0 or args.mocap_max_hz <= args.mocap_min_hz:
+        print(
+            "ERROR: MoCap rate bounds must satisfy 0 < mocap_min_hz < mocap_max_hz",
+            file=sys.stderr,
+        )
         return 2
     if args.profile == "static":
         args.no_ros = True

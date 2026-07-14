@@ -1,10 +1,6 @@
 #!/usr/bin/env bash
-# Source the robot-local Fast DDS client configuration, if installed.
+# Compatibility wrapper. New code should source load_ros_transport_env.sh.
 
-ORKAR_FASTDDS_ENV="${ORKAR_FASTDDS_ENV:-/etc/orkar/fastdds.env}"
-if [ -r "${ORKAR_FASTDDS_ENV}" ]; then
-    set -a
-    # shellcheck disable=SC1090
-    source "${ORKAR_FASTDDS_ENV}"
-    set +a
-fi
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck disable=SC1091
+source "${SCRIPT_DIR}/load_ros_transport_env.sh"

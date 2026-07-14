@@ -9,14 +9,18 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+if [ -r "${ROOT}/scripts/network/load_ros_transport_env.sh" ]; then
+    # shellcheck disable=SC1091
+    source "${ROOT}/scripts/network/load_ros_transport_env.sh"
+fi
 
 usage() {
     sed -n '1,6p' "$0"
     cat <<'EOF'
 
 Usage:
-  bash scripts/diagnostics/dataset_ready_gate.sh agv110
-  bash scripts/diagnostics/dataset_ready_gate.sh agv110 --mocap-topic /optitrack/rigid_bodies/orkar_agv110 --cmd-topic /agv110/cmd_vel
+  bash scripts/diagnostics/dataset_ready_gate.sh <robot_id>
+  bash scripts/diagnostics/dataset_ready_gate.sh <robot_id> --mocap-topic /ground_truth/robot/pose --cmd-topic /robot/cmd_vel
 
 Options:
   --config PATH              Gate config. Default: configs/robot_doctor_dataset_gate.json

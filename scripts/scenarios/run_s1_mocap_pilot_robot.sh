@@ -6,7 +6,7 @@
 #   2. reset the D455 once and disable autosuspend
 #   3. launch exactly one bringup
 #   4. wait for required live topics
-#   5. record one bag
+#   5. record one logical dataset using stock rosbag2 recorders
 #   6. drive one MoCap-feedback circle using best-effort MoCap QoS
 #   7. stop recording/bringup and validate the bag
 
@@ -17,17 +17,17 @@ usage() {
 Usage:
   bash scripts/scenarios/run_s1_mocap_pilot_robot.sh <robot_name> [scenario_name]
 
-Typical agv102 lab run:
+Typical lab run:
   cd ~/slam_project
   ROS_DOMAIN_ID=0 \
-  MOCAP_TOPIC=/optitrack/rigid_bodies/orkar_agv102 \
-  CMD_TOPIC=/agv102/cmd_vel \
+  MOCAP_TOPIC=/optitrack/rigid_bodies/<rigid_body> \
+  CMD_TOPIC=/<robot_name>/cmd_vel \
   S1_RADIUS=1.0 \
   S1_DURATION=70 \
-  bash scripts/scenarios/run_s1_mocap_pilot_robot.sh agv102 s1_circle_1m
+  bash scripts/scenarios/run_s1_mocap_pilot_robot.sh <robot_name> s1_circle_1m
 
 Required/important environment:
-  MOCAP_TOPIC       MoCap PoseStamped topic. Default: /gt/<robot_name>/pose
+  MOCAP_TOPIC       MoCap PoseStamped topic. Required; no naming convention is assumed.
   CMD_TOPIC         Namespaced cmd_vel topic. Default: /<robot_name>/cmd_vel
   ROS_DOMAIN_ID     ROS 2 domain. Default: 0
 
@@ -39,19 +39,30 @@ Circle overrides:
   S1_LINEAR         Linear speed. Default: 0.10
   S1_MIN_LINEAR     Minimum linear speed while correcting. Default: 0.07
   S1_DIRECTION      ccw or cw. Default: ccw
-  S1_POSE_TIMEOUT   Abort if MoCap pose is stale this long. Default: 2.5
-  S1_BEST_EFFORT_POSE true/false. Default: false for reliable OptiTrack DDS streams.
+  S1_POSE_TIMEOUT   Abort if MoCap pose is stale this long. Default: 0.30s
+  S1_FORWARD_YAW_OFFSET_DEG  Per-robot rigid-body-to-forward calibration. Default: 0
+  S1_BEST_EFFORT_POSE true/false. Default: true for sensor-data QoS.
   S1_DRY_RUN       true/false. Default: false. Proves lifecycle without publishing motion.
 
 Recording/gates:
+  D455_RESET_MODE  none or usb-reset. Default: none; use reset only for recovery tests.
   S1_PRECHECK       Run a 5s unrecorded motion gate before recording. Default: true
   S1_PRECHECK_DURATION  Precheck motion seconds. Default: 5
   S1_PRECHECK_MAX_RADIUS_ERROR  Allowed precheck radius error. Default: 0.15m
   S1_PRECHECK_MIN_LAPS  Required direction-normalised progress. Default: 0.02
   S1_RECORD         true/false. Default: true
+  S1_RECORD_GT      Include the control pose in the robot bag. Default: true
+  S1_SPLIT_RECORDING  Record image and auxiliary topics in separate MCAP shards. Default: true
   S1_VALIDATE       true/false. Default: true
   S1_STORAGE_ID     mcap/sqlite3/auto. Default: auto, prefer MCAP when installed.
+  S1_MCAP_STORAGE_CONFIG  MCAP writer config. Default: resilient fast-Zstd profile.
+  S1_MCAP_STORAGE_PRESET_PROFILE  Optional MCAP preset; overrides the config file.
+  ROSBAG2_MAX_CACHE_SIZE  Recorder cache bytes. Default: 536870912 (512 MiB).
+  S1_RECORDER_READY_TIMEOUT  Wait for required recorder subscriptions. Default: 60s
   S1_TOPIC_WAIT_SEC Wait per required topic. Default: 180
+  MOCAP_MIN_HZ     Minimum accepted GT transport rate. Default: 20
+  MOCAP_MAX_HZ     Maximum accepted GT transport rate. Default: 120
+  MOCAP_RATE_CHECK_SECONDS  Duration of the pre-motion rate check. Default: 5
   REQUIRE_GT        Require MoCap in validator. Default: true
   REQUIRE_IMU       Require raw D455 gyro+accel in validator. Default: true
 EOF
@@ -74,11 +85,10 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 cd "${ROOT}"
 
-# Every ROS participant in this script must use the same discovery path. The
-# robot-local file is installed by scripts/network/configure_fastdds.sh.
-if [ -r "${ROOT}/scripts/network/load_fastdds_env.sh" ]; then
+# Every ROS participant in this script must use the same local transport.
+if [ -r "${ROOT}/scripts/network/load_ros_transport_env.sh" ]; then
     # shellcheck disable=SC1091
-    source "${ROOT}/scripts/network/load_fastdds_env.sh"
+    source "${ROOT}/scripts/network/load_ros_transport_env.sh"
 fi
 
 source_ros2() {
@@ -128,39 +138,33 @@ bool_true() {
 sudo_sh() {
     if sudo -n true 2>/dev/null; then
         sudo sh -c "$1"
+    elif [ -n "${SUDO_PASSWORD:-}" ]; then
+        printf '%s\n' "${SUDO_PASSWORD}" | sudo -S -p '' sh -c "$1"
     else
-        printf '%s\n' "${SUDO_PASSWORD:-ubuntu}" | sudo -S sh -c "$1"
+        sudo sh -c "$1"
     fi
 }
 
 sudo_python_usb_reset() {
     local devfile="$1"
+    local reset_code
+    reset_code='import fcntl
+import os
+import sys
+
+USBDEVFS_RESET = 21780
+fd = os.open(sys.argv[1], os.O_WRONLY)
+try:
+    fcntl.ioctl(fd, USBDEVFS_RESET, 0)
+finally:
+    os.close(fd)'
     if sudo -n true 2>/dev/null; then
-        sudo python3 - "${devfile}" <<'PY'
-import fcntl
-import os
-import sys
-
-USBDEVFS_RESET = 21780
-fd = os.open(sys.argv[1], os.O_WRONLY)
-try:
-    fcntl.ioctl(fd, USBDEVFS_RESET, 0)
-finally:
-    os.close(fd)
-PY
+        sudo python3 -c "${reset_code}" "${devfile}"
+    elif [ -n "${SUDO_PASSWORD:-}" ]; then
+        printf '%s\n' "${SUDO_PASSWORD}" | \
+            sudo -S -p '' python3 -c "${reset_code}" "${devfile}"
     else
-        printf '%s\n' "${SUDO_PASSWORD:-ubuntu}" | sudo -S python3 - "${devfile}" <<'PY'
-import fcntl
-import os
-import sys
-
-USBDEVFS_RESET = 21780
-fd = os.open(sys.argv[1], os.O_WRONLY)
-try:
-    fcntl.ioctl(fd, USBDEVFS_RESET, 0)
-finally:
-    os.close(fd)
-PY
+        sudo python3 -c "${reset_code}" "${devfile}"
     fi
 }
 
@@ -234,13 +238,39 @@ kill_local_robot_graph() {
 wait_for_topic_once() {
     local topic="$1"
     local timeout_sec="$2"
-    local discovery_setup=""
-    if [ -n "${ROS_DISCOVERY_SERVER:-}" ] && [ -r "${FAST_DDS_SUPER_CLIENT_PROFILE}" ]; then
-        discovery_setup="export FASTRTPS_DEFAULT_PROFILES_FILE='${FAST_DDS_SUPER_CLIENT_PROFILE}'; unset ROS_DISCOVERY_SERVER;"
+    local topic_type="${3:-}"
+    local echo_args="'${topic}'"
+    if [ -n "${topic_type}" ]; then
+        echo_args="${echo_args} '${topic_type}'"
     fi
     echo "Waiting for ${topic}..."
     timeout "${timeout_sec}" bash -lc \
-        "source /opt/ros/humble/setup.bash; [ -f '${ROOT}/agv2_ws/install/setup.bash' ] && source '${ROOT}/agv2_ws/install/setup.bash'; export ROS_DOMAIN_ID='${ROS_DOMAIN_ID:-0}'; ${discovery_setup} until ros2 topic echo '${topic}' --no-daemon --spin-time 2 --once >/dev/null 2>&1; do sleep 1; done"
+        "source /opt/ros/humble/setup.bash; source '${ROOT}/scripts/network/load_ros_transport_env.sh'; [ -f '${ROOT}/agv2_ws/install/setup.bash' ] && source '${ROOT}/agv2_ws/install/setup.bash'; until ros2 topic echo ${echo_args} --no-daemon --spin-time 2 --once >/dev/null 2>&1; do sleep 1; done"
+}
+
+check_topic_rate_range() {
+    local topic="$1"
+    local seconds="$2"
+    local min_hz="$3"
+    local max_hz="$4"
+    local log_path="$5"
+    local rate
+
+    echo "Checking ${topic} rate for ${seconds}s (${min_hz}-${max_hz} Hz)..."
+    timeout "${seconds}" ros2 topic hz "${topic}" --window 200 >"${log_path}" 2>&1 || true
+    rate="$(awk '/average rate:/ { value=$3 } END { if (value != "") print value }' "${log_path}")"
+    if [ -z "${rate}" ]; then
+        echo "ERROR: could not measure the ground-truth rate." >&2
+        tail -40 "${log_path}" >&2 || true
+        return 1
+    fi
+    if ! awk -v rate="${rate}" -v min="${min_hz}" -v max="${max_hz}" \
+        'BEGIN { exit !(rate >= min && rate <= max) }'; then
+        echo "ERROR: ground-truth rate ${rate} Hz is outside ${min_hz}-${max_hz} Hz." >&2
+        echo "       Check the source and bridge routes; do not record missing or amplified GT." >&2
+        return 1
+    fi
+    echo "Ground-truth rate gate passed: ${rate} Hz."
 }
 
 stop_process_group() {
@@ -270,6 +300,88 @@ wait_for_exit_or_kill() {
     fi
 }
 
+wait_for_recorder_subscriptions() {
+    local timeout_sec="$1"
+    local recorder_pid="$2"
+    local recorder_log="$3"
+    local recorder_label="$4"
+    shift 4
+    local deadline=$((SECONDS + timeout_sec))
+    local pending=()
+    local topic
+
+    while [ "${SECONDS}" -lt "${deadline}" ]; do
+        if ! kill -0 "${recorder_pid}" 2>/dev/null; then
+            echo "ERROR: ${recorder_label} recorder exited before becoming ready." >&2
+            tail -120 "${recorder_log}" >&2 || true
+            return 1
+        fi
+
+        pending=()
+        for topic in "$@"; do
+            if ! grep -Fq "Subscribed to topic '${topic}'" "${recorder_log}" 2>/dev/null; then
+                pending+=("${topic}")
+            fi
+        done
+        if [ "${#pending[@]}" -eq 0 ]; then
+            echo "${recorder_label} recorder subscribed to every required stream."
+            return 0
+        fi
+        sleep 1
+    done
+
+    echo "ERROR: ${recorder_label} recorder subscription gate timed out after ${timeout_sec}s." >&2
+    printf '  missing subscription: %s\n' "${pending[@]}" >&2
+    tail -120 "${recorder_log}" >&2 || true
+    return 1
+}
+
+check_recorder_subscription_skew() {
+    local recorder_log="$1"
+    local recorder_label="$2"
+    local max_skew_sec="$3"
+    shift 3
+    python3 - "${recorder_log}" "${recorder_label}" "${max_skew_sec}" "$@" <<'PY'
+import re
+import sys
+
+log_path = sys.argv[1]
+label = sys.argv[2]
+max_skew = float(sys.argv[3])
+required = set(sys.argv[4:])
+timestamps = {}
+pattern = re.compile(
+    r"\[[A-Z]+\]\s+\[([0-9]+(?:\.[0-9]+)?)\].*Subscribed to topic '([^']+)'"
+)
+
+with open(log_path, "r", encoding="utf-8", errors="replace") as stream:
+    for line in stream:
+        match = pattern.search(line)
+        if not match:
+            continue
+        topic = match.group(2)
+        if topic in required and topic not in timestamps:
+            timestamps[topic] = float(match.group(1))
+
+missing = sorted(required - timestamps.keys())
+if missing:
+    print("ERROR: recorder log is missing required subscription timestamps:", file=sys.stderr)
+    for topic in missing:
+        print(f"  {topic}", file=sys.stderr)
+    raise SystemExit(1)
+
+skew = max(timestamps.values()) - min(timestamps.values())
+print(f"{label} recorder required-topic subscription skew: {skew:.3f}s")
+if skew > max_skew:
+    print(
+        f"ERROR: subscription skew {skew:.3f}s exceeds {max_skew:.3f}s; "
+        "aborting before motion.",
+        file=sys.stderr,
+    )
+    raise SystemExit(1)
+PY
+}
+
 publish_zero() {
     python3 - "${CMD_TOPIC}" <<'PY' || true
 import sys
@@ -292,7 +404,7 @@ rclpy.shutdown()
 PY
 }
 
-MOCAP_TOPIC="${MOCAP_TOPIC:-/gt/${ROBOT_NAME}/pose}"
+MOCAP_TOPIC="${MOCAP_TOPIC:-}"
 CMD_TOPIC="${CMD_TOPIC:-/${ROBOT_NAME}/cmd_vel}"
 ROS_DOMAIN_ID="${ROS_DOMAIN_ID:-0}"
 S1_RADIUS="${S1_RADIUS:-1.0}"
@@ -307,7 +419,8 @@ S1_HEADING_KP="${S1_HEADING_KP:-1.10}"
 S1_RADIUS_KP="${S1_RADIUS_KP:-1.50}"
 S1_MAX_ANGULAR="${S1_MAX_ANGULAR:-0.55}"
 S1_MAX_RADIUS_HEADING_OFFSET_DEG="${S1_MAX_RADIUS_HEADING_OFFSET_DEG:-35}"
-S1_BEST_EFFORT_POSE="${S1_BEST_EFFORT_POSE:-false}"
+S1_BEST_EFFORT_POSE="${S1_BEST_EFFORT_POSE:-true}"
+D455_RESET_MODE="${D455_RESET_MODE:-none}"
 S1_DRY_RUN="${S1_DRY_RUN:-false}"
 S1_PRECHECK="${S1_PRECHECK:-true}"
 S1_PRECHECK_DURATION="${S1_PRECHECK_DURATION:-5}"
@@ -316,9 +429,23 @@ S1_PRECHECK_MIN_LAPS="${S1_PRECHECK_MIN_LAPS:-0.02}"
 S1_PRECHECK_MAX_POSE_AGE="${S1_PRECHECK_MAX_POSE_AGE:-0.20}"
 S1_PRECHECK_MIN_POSE_SAMPLES="${S1_PRECHECK_MIN_POSE_SAMPLES:-30}"
 S1_RECORD="${S1_RECORD:-true}"
+S1_RECORD_GT="${S1_RECORD_GT:-true}"
+S1_SPLIT_RECORDING="${S1_SPLIT_RECORDING:-true}"
 S1_VALIDATE="${S1_VALIDATE:-true}"
 S1_STORAGE_ID="${S1_STORAGE_ID:-auto}"
+S1_MCAP_STORAGE_CONFIG="${S1_MCAP_STORAGE_CONFIG:-${ROOT}/configs/mcap_resilient_high_throughput.yaml}"
+S1_MCAP_STORAGE_PRESET_PROFILE="${S1_MCAP_STORAGE_PRESET_PROFILE:-}"
+ROSBAG2_MAX_CACHE_SIZE="${ROSBAG2_MAX_CACHE_SIZE:-536870912}"
+S1_SENSOR_CACHE_SIZE="${S1_SENSOR_CACHE_SIZE:-402653184}"
+S1_AUX_CACHE_SIZE="${S1_AUX_CACHE_SIZE:-67108864}"
+S1_RECORDER_READY_TIMEOUT="${S1_RECORDER_READY_TIMEOUT:-60}"
+S1_MAX_RECORDER_SUBSCRIPTION_SKEW_SEC="${S1_MAX_RECORDER_SUBSCRIPTION_SKEW_SEC:-2.0}"
+S1_RECORDER_PREROLL_SEC="${S1_RECORDER_PREROLL_SEC:-2}"
 S1_TOPIC_WAIT_SEC="${S1_TOPIC_WAIT_SEC:-180}"
+MOCAP_MIN_HZ="${MOCAP_MIN_HZ:-20}"
+MOCAP_MAX_HZ="${MOCAP_MAX_HZ:-120}"
+MOCAP_RATE_CHECK_SECONDS="${MOCAP_RATE_CHECK_SECONDS:-5}"
+S1_GT_HOLD_READY_TIMEOUT="${S1_GT_HOLD_READY_TIMEOUT:-15}"
 S1_RECORDER_STOP_TIMEOUT="${S1_RECORDER_STOP_TIMEOUT:-120}"
 S1_BRINGUP_STOP_TIMEOUT="${S1_BRINGUP_STOP_TIMEOUT:-30}"
 S1_POST_ROLL_SEC="${S1_POST_ROLL_SEC:-5}"
@@ -326,28 +453,72 @@ S1_MIN_BAG_DURATION="${S1_MIN_BAG_DURATION:-30}"
 REQUIRE_GT="${REQUIRE_GT:-true}"
 REQUIRE_IMU="${REQUIRE_IMU:-true}"
 REQUIRE_RESILIENT_STORAGE="${REQUIRE_RESILIENT_STORAGE:-false}"
-FAST_DDS_SUPER_CLIENT_PROFILE="${FAST_DDS_SUPER_CLIENT_PROFILE:-/etc/orkar/fastdds_super_client.xml}"
 
 require_nonempty "MOCAP_TOPIC" "${MOCAP_TOPIC}"
+if ! awk -v min="${MOCAP_MIN_HZ}" -v max="${MOCAP_MAX_HZ}" -v seconds="${MOCAP_RATE_CHECK_SECONDS}" \
+    'BEGIN { exit !(min > 0 && max > min && seconds > 0) }'; then
+    echo "ERROR: require 0 < MOCAP_MIN_HZ < MOCAP_MAX_HZ and MOCAP_RATE_CHECK_SECONDS > 0." >&2
+    exit 2
+fi
 if [ "${CMD_TOPIC}" = "/cmd_vel" ]; then
     echo "ERROR: refusing to run S1 pilot on root /cmd_vel. Use /${ROBOT_NAME}/cmd_vel." >&2
     exit 2
 fi
+if bool_true "${S1_RECORD}" && bool_true "${S1_VALIDATE}" && \
+   ! bool_true "${S1_RECORD_GT}" && bool_true "${REQUIRE_GT}"; then
+    echo "ERROR: REQUIRE_GT=true conflicts with S1_RECORD_GT=false." >&2
+    echo "       For centrally recorded GT, set both S1_RECORD_GT=false and REQUIRE_GT=false," >&2
+    echo "       then audit timestamp overlap with the central GT bag after collection." >&2
+    exit 2
+fi
 
 source_ros2
+if [ "${ORKAR_ROS_TRANSPORT:-}" = "zenoh-bridge-ros2dds" ]; then
+    if [ "${ROS_LOCALHOST_ONLY:-}" != "1" ]; then
+        echo "ERROR: Zenoh robot sessions require ROS_LOCALHOST_ONLY=1." >&2
+        exit 1
+    fi
+    if ! systemctl is-active --quiet orkar-zenoh-gt.service; then
+        echo "ERROR: orkar-zenoh-gt.service is not active." >&2
+        echo "       Run: bash scripts/network/configure_zenoh.sh status" >&2
+        exit 1
+    fi
+fi
 mkdir -p "${HOME}/agv_data"
 
 STAMP="$(date +%Y%m%d_%H%M%S)"
 SESSION_ID="${ROBOT_NAME}_${SCENARIO}_${STAMP}"
 BAG="${HOME}/agv_data/${SESSION_ID}"
+SENSOR_BAG="${BAG}_sensors"
+AUX_BAG="${BAG}_aux"
 BRINGUP_LOG="${HOME}/agv_data/${SESSION_ID}_bringup.log"
 RECORD_LOG="${HOME}/agv_data/${SESSION_ID}_record.log"
+SENSOR_RECORD_LOG="${HOME}/agv_data/${SESSION_ID}_sensors_record.log"
+AUX_RECORD_LOG="${HOME}/agv_data/${SESSION_ID}_aux_record.log"
+GT_HOLD_LOG="${HOME}/agv_data/${SESSION_ID}_gt_hold.log"
+GT_RATE_LOG="${HOME}/agv_data/${SESSION_ID}_gt_rate.log"
 SUMMARY_JSON="${HOME}/agv_data/${SESSION_ID}_circle_summary.json"
 PRECHECK_JSON="${HOME}/agv_data/${SESSION_ID}_circle_precheck.json"
 VALIDATION_JSON="${HOME}/agv_data/${SESSION_ID}_validate.json"
+if bool_true "${S1_SPLIT_RECORDING}"; then
+    BAG_PATHS=("${SENSOR_BAG}" "${AUX_BAG}")
+else
+    BAG_PATHS=("${BAG}")
+fi
 
 BRINGUP_PID=""
 REC_PID=""
+SENSOR_REC_PID=""
+AUX_REC_PID=""
+GT_HOLD_PID=""
+
+stop_gt_hold() {
+    if [ -n "${GT_HOLD_PID}" ] && kill -0 "${GT_HOLD_PID}" 2>/dev/null; then
+        stop_process_group "${GT_HOLD_PID}" TERM
+        wait_for_exit_or_kill "${GT_HOLD_PID}" "ground-truth discovery hold" 5
+    fi
+    GT_HOLD_PID=""
+}
 
 cleanup() {
     set +e
@@ -357,6 +528,17 @@ cleanup() {
         stop_process_group "${REC_PID}" INT
         wait_for_exit_or_kill "${REC_PID}" "ros2 bag record" "${S1_RECORDER_STOP_TIMEOUT}"
     fi
+    if [ -n "${SENSOR_REC_PID}" ] && kill -0 "${SENSOR_REC_PID}" 2>/dev/null; then
+        echo "Stopping sensor bag recorder..."
+        stop_process_group "${SENSOR_REC_PID}" INT
+        wait_for_exit_or_kill "${SENSOR_REC_PID}" "sensor bag recorder" "${S1_RECORDER_STOP_TIMEOUT}"
+    fi
+    if [ -n "${AUX_REC_PID}" ] && kill -0 "${AUX_REC_PID}" 2>/dev/null; then
+        echo "Stopping auxiliary bag recorder..."
+        stop_process_group "${AUX_REC_PID}" INT
+        wait_for_exit_or_kill "${AUX_REC_PID}" "auxiliary bag recorder" "${S1_RECORDER_STOP_TIMEOUT}"
+    fi
+    stop_gt_hold
     if [ -n "${BRINGUP_PID}" ] && kill -0 "${BRINGUP_PID}" 2>/dev/null; then
         echo "Stopping bringup..."
         stop_process_group "${BRINGUP_PID}" INT
@@ -373,24 +555,43 @@ echo "scenario:     ${SCENARIO}"
 echo "session:      ${SESSION_ID}"
 echo "ros_domain:   ${ROS_DOMAIN_ID}"
 echo "mocap_topic:  ${MOCAP_TOPIC}"
+echo "mocap_rate:   ${MOCAP_MIN_HZ}-${MOCAP_MAX_HZ} Hz"
 echo "cmd_topic:    ${CMD_TOPIC}"
-echo "bag:          ${BAG}"
+echo "bag_base:     ${BAG}"
 echo "radius:       ${S1_RADIUS} m"
 echo "duration:     ${S1_DURATION} s"
 echo "linear:       ${S1_LINEAR} m/s"
 echo "pose_qos:     $(bool_true "${S1_BEST_EFFORT_POSE}" && echo best_effort || echo reliable)"
-echo "discovery:    ${ROS_DISCOVERY_SERVER:-simple DDS (not configured)}"
+echo "d455_reset:   ${D455_RESET_MODE}"
+echo "transport:    ${ORKAR_ROS_TRANSPORT:-local DDS}"
+echo "localhost:    ${ROS_LOCALHOST_ONLY:-unset}"
 echo "precheck:     ${S1_PRECHECK} (${S1_PRECHECK_DURATION}s)"
 echo "dry_run:      ${S1_DRY_RUN}"
+echo "record_gt:    ${S1_RECORD_GT}"
+echo "split_record: ${S1_SPLIT_RECORDING}"
 echo "storage:      ${S1_STORAGE_ID}"
+echo "mcap_config:  ${S1_MCAP_STORAGE_CONFIG}"
+echo "mcap_preset:  ${S1_MCAP_STORAGE_PRESET_PROFILE:-none}"
+echo "record_cache: ${ROSBAG2_MAX_CACHE_SIZE} bytes"
 echo "========================================================================"
 
 kill_local_robot_graph
-reset_d455_once
+case "${D455_RESET_MODE}" in
+    none|false)
+        echo "Skipping D455 reset before bringup (D455_RESET_MODE=${D455_RESET_MODE})."
+        ;;
+    usb-reset)
+        reset_d455_once
+        ;;
+    *)
+        echo "ERROR: unsupported D455_RESET_MODE='${D455_RESET_MODE}' (use none or usb-reset)." >&2
+        exit 2
+        ;;
+esac
 
 echo "Starting one bringup..."
 setsid bash -lc \
-    "source /opt/ros/humble/setup.bash; [ -f '${ROOT}/agv2_ws/install/setup.bash' ] && source '${ROOT}/agv2_ws/install/setup.bash'; export ROS_DOMAIN_ID='${ROS_DOMAIN_ID}'; exec ros2 launch agv_bringup bringup.launch.py agv_serial_port:=/dev/ttyACM0 agv_color_profile:=640x480x15 agv_depth_profile:=640x480x15 enable_sync:=false initial_reset:=false agv_cmd_vel_topic:='${CMD_TOPIC}'" \
+    "source /opt/ros/humble/setup.bash; source '${ROOT}/scripts/network/load_ros_transport_env.sh'; [ -f '${ROOT}/agv2_ws/install/setup.bash' ] && source '${ROOT}/agv2_ws/install/setup.bash'; exec ros2 launch agv_bringup bringup.launch.py agv_serial_port:=/dev/ttyACM0 agv_color_profile:=640x480x15 agv_depth_profile:=640x480x15 enable_sync:=false initial_reset:=false agv_cmd_vel_topic:='${CMD_TOPIC}'" \
     >"${BRINGUP_LOG}" 2>&1 < /dev/null &
 BRINGUP_PID=$!
 echo "bringup_pid: ${BRINGUP_PID}"
@@ -400,13 +601,18 @@ required_topics=(
     "/odom"
     "/camera/color/image_raw"
     "/camera/depth/image_rect_raw"
-    "/camera/gyro/sample"
-    "/camera/accel/sample"
     "${MOCAP_TOPIC}"
 )
+if bool_true "${REQUIRE_IMU}"; then
+    required_topics+=("/camera/gyro/sample" "/camera/accel/sample")
+fi
 
 for topic in "${required_topics[@]}"; do
-    if ! wait_for_topic_once "${topic}" "${S1_TOPIC_WAIT_SEC}"; then
+    topic_type=""
+    if [ "${topic}" = "${MOCAP_TOPIC}" ]; then
+        topic_type="geometry_msgs/msg/PoseStamped"
+    fi
+    if ! wait_for_topic_once "${topic}" "${S1_TOPIC_WAIT_SEC}" "${topic_type}"; then
         echo "ERROR: required topic did not publish: ${topic}" >&2
         echo "--- bringup log tail ---" >&2
         tail -120 "${BRINGUP_LOG}" >&2 || true
@@ -414,6 +620,35 @@ for topic in "${required_topics[@]}"; do
     fi
 done
 echo "Required live topic gate passed."
+
+# A Zenoh-imported topic disappears from the local DDS graph when its last
+# local subscriber exits. Keep one lightweight subscriber alive so rosbag2 can
+# discover it during the rate gate, precheck, and recorder startup.
+echo "Holding ground-truth discovery route..."
+setsid env PYTHONUNBUFFERED=1 stdbuf -oL -eL \
+    ros2 topic echo "${MOCAP_TOPIC}" geometry_msgs/msg/PoseStamped \
+    --qos-reliability best_effort >"${GT_HOLD_LOG}" 2>&1 &
+GT_HOLD_PID=$!
+if ! kill -0 "${GT_HOLD_PID}" 2>/dev/null; then
+    echo "ERROR: ground-truth discovery hold exited before recording." >&2
+    tail -40 "${GT_HOLD_LOG}" >&2 || true
+    exit 1
+fi
+if ! timeout "${S1_GT_HOLD_READY_TIMEOUT}" bash -c \
+    'until grep -q "^header:" "$1" 2>/dev/null; do sleep 0.2; done' \
+    _ "${GT_HOLD_LOG}"; then
+    echo "ERROR: ground-truth discovery hold received no pose within ${S1_GT_HOLD_READY_TIMEOUT}s." >&2
+    tail -40 "${GT_HOLD_LOG}" >&2 || true
+    exit 1
+fi
+echo "Ground-truth discovery route is receiving poses."
+
+check_topic_rate_range \
+    "${MOCAP_TOPIC}" \
+    "${MOCAP_RATE_CHECK_SECONDS}" \
+    "${MOCAP_MIN_HZ}" \
+    "${MOCAP_MAX_HZ}" \
+    "${GT_RATE_LOG}"
 
 CIRCLE_ARGS=(
     --pose-topic "${MOCAP_TOPIC}"
@@ -502,14 +737,24 @@ if bool_true "${S1_RECORD}"; then
     esac
 
     ROS2_STORAGE_ARGS=(-s "${STORAGE_ID}")
-    if [ "${STORAGE_ID}" = "sqlite3" ] && [ -f "${ROOT}/configs/sqlite_resilient.yaml" ]; then
+    if [ "${STORAGE_ID}" = "mcap" ]; then
+        if [ -n "${S1_MCAP_STORAGE_PRESET_PROFILE}" ]; then
+            ROS2_STORAGE_ARGS+=(--storage-preset-profile "${S1_MCAP_STORAGE_PRESET_PROFILE}")
+        else
+            if [ ! -r "${S1_MCAP_STORAGE_CONFIG}" ]; then
+                echo "ERROR: MCAP storage config is not readable: ${S1_MCAP_STORAGE_CONFIG}" >&2
+                exit 1
+            fi
+            ROS2_STORAGE_ARGS+=(--storage-config-file "${S1_MCAP_STORAGE_CONFIG}")
+        fi
+    elif [ -f "${ROOT}/configs/sqlite_resilient.yaml" ]; then
         ROS2_STORAGE_ARGS+=(--storage-config-file "${ROOT}/configs/sqlite_resilient.yaml")
     fi
     if [ -f "${ROOT}/configs/rosbag2_sensor_qos.yaml" ]; then
         ROS2_STORAGE_ARGS+=(--qos-profile-overrides-path "${ROOT}/configs/rosbag2_sensor_qos.yaml")
     fi
 
-    RECORD_TOPICS=(
+    SENSOR_RECORD_TOPICS=(
         "/scan"
         "/odom"
         "${CMD_TOPIC}"
@@ -522,35 +767,108 @@ if bool_true "${S1_RECORD}"; then
         "/camera/extrinsics/depth_to_color"
         "/camera/extrinsics/depth_to_gyro"
         "/camera/extrinsics/depth_to_accel"
+    )
+    SENSOR_REQUIRED_TOPICS=(
+        "/scan"
+        "/odom"
+        "/tf"
+        "/tf_static"
+        "/camera/color/image_raw"
+        "/camera/color/camera_info"
+        "/camera/depth/image_rect_raw"
+        "/camera/depth/camera_info"
+    )
+    AUX_RECORD_TOPICS=(
         "/camera/imu"
         "/camera/gyro/sample"
         "/camera/accel/sample"
         "/imu"
         "/diagnostics"
-        "${MOCAP_TOPIC}"
-        "/mocap"
+        "/tag_detections"
+        "/aruco/target_pose"
     )
-
-    echo "Starting detached ros2 bag record (${STORAGE_ID})..."
-    RECORDER_PREFIX=()
-    if [ -n "${ROS_DISCOVERY_SERVER:-}" ] && [ -r "${FAST_DDS_SUPER_CLIENT_PROFILE}" ]; then
-        RECORDER_PREFIX=(
-            env -u ROS_DISCOVERY_SERVER
-            "FASTRTPS_DEFAULT_PROFILES_FILE=${FAST_DDS_SUPER_CLIENT_PROFILE}"
-            "RMW_IMPLEMENTATION=rmw_fastrtps_cpp"
-            "ROS_LOCALHOST_ONLY=0"
-            "ROS_DOMAIN_ID=${ROS_DOMAIN_ID}"
-        )
+    AUX_REQUIRED_TOPICS=()
+    if bool_true "${REQUIRE_IMU}"; then
+        AUX_REQUIRED_TOPICS+=("/camera/gyro/sample" "/camera/accel/sample")
     fi
-    setsid "${RECORDER_PREFIX[@]}" ros2 bag record \
-        --max-cache-size "${ROSBAG2_MAX_CACHE_SIZE:-1073741824}" \
-        "${ROS2_STORAGE_ARGS[@]}" \
-        -o "${BAG}" \
-        "${RECORD_TOPICS[@]}" \
-        >"${RECORD_LOG}" 2>&1 < /dev/null &
-    REC_PID=$!
-    echo "record_pid: ${REC_PID}"
-    sleep 5
+    if bool_true "${S1_RECORD_GT}"; then
+        AUX_RECORD_TOPICS+=("${MOCAP_TOPIC}" "/mocap")
+        AUX_REQUIRED_TOPICS+=("${MOCAP_TOPIC}")
+    fi
+
+    if bool_true "${S1_SPLIT_RECORDING}"; then
+        echo "Starting topic-partitioned ros2 bag recorders (${STORAGE_ID})..."
+        setsid ros2 bag record \
+            --max-cache-size "${S1_SENSOR_CACHE_SIZE}" \
+            "${ROS2_STORAGE_ARGS[@]}" \
+            -o "${SENSOR_BAG}" \
+            "${SENSOR_RECORD_TOPICS[@]}" \
+            >"${SENSOR_RECORD_LOG}" 2>&1 < /dev/null &
+        SENSOR_REC_PID=$!
+        setsid ros2 bag record \
+            --max-cache-size "${S1_AUX_CACHE_SIZE}" \
+            "${ROS2_STORAGE_ARGS[@]}" \
+            -o "${AUX_BAG}" \
+            "${AUX_RECORD_TOPICS[@]}" \
+            >"${AUX_RECORD_LOG}" 2>&1 < /dev/null &
+        AUX_REC_PID=$!
+        echo "sensor_record_pid: ${SENSOR_REC_PID}"
+        echo "aux_record_pid:    ${AUX_REC_PID}"
+        wait_for_recorder_subscriptions \
+            "${S1_RECORDER_READY_TIMEOUT}" \
+            "${SENSOR_REC_PID}" \
+            "${SENSOR_RECORD_LOG}" \
+            "sensor" \
+            "${SENSOR_REQUIRED_TOPICS[@]}"
+        if [ "${#AUX_REQUIRED_TOPICS[@]}" -gt 0 ]; then
+            wait_for_recorder_subscriptions \
+                "${S1_RECORDER_READY_TIMEOUT}" \
+                "${AUX_REC_PID}" \
+                "${AUX_RECORD_LOG}" \
+                "auxiliary" \
+                "${AUX_REQUIRED_TOPICS[@]}"
+        fi
+        check_recorder_subscription_skew \
+            "${SENSOR_RECORD_LOG}" \
+            "sensor" \
+            "${S1_MAX_RECORDER_SUBSCRIPTION_SKEW_SEC}" \
+            "${SENSOR_REQUIRED_TOPICS[@]}"
+        if [ "${#AUX_REQUIRED_TOPICS[@]}" -gt 1 ]; then
+            check_recorder_subscription_skew \
+                "${AUX_RECORD_LOG}" \
+                "auxiliary" \
+                "${S1_MAX_RECORDER_SUBSCRIPTION_SKEW_SEC}" \
+                "${AUX_REQUIRED_TOPICS[@]}"
+        fi
+    else
+        RECORD_TOPICS=("${SENSOR_RECORD_TOPICS[@]}" "${AUX_RECORD_TOPICS[@]}")
+        REQUIRED_RECORD_TOPICS=("${SENSOR_REQUIRED_TOPICS[@]}" "${AUX_REQUIRED_TOPICS[@]}")
+        echo "Starting single ros2 bag recorder (${STORAGE_ID})..."
+        setsid ros2 bag record \
+            --max-cache-size "${ROSBAG2_MAX_CACHE_SIZE}" \
+            "${ROS2_STORAGE_ARGS[@]}" \
+            -o "${BAG}" \
+            "${RECORD_TOPICS[@]}" \
+            >"${RECORD_LOG}" 2>&1 < /dev/null &
+        REC_PID=$!
+        echo "record_pid: ${REC_PID}"
+        wait_for_recorder_subscriptions \
+            "${S1_RECORDER_READY_TIMEOUT}" \
+            "${REC_PID}" \
+            "${RECORD_LOG}" \
+            "single" \
+            "${REQUIRED_RECORD_TOPICS[@]}"
+        check_recorder_subscription_skew \
+            "${RECORD_LOG}" \
+            "single" \
+            "${S1_MAX_RECORDER_SUBSCRIPTION_SKEW_SEC}" \
+            "${REQUIRED_RECORD_TOPICS[@]}"
+    fi
+    # The active recorder or the controller can now own the imported GT route;
+    # keeping the YAML-formatting probe alive would add avoidable callback load.
+    stop_gt_hold
+    sleep "${S1_RECORDER_PREROLL_SEC}"
+    echo "Required recorder subscriptions are active; scenario motion may start."
 fi
 
 set +e
@@ -562,16 +880,38 @@ sleep "${S1_POST_ROLL_SEC}"
 publish_zero
 
 if bool_true "${S1_RECORD}"; then
-    echo "Stopping ros2 bag record..."
-    stop_process_group "${REC_PID}" INT
-    wait_for_exit_or_kill "${REC_PID}" "ros2 bag record" "${S1_RECORDER_STOP_TIMEOUT}"
-    REC_PID=""
+    if bool_true "${S1_SPLIT_RECORDING}"; then
+        echo "Stopping topic-partitioned ros2 bag recorders..."
+        stop_process_group "${SENSOR_REC_PID}" INT
+        stop_process_group "${AUX_REC_PID}" INT
+        wait_for_exit_or_kill "${SENSOR_REC_PID}" "sensor bag recorder" "${S1_RECORDER_STOP_TIMEOUT}"
+        wait_for_exit_or_kill "${AUX_REC_PID}" "auxiliary bag recorder" "${S1_RECORDER_STOP_TIMEOUT}"
+        SENSOR_REC_PID=""
+        AUX_REC_PID=""
+    else
+        echo "Stopping ros2 bag record..."
+        stop_process_group "${REC_PID}" INT
+        wait_for_exit_or_kill "${REC_PID}" "ros2 bag record" "${S1_RECORDER_STOP_TIMEOUT}"
+        REC_PID=""
+    fi
+    stop_gt_hold
 
-    echo "--- record log tail ---"
-    tail -80 "${RECORD_LOG}" || true
-    echo "--- bag info ---"
-    ros2 bag info "${BAG}" | sed -n '1,180p' || true
+    if bool_true "${S1_SPLIT_RECORDING}"; then
+        echo "--- sensor record log tail ---"
+        tail -60 "${SENSOR_RECORD_LOG}" || true
+        echo "--- auxiliary record log tail ---"
+        tail -60 "${AUX_RECORD_LOG}" || true
+    else
+        echo "--- record log tail ---"
+        tail -80 "${RECORD_LOG}" || true
+    fi
+    for bag_path in "${BAG_PATHS[@]}"; do
+        echo "--- bag info: ${bag_path} ---"
+        ros2 bag info "${bag_path}" | sed -n '1,180p' || true
+    done
 fi
+
+stop_gt_hold
 
 echo "Stopping bringup..."
 stop_process_group "${BRINGUP_PID}" INT
@@ -595,10 +935,12 @@ if bool_true "${S1_RECORD}" && bool_true "${S1_VALIDATE}"; then
     MOCAP_TOPIC="${MOCAP_TOPIC}" \
     REQUIRE_GT="${REQUIRE_GT}" \
     REQUIRE_IMU="${REQUIRE_IMU}" \
+    COLOR_BAG_MIN_HZ="${COLOR_BAG_MIN_HZ:-12}" \
+    DEPTH_BAG_MIN_HZ="${DEPTH_BAG_MIN_HZ:-13}" \
     DEPTH_TOPIC="/camera/depth/image_rect_raw" \
     DEPTH_INFO_TOPIC="/camera/depth/camera_info" \
     IMU_TOPICS="/camera/gyro/sample /camera/accel/sample /camera/imu /imu" \
-    python3 scripts/logging/validate_ros2_bag.py "${BAG}" "${VALIDATE_ARGS[@]}"
+    python3 scripts/logging/validate_ros2_bag.py "${BAG_PATHS[@]}" "${VALIDATE_ARGS[@]}"
     VALIDATE_RC=$?
     set -e
 fi
@@ -609,7 +951,7 @@ echo "========================================================================"
 echo "S1 COMPLETE"
 echo "drive_rc:      ${DRIVE_RC}"
 echo "validate_rc:   ${VALIDATE_RC}"
-echo "bag:           ${BAG}"
+printf 'bag:           %s\n' "${BAG_PATHS[@]}"
 echo "precheck_json: ${PRECHECK_JSON}"
 echo "summary_json:  ${SUMMARY_JSON}"
 echo "validate_json: ${VALIDATION_JSON}"

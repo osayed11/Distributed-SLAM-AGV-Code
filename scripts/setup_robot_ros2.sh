@@ -2,9 +2,9 @@
 # Provision a ROS 2 AGV robot for repeatable dataset collection.
 #
 # Usage:
-#   bash scripts/setup_robot_ros2.sh agv102
-#   bash scripts/setup_robot_ros2.sh agv102 --skip-system
-#   SUDO_PASSWORD=ubuntu bash scripts/setup_robot_ros2.sh agv102
+#   bash scripts/setup_robot_ros2.sh <robot_id>
+#   bash scripts/setup_robot_ros2.sh <robot_id> --skip-system
+#   SUDO_PASSWORD="$ROBOT_SUDO_PASSWORD" bash scripts/setup_robot_ros2.sh <robot_id>
 #
 # This is the only supported provisioning script for the ROS 2 dataset robots.
 
@@ -13,10 +13,13 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
-ROBOT_ID="${1:-agv_unknown}"
-if [ "$#" -gt 0 ] && [[ "${1:-}" != --* ]]; then
-    shift
+if [ "$#" -eq 0 ] || [[ "${1}" == --* ]]; then
+    echo "ERROR: an explicit robot_id is required." >&2
+    echo "Usage: bash scripts/setup_robot_ros2.sh <robot_id> [options]" >&2
+    exit 2
 fi
+ROBOT_ID="$1"
+shift
 
 INSTALL_SYSTEM=true
 INSTALL_REALSENSE=true
@@ -47,7 +50,7 @@ Options:
   --no-low-risk-fixes      Do not install D455 low-risk udev rules.
 
 Environment:
-  SUDO_PASSWORD=ubuntu     Enables non-interactive sudo over SSH.
+  SUDO_PASSWORD            Optional password for non-interactive sudo over SSH.
   PYREALSENSE2_PIP_VERSION=2.58.1.10581
                            User-local pyrealsense2 fallback when apt lacks
                            python3-pyrealsense2 for arm64.
@@ -586,7 +589,7 @@ if [ "${INSTALL_SYSTEM}" = "true" ]; then
         "${ROS_DISTRO:+ros-${ROS_DISTRO}-visualization-msgs}" \
         "${ROS_DISTRO:+ros-${ROS_DISTRO}-xacro}"
 
-    python3 -m pip install --user "mcap>=1.2,<2" "natnet==0.2.0"
+    python3 -m pip install --user "mcap>=1.2,<2"
 
     if [ "${INSTALL_REALSENSE}" = "true" ]; then
         ensure_realsense_repo
@@ -625,7 +628,8 @@ chmod +x \
     "${ROOT}/scripts/diagnostics/"*.sh \
     "${ROOT}/scripts/diagnostics/"*.py \
     "${ROOT}/scripts/logging/"*.sh \
-    "${ROOT}/scripts/logging/"*.py 2>/dev/null || true
+    "${ROOT}/scripts/logging/"*.py \
+    "${ROOT}/scripts/network/"*.sh 2>/dev/null || true
 
 if [ "${RUN_DOCTOR}" = "true" ]; then
     section "robot doctor static gate"
@@ -641,6 +645,10 @@ fi
 
 section "next"
 cat <<EOF
+# Configure the lab GT transport once the MoCap-side router address is known:
+cd ${ROOT}
+bash scripts/network/configure_zenoh.sh robot <LAPTOP_IP> 7447
+
 # Run a real sensor gate once the camera is connected and bringup is available:
 cd ${ROOT}
 bash scripts/diagnostics/robot_doctor.sh ${ROBOT_ID} \\
