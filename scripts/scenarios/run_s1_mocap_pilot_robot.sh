@@ -42,6 +42,7 @@ Circle overrides:
   S1_POSE_TIMEOUT   Abort if MoCap pose is stale this long. Default: 0.30s
   S1_FORWARD_YAW_OFFSET_DEG  Per-robot rigid-body-to-forward calibration. Default: 0
   S1_BEST_EFFORT_POSE true/false. Default: true for sensor-data QoS.
+  S1_START_AT_EPOCH Unix epoch for synchronized fleet motion. Default: 0 (immediate).
   S1_DRY_RUN       true/false. Default: false. Proves lifecycle without publishing motion.
 
 Recording/gates:
@@ -421,6 +422,7 @@ S1_MAX_ANGULAR="${S1_MAX_ANGULAR:-0.55}"
 S1_MAX_RADIUS_HEADING_OFFSET_DEG="${S1_MAX_RADIUS_HEADING_OFFSET_DEG:-35}"
 S1_BEST_EFFORT_POSE="${S1_BEST_EFFORT_POSE:-true}"
 D455_RESET_MODE="${D455_RESET_MODE:-none}"
+S1_START_AT_EPOCH="${S1_START_AT_EPOCH:-0}"
 S1_DRY_RUN="${S1_DRY_RUN:-false}"
 S1_PRECHECK="${S1_PRECHECK:-true}"
 S1_PRECHECK_DURATION="${S1_PRECHECK_DURATION:-5}"
@@ -563,6 +565,7 @@ echo "duration:     ${S1_DURATION} s"
 echo "linear:       ${S1_LINEAR} m/s"
 echo "pose_qos:     $(bool_true "${S1_BEST_EFFORT_POSE}" && echo best_effort || echo reliable)"
 echo "d455_reset:   ${D455_RESET_MODE}"
+echo "start_epoch:  ${S1_START_AT_EPOCH}"
 echo "transport:    ${ORKAR_ROS_TRANSPORT:-local DDS}"
 echo "localhost:    ${ROS_LOCALHOST_ONLY:-unset}"
 echo "precheck:     ${S1_PRECHECK} (${S1_PRECHECK_DURATION}s)"
@@ -716,6 +719,15 @@ if bool_true "${S1_PRECHECK}" && ! bool_true "${S1_DRY_RUN}"; then
     publish_zero
     sleep 2
     echo "Precheck passed; recording may start."
+fi
+
+FULL_CIRCLE_ARGS=("${CIRCLE_ARGS[@]}")
+if ! awk -v epoch="${S1_START_AT_EPOCH}" 'BEGIN { exit !(epoch >= 0) }'; then
+    echo "ERROR: S1_START_AT_EPOCH must be a non-negative Unix epoch." >&2
+    exit 2
+fi
+if awk -v epoch="${S1_START_AT_EPOCH}" 'BEGIN { exit !(epoch > 0) }'; then
+    FULL_CIRCLE_ARGS+=(--start-at-epoch "${S1_START_AT_EPOCH}")
 fi
 
 if bool_true "${S1_RECORD}"; then
@@ -872,7 +884,7 @@ if bool_true "${S1_RECORD}"; then
 fi
 
 set +e
-python3 scripts/logging/drive_mocap_circle_ros2.py "${CIRCLE_ARGS[@]}"
+python3 scripts/logging/drive_mocap_circle_ros2.py "${FULL_CIRCLE_ARGS[@]}"
 DRIVE_RC=$?
 set -e
 

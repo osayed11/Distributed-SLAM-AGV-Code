@@ -189,6 +189,22 @@ def drive(node: MocapCircleNode, args) -> CircleSummary:
 
     node.publish_zero(0.5)
 
+    if args.start_at_epoch > 0.0:
+        print(
+            "Waiting stopped for synchronized start epoch %.3f (in %.1fs)"
+            % (args.start_at_epoch, max(0.0, args.start_at_epoch - time.time())),
+            flush=True,
+        )
+        while rclpy.ok() and not stop_requested and time.time() < args.start_at_epoch:
+            remaining = args.start_at_epoch - time.time()
+            rclpy.spin_once(node, timeout_sec=min(0.05, max(0.0, remaining)))
+        if stop_requested or not rclpy.ok():
+            raise RuntimeError("Stopped before synchronized start")
+        sample = node.pose
+        if sample is None or time.time() - sample.wall_time > args.pose_timeout:
+            raise RuntimeError("MoCap pose is stale at synchronized start")
+        print("Synchronized start released.", flush=True)
+
     first = node.pose or start_pose
     last_theta = math.atan2(first.y - center_y, first.x - center_x)
     initial_radius = math.hypot(first.x - center_x, first.y - center_y)
@@ -375,6 +391,12 @@ def parse_args(argv):
     parser.add_argument("--error-grace", type=float, default=3.0)
     parser.add_argument("--progress-epsilon", type=float, default=0.01)
     parser.add_argument("--wait-timeout", type=float, default=10.0)
+    parser.add_argument(
+        "--start-at-epoch",
+        type=float,
+        default=0.0,
+        help="Remain stopped until this Unix epoch; 0 starts immediately.",
+    )
     parser.add_argument("--rate", type=float, default=30.0)
     parser.add_argument("--report-period", type=float, default=1.0)
     parser.add_argument("--summary-json", default="")
@@ -403,6 +425,7 @@ def normalise_args(args):
     args.progress_grace = max(0.0, args.progress_grace)
     args.error_grace = max(0.0, args.error_grace)
     args.progress_epsilon = max(0.0, args.progress_epsilon)
+    args.start_at_epoch = max(0.0, args.start_at_epoch)
     args.wait_timeout = max(0.1, args.wait_timeout)
     args.rate = max(5.0, args.rate)
     args.report_period = max(0.5, args.report_period)
