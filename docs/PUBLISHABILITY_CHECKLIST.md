@@ -7,11 +7,11 @@ This checklist defines the minimum bar for turning the current AGV collection sy
 It is written for this project specifically:
 
 - multiple AGVs
-- ROS Melodic
+- ROS 2 Humble
 - wheel odometry
 - 2D LiDAR
-- RGB-D camera with IMU
-- optional UWB / inter-robot ranging
+- Intel RealSense D455 RGB-D camera with IMU
+- OptiTrack/MoCap ground truth for benchmark runs
 
 This document is not a guarantee of publication. It is a quality-control framework to reduce the most common reasons datasets are rejected or ignored.
 
@@ -40,7 +40,6 @@ The dataset should be:
 
 ## Strongly Recommended
 
-- UWB ranging
 - communication logs between robots
 - diagnostics topics
 - battery / motor / health status
@@ -75,7 +74,7 @@ dataset/
           qa_report.json
           robots/
             <robot_id>/
-              rosbag/
+              ros2_bag/
               calibration/
               notes.md
 ```
@@ -111,7 +110,8 @@ dataset/
 - camera-to-base extrinsics
 - IMU-to-base extrinsics
 - temporal offsets between sensors
-- UWB anchor calibration if used
+- MoCap rigid-body-to-base transform
+- communication-link calibration only if communication metrics are released
 
 ## Required Process
 
@@ -170,12 +170,12 @@ These are practical targets for publishable quality, not immutable laws.
 - static transforms documented
 - no broken links during collection
 
-## UWB
+## Communication Logs
 
-- documented ranging rate
-- packet loss measured
-- anchor layout documented
-- range noise characterized
+- record bandwidth and packet-loss evidence when the dataset claims to evaluate
+  distributed communication behavior
+- otherwise state clearly that communication effects are scenario context, not a
+  benchmarked sensor stream
 
 ## Global Timing
 
@@ -350,12 +350,12 @@ Every run should pass a QA pipeline.
 For this project, the most important next actions are:
 
 1. Finalize the real sensor suite on the AGV.
-2. Make `agv_ws/src/agv_bringup/launch/logging.launch` the single source of truth for collection.
-3. Add camera, IMU, UWB, and diagnostics topics to logging once verified.
-4. Define a metadata schema and write it on every run.
-5. Establish a calibration and synchronization SOP.
+2. Keep `scripts/logging/start_session.sh` as the single collection entry point.
+3. Keep camera, IMU, LiDAR, odom, command, diagnostics, and ground-truth topics in the ROS2 recorder.
+4. Keep the session manifest and diagnostic report with every run.
+5. Maintain the calibration and synchronization SOP.
 6. Build a scenario matrix before large-scale collection starts.
-7. Add QA scripts before recording a large number of runs.
+7. Run `dataset_run_audit.py --strict` before declaring a run publishable.
 8. Define benchmark splits and baseline methods early.
 
 ## Publication Readiness Gate

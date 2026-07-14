@@ -1,0 +1,28 @@
+{
+  mode: "client",
+  scouting: {
+    multicast: { enabled: false },
+    gossip: { enabled: false },
+  },
+  plugins: {
+    ros2dds: {
+      nodename: "orkar_zenoh_gt_client",
+      domain: 0,
+      ros_localhost_only: true,
+      allow: {
+        publishers: [],
+        subscribers: [
+          "/optitrack/rigid_bodies/orkar___ROBOT_ID__",
+        ],
+        service_servers: [],
+        service_clients: [],
+        action_servers: [],
+        action_clients: [],
+      },
+      reliable_routes_blocking: true,
+    },
+    rest: {
+      http_port: "127.0.0.1:8000",
+    },
+  },
+}

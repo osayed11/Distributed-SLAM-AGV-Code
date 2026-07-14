@@ -7,14 +7,16 @@ import sys
 import time
 
 try:
-    from natnet import NatNetClient
+    from orkar_natnet_sdk_client import NatNetClient
 except ImportError:
-    print(
-        "Missing Python package 'natnet'. Install it with: python3 -m pip install natnet",
-        file=sys.stderr,
-    )
-    raise
-
+    try:
+        from orkar_natnet_client import NatNetClient
+    except ImportError:
+        print(
+            "Missing OptiTrack NatNet SDK 4.4 and fallback package 'natnet'.",
+            file=sys.stderr,
+        )
+        raise
 
 def guess_local_ip(server):
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -31,11 +33,11 @@ def fmt_tuple(values):
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Watch one rigid body from a NatNet stream.")
-    parser.add_argument("--server", default="192.168.50.200",
+    parser.add_argument("--server", required=True,
                         help="Motive/NatNet server IP")
     parser.add_argument("--local", default=None,
                         help="Local interface IP. Defaults to auto-detect.")
-    parser.add_argument("--name", default="orkar_agv1",
+    parser.add_argument("--name", required=True,
                         help="Rigid body name to print")
     parser.add_argument("--period", type=float, default=0.25,
                         help="Print period in seconds")
@@ -53,14 +55,18 @@ def main():
     local_ip = args.local or guess_local_ip(args.server)
 
     state = {
-        "names": [],
+        "name_by_id": {},
         "printed_defs": False,
         "last_print": 0.0,
         "seen_target": False,
     }
 
     def on_descriptions(desc):
-        state["names"] = [rb.name for rb in desc.rigid_bodies]
+        state["name_by_id"] = {
+            int(rb.id_num): str(rb.name)
+            for rb in desc.rigid_bodies
+            if rb.name is not None
+        }
         if state["printed_defs"]:
             return
 
@@ -70,18 +76,21 @@ def main():
         for rb in desc.rigid_bodies:
             marker_count = len(rb.markers) if rb.markers is not None else 0
             print("  name=%s id=%s markers=%d" % (rb.name, rb.id_num, marker_count))
-        if args.name not in state["names"]:
+        if args.name not in state["name_by_id"].values():
             print("WARN: requested rigid body '%s' is not in model definitions." % args.name)
         state["printed_defs"] = True
 
     def on_frame(frame):
-        if args.name not in state["names"]:
+        rb = next(
+            (
+                item
+                for item in frame.rigid_bodies
+                if state["name_by_id"].get(int(item.id_num)) == args.name
+            ),
+            None,
+        )
+        if rb is None:
             return
-        index = state["names"].index(args.name)
-        if index >= len(frame.rigid_bodies):
-            return
-
-        rb = frame.rigid_bodies[index]
         now = time.time()
         if now - state["last_print"] < args.period and not args.once:
             return

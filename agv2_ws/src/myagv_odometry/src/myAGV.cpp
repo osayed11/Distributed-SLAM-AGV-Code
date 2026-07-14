@@ -118,7 +118,7 @@ void MyAGV::writeSpeed(double movex, double movey, double rot)
        static_cast<unsigned int>(y_send) +
        static_cast<unsigned int>(rot_send)) % 256);
 
-  // Match the original ROS1 driver frame length. The MCU receives the first
+  // Match the original MCU protocol frame length. The MCU receives the first
   // six bytes as header + x/y/yaw/checksum and ignores the two trailing zeros.
   unsigned char buf[8] = {HEADER, HEADER, x_send, y_send, rot_send, checksum, 0, 0};
 
@@ -248,7 +248,7 @@ void MyAGV::publishImuSensor()
 void MyAGV::execute()
 {
   // Send velocity command. The MCU protocol expects normalized m/s, m/s,
-  // rad/s-style command values in [-1, 1], matching the original ROS1 driver.
+  // rad/s-style command values in [-1, 1], matching the original MCU protocol.
   writeSpeed(linearX, linearY, angularZ);
 
   // Read sensor packet

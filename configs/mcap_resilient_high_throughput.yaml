@@ -1,0 +1,12 @@
+# Publishable MCAP profile for Raspberry Pi sensor recording.
+# Fast Zstd reduces SD-card traffic while retaining chunk CRCs, message indexes,
+# and the summary required for integrity checks and efficient replay.
+noChunkCRC: false
+noSummaryCRC: false
+noChunking: false
+noMessageIndex: false
+noSummary: false
+chunkSize: 4194304
+compression: "Zstd"
+compressionLevel: "Fastest"
+forceCompression: false

@@ -1,6 +1,10 @@
 ![YDLIDAR](images/YDLidar.jpg  "YDLIDAR")
 # YDLIDAR ROS2 Driver
 
+This is the upstream driver reference included with the vendored LiDAR package.
+For ORKAR robot setup, provisioning, validation, and dataset recording, use the
+repository root `README.md` instead of these generic upstream setup steps.
+
 ydlidar_ros2_driver is a new ros package, which is designed to gradually become the standard driver package for ydlidar devices in the ros2 environment.
 
 ## How to [install ROS2](https://index.ros.org/doc/ros2/Installation)
@@ -21,11 +25,11 @@ ydlidar_ros2_driver depends on YDLidar-SDK library. If you have never installed 
 
 ## Build ydlidar_ros2_driver
 
-1. Clone ydlidar_ros2_driver master branch from github for old version: 
+1. Clone ydlidar_ros2_driver master branch from GitHub for legacy ROS2 distributions:
 
    `git clone https://github.com/YDLIDAR/ydlidar_ros2_driver.git ydlidar_ros2_ws/src/ydlidar_ros2_driver`
 
-   Clone ydlidar_ros2_driver humble branch from github for humble,jazzy,etc: 
+   Clone ydlidar_ros2_driver humble branch from GitHub for Humble, Jazzy, etc:
 
    `git clone -b humble https://github.com/YDLIDAR/ydlidar_ros2_driver.git ydlidar_ros2_ws/src/ydlidar_ros2_driver`
 
@@ -200,8 +204,6 @@ More paramters details, see [here](details.md)
 ![Development Path](images/EAI.png)
 
 If you have any extra questions, please feel free to [contact us](http://www.ydlidar.cn/cn/contact)
-
-
 
 
 

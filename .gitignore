@@ -1,12 +1,20 @@
 **/build/
-**/devel/
 **/install/
+**/log/
 **/logs/
-.catkin_workspace
+.DS_Store
+__pycache__/
+*.py[cod]
 build/
-devel/
 install/
+log/
 logs/
 *.bag
+*.db3
+*.mcap
+metadata.yaml
 *.swp
 swapfile
+# pixi environments
+.pixi/*
+!.pixi/config.toml

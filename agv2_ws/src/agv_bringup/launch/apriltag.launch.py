@@ -1,8 +1,7 @@
-"""ROS2 apriltag launch (port of agv_bringup/launch/apriltag.launch).
+"""ROS2 apriltag launch for the AGV dataset stack.
 
 The ROS2 apriltag_ros node subscribes to image_rect and camera_info.
-We remap to the RealSense colour topics (same as ROS1 which also used
-the raw colour image for detection).
+We remap to the RealSense colour topics used by the D455 bringup.
 """
 
 from launch import LaunchDescription
