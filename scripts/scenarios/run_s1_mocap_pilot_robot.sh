@@ -57,7 +57,7 @@ Recording/gates:
   S1_RECORD_GT      Include the control pose in the robot bag. Default: true
   S1_SPLIT_RECORDING  Record image and auxiliary topics in separate MCAP shards. Default: true
   S1_VALIDATE       true/false. Default: true
-  S1_STORAGE_ID     mcap/sqlite3/auto. Default: auto, prefer MCAP when installed.
+  S1_STORAGE_ID     Must be mcap. Default: mcap; collection fails if unavailable.
   S1_MCAP_STORAGE_CONFIG  MCAP writer config. Default: resilient fast-Zstd profile.
   S1_MCAP_STORAGE_PRESET_PROFILE  Optional MCAP preset; overrides the config file.
   ROSBAG2_MAX_CACHE_SIZE  Recorder cache bytes. Default: 536870912 (512 MiB).
@@ -444,7 +444,7 @@ S1_RECORD="${S1_RECORD:-true}"
 S1_RECORD_GT="${S1_RECORD_GT:-true}"
 S1_SPLIT_RECORDING="${S1_SPLIT_RECORDING:-true}"
 S1_VALIDATE="${S1_VALIDATE:-true}"
-S1_STORAGE_ID="${S1_STORAGE_ID:-auto}"
+S1_STORAGE_ID="${S1_STORAGE_ID:-mcap}"
 S1_MCAP_STORAGE_CONFIG="${S1_MCAP_STORAGE_CONFIG:-${ROOT}/configs/mcap_resilient_high_throughput.yaml}"
 S1_MCAP_STORAGE_PRESET_PROFILE="${S1_MCAP_STORAGE_PRESET_PROFILE:-}"
 ROSBAG2_MAX_CACHE_SIZE="${ROSBAG2_MAX_CACHE_SIZE:-536870912}"
@@ -464,7 +464,7 @@ S1_POST_ROLL_SEC="${S1_POST_ROLL_SEC:-5}"
 S1_MIN_BAG_DURATION="${S1_MIN_BAG_DURATION:-30}"
 REQUIRE_GT="${REQUIRE_GT:-true}"
 REQUIRE_IMU="${REQUIRE_IMU:-true}"
-REQUIRE_RESILIENT_STORAGE="${REQUIRE_RESILIENT_STORAGE:-false}"
+REQUIRE_RESILIENT_STORAGE="${REQUIRE_RESILIENT_STORAGE:-true}"
 S1_RUNTIME_IMU_GUARD="${S1_RUNTIME_IMU_GUARD:-${REQUIRE_IMU}}"
 
 require_nonempty "MOCAP_TOPIC" "${MOCAP_TOPIC}"
@@ -890,36 +890,26 @@ if awk -v epoch="${S1_START_AT_EPOCH}" 'BEGIN { exit !(epoch > 0) }'; then
 fi
 
 if bool_true "${S1_RECORD}"; then
-    STORAGE_ID="${S1_STORAGE_ID}"
-    if [ "${STORAGE_ID}" = "auto" ]; then
-        if ros2 bag record --help 2>/dev/null | grep -Eq -- "-s .*mcap|--storage .*mcap|\\bmcap\\b"; then
-            STORAGE_ID="mcap"
-        else
-            STORAGE_ID="sqlite3"
-        fi
+    if [ "${S1_STORAGE_ID}" != "mcap" ]; then
+        echo "ERROR: S1 dataset collection is MCAP-only; got S1_STORAGE_ID=${S1_STORAGE_ID}." >&2
+        exit 2
     fi
-
-    case "${STORAGE_ID}" in
-        mcap|sqlite3) ;;
-        *)
-            echo "ERROR: S1_STORAGE_ID must be auto, mcap, or sqlite3; got ${S1_STORAGE_ID}" >&2
-            exit 2
-            ;;
-    esac
+    if ! ros2 bag record --help 2>/dev/null | grep -Eq -- "-s .*mcap|--storage .*mcap|\\bmcap\\b"; then
+        echo "ERROR: rosbag2 MCAP storage is unavailable; refusing dataset collection." >&2
+        echo "       Install ros-${ROS_DISTRO:-humble}-rosbag2-storage-mcap and rerun setup." >&2
+        exit 1
+    fi
+    STORAGE_ID="mcap"
 
     ROS2_STORAGE_ARGS=(-s "${STORAGE_ID}")
-    if [ "${STORAGE_ID}" = "mcap" ]; then
-        if [ -n "${S1_MCAP_STORAGE_PRESET_PROFILE}" ]; then
-            ROS2_STORAGE_ARGS+=(--storage-preset-profile "${S1_MCAP_STORAGE_PRESET_PROFILE}")
-        else
-            if [ ! -r "${S1_MCAP_STORAGE_CONFIG}" ]; then
-                echo "ERROR: MCAP storage config is not readable: ${S1_MCAP_STORAGE_CONFIG}" >&2
-                exit 1
-            fi
-            ROS2_STORAGE_ARGS+=(--storage-config-file "${S1_MCAP_STORAGE_CONFIG}")
+    if [ -n "${S1_MCAP_STORAGE_PRESET_PROFILE}" ]; then
+        ROS2_STORAGE_ARGS+=(--storage-preset-profile "${S1_MCAP_STORAGE_PRESET_PROFILE}")
+    else
+        if [ ! -r "${S1_MCAP_STORAGE_CONFIG}" ]; then
+            echo "ERROR: MCAP storage config is not readable: ${S1_MCAP_STORAGE_CONFIG}" >&2
+            exit 1
         fi
-    elif [ -f "${ROOT}/configs/sqlite_resilient.yaml" ]; then
-        ROS2_STORAGE_ARGS+=(--storage-config-file "${ROOT}/configs/sqlite_resilient.yaml")
+        ROS2_STORAGE_ARGS+=(--storage-config-file "${S1_MCAP_STORAGE_CONFIG}")
     fi
     if [ -f "${ROOT}/configs/rosbag2_sensor_qos.yaml" ]; then
         ROS2_STORAGE_ARGS+=(--qos-profile-overrides-path "${ROOT}/configs/rosbag2_sensor_qos.yaml")
