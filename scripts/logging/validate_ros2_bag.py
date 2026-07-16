@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 import re
 import sqlite3
@@ -103,8 +104,10 @@ def required_specs() -> List[TopicSpec]:
     depth_info_topic = os.environ.get("DEPTH_INFO_TOPIC", "/camera/depth/camera_info")
     legacy_rgbd_min_hz = os.environ.get("RGBD_BAG_MIN_HZ")
     if legacy_rgbd_min_hz is None:
+        # Both image streams are configured for 15 Hz. Use one fleet-wide hard
+        # floor at 80% of nominal; retain the exact measured rates in reports.
         color_min_hz = env_float("COLOR_BAG_MIN_HZ", 12.0)
-        depth_min_hz = env_float("DEPTH_BAG_MIN_HZ", 13.0)
+        depth_min_hz = env_float("DEPTH_BAG_MIN_HZ", 12.0)
     else:
         shared_min_hz = env_float("RGBD_BAG_MIN_HZ", 10.0)
         color_min_hz = env_float("COLOR_BAG_MIN_HZ", shared_min_hz)
@@ -270,6 +273,40 @@ def stats_from_timestamps(topic: str, msg_type: str, timestamps: Sequence[int]) 
         non_monotonic_count=non_monotonic_count,
         gap_events=gap_events,
     )
+
+
+def timestamps_from_stats(item: TopicStats) -> List[int]:
+    """Reconstruct sorted timestamps without retaining a second large list."""
+    if item.count <= 0 or item.first_ns is None:
+        return []
+    if item.count == 1 or not item.gap_events:
+        return [item.first_ns]
+    return [item.gap_events[0][0], *(event[1] for event in item.gap_events)]
+
+
+def clip_stats_to_window(
+    stats: Dict[str, TopicStats],
+    start_ns: int,
+    end_ns: int,
+) -> Dict[str, TopicStats]:
+    """Return stream statistics for an inclusive experiment time window.
+
+    ``/tf_static`` is intentionally retained from the full bag because its
+    latched transforms normally arrive during recorder pre-roll, not repeatedly
+    during robot motion.
+    """
+    clipped: Dict[str, TopicStats] = {}
+    for topic, item in stats.items():
+        if topic == "/tf_static":
+            clipped[topic] = item
+            continue
+        timestamps = [
+            timestamp
+            for timestamp in timestamps_from_stats(item)
+            if start_ns <= timestamp <= end_ns
+        ]
+        clipped[topic] = stats_from_timestamps(topic, item.msg_type, timestamps)
+    return clipped
 
 
 def inspect_sqlite(db_path: Path) -> Dict[str, TopicStats]:
@@ -499,6 +536,16 @@ def classify_gaps(
 
 
 def gap_limits_for_topic(topic: str, target_hz: float) -> Tuple[float, float]:
+    if (
+        topic in {"/camera/imu", "/imu"}
+        or topic.endswith("/gyro/sample")
+        or topic.endswith("/accel/sample")
+    ):
+        hard_limit = env_float(
+            "IMU_MAJOR_GAP_SEC",
+            env_float("MAX_CAMERA_IMU_GATE_GAP_SEC", 0.10),
+        )
+        return hard_limit, hard_limit
     if topic.startswith("/camera/") and topic.endswith("/camera_info"):
         return (
             env_float("CAMERA_INFO_MINOR_GAP_SEC", 0.75),
@@ -738,6 +785,33 @@ def validate_imu(
                 bag_end_ns,
                 item.topic.strip("/").replace("/", "_") + "_coverage",
             )
+        target_hz = target_hz_for_topic(item.topic)
+        _, major, max_gap, ignored_edge = classify_gaps(
+            item,
+            target_hz,
+            bag_start_ns,
+            bag_end_ns,
+        )
+        if max_gap is not None:
+            check = item.topic.strip("/").replace("/", "_") + "_gaps"
+            edge_note = f"; ignored {ignored_edge} start/stop edge gap(s)" if ignored_edge else ""
+            if major:
+                _, major_limit = gap_limits_for_topic(item.topic, target_hz)
+                record(
+                    results,
+                    FAIL if require_imu else WARN,
+                    check,
+                    f"{major} major gap(s); max internal gap {max_gap:.3f}s exceeds hard threshold {major_limit:.3f}s{edge_note}",
+                    item.topic,
+                )
+            else:
+                record(
+                    results,
+                    PASS,
+                    check,
+                    f"max internal gap {max_gap:.3f}s{edge_note}",
+                    item.topic,
+                )
     if require_imu and not live:
         record(results, FAIL, "imu", "IMU required but all IMU topics are empty")
 
@@ -776,8 +850,44 @@ def main() -> int:
         help="fail SQLite .db3 bags unless sqlite_resilient/WAL evidence is recorded, or use MCAP",
     )
     parser.add_argument("--min-duration", type=float, default=float(os.environ.get("MIN_DURATION_SEC", "30")))
+    parser.add_argument(
+        "--window-start-epoch",
+        type=float,
+        help="validate stream quality from this Unix epoch instead of over recorder pre/post-roll",
+    )
+    parser.add_argument(
+        "--window-duration",
+        type=float,
+        help="experiment window duration in seconds; requires --window-start-epoch",
+    )
+    parser.add_argument(
+        "--window-end-epoch",
+        type=float,
+        help="experiment window end Unix epoch; alternative to --window-duration",
+    )
     parser.add_argument("--json-out", help="write machine-readable validation report")
     args = parser.parse_args()
+
+    has_window_start = args.window_start_epoch is not None
+    has_window_duration = args.window_duration is not None
+    has_window_end = args.window_end_epoch is not None
+    if has_window_duration and has_window_end:
+        parser.error("use only one of --window-duration or --window-end-epoch")
+    if has_window_start != (has_window_duration or has_window_end):
+        parser.error(
+            "--window-start-epoch requires exactly one of --window-duration or --window-end-epoch"
+        )
+    for name, value in (
+        ("--window-start-epoch", args.window_start_epoch),
+        ("--window-duration", args.window_duration),
+        ("--window-end-epoch", args.window_end_epoch),
+    ):
+        if value is not None and not math.isfinite(value):
+            parser.error(f"{name} must be finite")
+    if has_window_duration and args.window_duration <= 0:
+        parser.error("--window-duration must be positive")
+    if has_window_end and args.window_end_epoch <= args.window_start_epoch:
+        parser.error("--window-end-epoch must be later than --window-start-epoch")
 
     paths = [Path(value).expanduser() for value in args.bags]
     files_by_path = [
@@ -815,6 +925,8 @@ def main() -> int:
             )
         duration_sec = 0.0
         stats: Dict[str, TopicStats] = {}
+        bag_start_ns = None
+        bag_end_ns = None
     elif db3_files:
         for db3 in db3_files:
             try:
@@ -837,6 +949,7 @@ def main() -> int:
                 results,
             )
         bag_start_ns, bag_end_ns, duration_sec = bag_bounds(stats)
+
     else:
         try:
             stats = inspect_mcap_bag(mcap_files)
@@ -856,6 +969,62 @@ def main() -> int:
             )
         bag_start_ns, bag_end_ns, duration_sec = bag_bounds(stats)
 
+    full_stats = stats
+    full_bag_start_ns = bag_start_ns
+    full_bag_end_ns = bag_end_ns
+    full_bag_duration_sec = duration_sec
+    evaluation_window = {
+        "mode": "full_bag",
+        "start_epoch": bag_start_ns / 1e9 if bag_start_ns is not None else None,
+        "end_epoch": bag_end_ns / 1e9 if bag_end_ns is not None else None,
+        "duration_sec": duration_sec,
+    }
+
+    if has_window_start:
+        window_start_ns = int(round(args.window_start_epoch * 1e9))
+        if has_window_duration:
+            window_end_ns = window_start_ns + int(round(args.window_duration * 1e9))
+        else:
+            window_end_ns = int(round(args.window_end_epoch * 1e9))
+        duration_sec = (window_end_ns - window_start_ns) / 1e9
+        bag_start_ns = window_start_ns
+        bag_end_ns = window_end_ns
+        stats = clip_stats_to_window(full_stats, window_start_ns, window_end_ns)
+        evaluation_window = {
+            "mode": "experiment_window",
+            "start_epoch": window_start_ns / 1e9,
+            "end_epoch": window_end_ns / 1e9,
+            "duration_sec": duration_sec,
+        }
+
+        print("\n--- Evaluation window ---")
+        if full_bag_start_ns is None or full_bag_end_ns is None:
+            record(results, FAIL, "evaluation_window", "bag has no timestamped messages")
+        else:
+            missing_start_sec = max(0.0, (full_bag_start_ns - window_start_ns) / 1e9)
+            missing_end_sec = max(0.0, (window_end_ns - full_bag_end_ns) / 1e9)
+            tolerance = env_float("COVERAGE_TOLERANCE_SEC", 3.0)
+            if missing_start_sec > tolerance or missing_end_sec > tolerance:
+                record(
+                    results,
+                    FAIL,
+                    "evaluation_window",
+                    (
+                        f"bag misses experiment window by {missing_start_sec:.2f}s at start "
+                        f"and {missing_end_sec:.2f}s at end"
+                    ),
+                )
+            else:
+                record(
+                    results,
+                    PASS,
+                    "evaluation_window",
+                    (
+                        f"{duration_sec:.1f}s from {window_start_ns / 1e9:.3f}; "
+                        "recorder pre/post-roll excluded from stream gates"
+                    ),
+                )
+
     print("\n--- Duration ---")
     if duration_sec >= args.min_duration:
         record(results, PASS, "duration", f"{duration_sec:.1f}s")
@@ -869,7 +1038,7 @@ def main() -> int:
 
     if stats:
         validate_topics(stats, results, duration_sec, bag_start_ns, bag_end_ns)
-        validate_storage_timestamp_monotonicity(stats, results)
+        validate_storage_timestamp_monotonicity(full_stats, results)
         validate_ground_truth(stats, results, args.require_gt, bag_start_ns, bag_end_ns)
         validate_imu(stats, results, args.require_imu, bag_start_ns, bag_end_ns)
 
@@ -896,6 +1065,8 @@ def main() -> int:
         "bag": str(paths[0]),
         "bags": [str(path) for path in paths],
         "duration_sec": duration_sec,
+        "full_bag_duration_sec": full_bag_duration_sec,
+        "evaluation_window": evaluation_window,
         "verdict": verdict,
         "counts": {"pass": n_pass, "warn": n_warn, "fail": n_fail},
         "require_resilient_storage": args.require_resilient_storage,

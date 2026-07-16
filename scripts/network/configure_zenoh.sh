@@ -186,6 +186,9 @@ EOF
     fi
     sudo_run systemctl disable --now orkar-fastdds-discovery.service 2>/dev/null || true
     sudo_run systemctl disable --now orkar-mocap-bridge.service 2>/dev/null || true
+    # A robot imports GT through Zenoh. Running a NatNet source here creates a
+    # duplicate route and consumes a substantial fraction of one Pi core.
+    sudo_run systemctl disable --now orkar-natnet-pose-source.service 2>/dev/null || true
     sudo_run systemctl daemon-reload
     sudo_run systemctl enable orkar-zenoh-gt.service >/dev/null
     sudo_run systemctl restart orkar-zenoh-gt.service

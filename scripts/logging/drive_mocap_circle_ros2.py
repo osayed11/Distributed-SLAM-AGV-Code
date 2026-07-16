@@ -78,6 +78,9 @@ class CircleSummary:
     elapsed_sec: float
     laps: float
     radius_m: float
+    center_x_m: float
+    center_y_m: float
+    center_source: str
     initial_radius_error_m: float
     final_radius_error_m: float
     max_radius_error_m: float
@@ -324,6 +327,9 @@ def drive(node: MocapCircleNode, args) -> CircleSummary:
         elapsed_sec=elapsed,
         laps=progress / (2.0 * math.pi),
         radius_m=args.radius,
+        center_x_m=center_x,
+        center_y_m=center_y,
+        center_source="explicit" if args.center_x is not None else "inferred",
         initial_radius_error_m=initial_radius_error,
         final_radius_error_m=final_radius_error,
         max_radius_error_m=max_abs_radius_error,
@@ -464,7 +470,8 @@ def main(argv=None):
         try:
             node.destroy_node()
         finally:
-            rclpy.shutdown()
+            if rclpy.ok():
+                rclpy.shutdown()
 
 
 if __name__ == "__main__":

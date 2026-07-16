@@ -67,6 +67,19 @@ def topic_state(text: str, topics: tuple[str, ...]) -> tuple[list[str], list[str
     failed: list[str] = []
     warned: list[str] = []
     for line in text.splitlines():
+        validator_match = re.match(r"^\s*\[(OK|WARN|FAIL)\]\s+(.*)$", line)
+        if validator_match:
+            status, body = validator_match.groups()
+            for topic in topics:
+                if topic not in body:
+                    continue
+                if status == "OK":
+                    passed.append(topic)
+                elif status == "WARN":
+                    warned.append(topic)
+                else:
+                    failed.append(topic)
+
         for label, topic in GATE_LABEL_TOPICS.items():
             if topic not in topics:
                 continue
@@ -131,13 +144,16 @@ def classify(text: str) -> tuple[str, list[str], list[str]]:
             r"Failed to query \(SET_CUR\) UVC control",
         ),
     )
-    hid_timeout = has_any(
-        text,
-        (
+    hid_frame_timeout_count = len(
+        re.findall(
             r"iio_hid_sensor: Frames didn't arrived",
-            r"No report with id",
-            r"hid-sensor",
-        ),
+            text,
+            flags=re.IGNORECASE,
+        )
+    )
+    hid_timeout = hid_frame_timeout_count > 0 or has_any(
+        text,
+        (r"No report with id", r"hid-sensor"),
     )
     disconnect = has_any(
         text,
@@ -190,13 +206,19 @@ def classify(text: str) -> tuple[str, list[str], list[str]]:
         evidence.append("UVC extension-unit control timeout text was observed")
     if hid_timeout:
         evidence.append("HID/IIO motion frame timeout text was observed")
+    if hid_frame_timeout_count:
+        evidence.append(f"librealsense reported {hid_frame_timeout_count} HID motion frame timeouts")
     if disconnect:
         evidence.append("USB disconnect/device-drop text was observed")
-    required_video_pass = all(topic in video_pass for topic in REQUIRED_VIDEO_TOPICS)
-    raw_imu_pass = all(topic in imu_pass for topic in REQUIRED_IMU_TOPICS)
+    required_video_pass = all(
+        topic in video_pass and topic not in video_fail for topic in REQUIRED_VIDEO_TOPICS
+    )
+    raw_imu_pass = all(
+        topic in imu_pass and topic not in imu_fail for topic in REQUIRED_IMU_TOPICS
+    )
     fused_imu_pass = "/camera/imu" in imu_pass
     required_imu_pass = raw_imu_pass
-    critical_imu_fail = bool(imu_fail) and not required_imu_pass
+    critical_imu_fail = any(topic in imu_fail for topic in REQUIRED_IMU_TOPICS)
     all_stream_rates_pass = required_video_pass and required_imu_pass and not video_fail and not critical_imu_fail
 
     if all_stream_rates_pass:
@@ -223,11 +245,21 @@ def classify(text: str) -> tuple[str, list[str], list[str]]:
             "Software proves failure below ROS on the UVC video/control path. Camera/cable vs Pi/port requires A/B swap."
         )
         return "REALSENSE_UVC_VIDEO_CONTROL_TIMEOUT", evidence, limitations
-    if critical_imu_fail and video_pass and (hid_timeout or uvc_timeout):
+    if critical_imu_fail and hid_timeout:
         limitations.append(
             "Software proves failure below ROS on the D455 HID/IMU path. Camera/cable vs Pi/port requires A/B swap."
         )
         return "REALSENSE_HID_IMU_TIMEOUT", evidence, limitations
+    if hid_frame_timeout_count >= 2:
+        limitations.append(
+            "Repeated librealsense HID source timeouts prove a D455 motion-path stall. Camera/cable vs Pi/port requires A/B swap."
+        )
+        return "REALSENSE_HID_IMU_TIMEOUT", evidence, limitations
+    if critical_imu_fail and video_pass and uvc_timeout:
+        limitations.append(
+            "Software proves failure below ROS on the D455 IMU/control path. Camera/cable vs Pi/port requires A/B swap."
+        )
+        return "REALSENSE_DEVICE_CONTROL_TIMEOUT", evidence, limitations
     if (video_fail or critical_imu_fail) and uvc_timeout:
         limitations.append(
             "Software proves D455 USB control-path failure, but physical ownership requires A/B swap."

@@ -35,6 +35,7 @@ from robot_doctor import (  # noqa: E402
     summarize_decision,
 )
 from classify_realsense_fault import classify as classify_realsense_fault  # noqa: E402
+from watch_realsense_runtime import classify_line as classify_realsense_runtime_line  # noqa: E402
 from dataset_run_audit import audit_artifact_consistency, audit_manifests, audit_reports  # noqa: E402
 from fleet_doctor_summary import fleet_gate_errors, fleet_readiness_errors  # noqa: E402
 from validate_robot_doctor_report import resolve_evidence_path, validate_report  # noqa: E402
@@ -108,6 +109,7 @@ def write_ros2_bag(
     scan_major_gap: bool = False,
     scan_bounded_gap: bool = False,
     scan_shutdown_gap: bool = False,
+    imu_major_gap: bool = False,
     truncated_topic: str = "",
     non_monotonic_topic: str = "",
     topic_hz_overrides: Optional[dict[str, float]] = None,
@@ -152,6 +154,8 @@ def write_ros2_bag(
                 offset_ns += 130_000_000
             if scan_shutdown_gap and name == "/scan" and i > n_msgs - max(3, int(hz)):
                 offset_ns += 350_000_000
+            if imu_major_gap and name == "/camera/gyro/sample" and i > n_msgs // 2:
+                offset_ns += 250_000_000
             if non_monotonic_topic == name and i == n_msgs // 2:
                 offset_ns = 0
             cur.execute(
@@ -167,6 +171,7 @@ def write_ros2_bag(
 def run_validator(
     bag_dir: Path | list[Path],
     extra_env: Optional[dict[str, str]] = None,
+    extra_args: Optional[list[str]] = None,
 ) -> tuple[int, dict]:
     bag_dirs = [bag_dir] if isinstance(bag_dir, Path) else bag_dir
     report = bag_dirs[0] / "report.json"
@@ -183,6 +188,7 @@ def run_validator(
             "--require-imu",
             "--min-duration",
             "5",
+            *(extra_args or []),
             "--json-out",
             str(report),
         ],
@@ -295,6 +301,47 @@ class ValidateRos2BagTests(unittest.TestCase):
             warnings = [item for item in report["results"] if item["level"] == "WARN"]
             self.assertTrue(any(item["check"] == "scan_gaps" for item in warnings))
 
+    def test_required_imu_major_gap_fails(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            bag = Path(tmp) / "imu_gap"
+            write_ros2_bag(bag, imu_major_gap=True)
+            rc, report = run_validator(bag)
+            self.assertEqual(rc, 1)
+            failures = [item for item in report["results"] if item["level"] == "FAIL"]
+            self.assertTrue(
+                any(item["check"] == "camera_gyro_sample_gaps" for item in failures)
+            )
+
+    def test_experiment_window_excludes_recorder_preroll_gap(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            bag = Path(tmp) / "preroll_gap"
+            write_ros2_bag(bag)
+            db_path = bag / "test_0.db3"
+            conn = sqlite3.connect(str(db_path))
+            conn.execute(
+                "UPDATE messages SET timestamp = timestamp + ? WHERE timestamp >= ?",
+                (350_000_000, 5_000_000_000),
+            )
+            conn.commit()
+            conn.close()
+
+            full_rc, _ = run_validator(bag)
+            self.assertEqual(full_rc, 1)
+
+            window_rc, report = run_validator(
+                bag,
+                extra_args=[
+                    "--window-start-epoch",
+                    "6",
+                    "--window-duration",
+                    "5",
+                ],
+            )
+            self.assertEqual(window_rc, 0)
+            self.assertEqual(report["evaluation_window"]["mode"], "experiment_window")
+            failures = [item for item in report["results"] if item["level"] == "FAIL"]
+            self.assertFalse(failures)
+
     def test_default_full_system_rgbd_bag_rate_policy(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             bag = Path(tmp) / "full_system_rgbd_rates"
@@ -303,14 +350,31 @@ class ValidateRos2BagTests(unittest.TestCase):
                 topic_hz_overrides={
                     "/camera/color/image_raw": 12.2,
                     "/camera/color/camera_info": 12.2,
-                    "/camera/depth/image_rect_raw": 13.2,
-                    "/camera/depth/camera_info": 13.2,
+                    "/camera/depth/image_rect_raw": 12.2,
+                    "/camera/depth/camera_info": 12.2,
                 },
             )
             rc, report = run_validator(bag)
             self.assertEqual(rc, 0)
             failures = [item for item in report["results"] if item["level"] == "FAIL"]
             self.assertFalse(failures)
+
+    def test_default_full_system_rgbd_bag_rate_policy_rejects_low_depth(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            bag = Path(tmp) / "low_depth_rate"
+            write_ros2_bag(
+                bag,
+                topic_hz_overrides={
+                    "/camera/color/image_raw": 12.2,
+                    "/camera/color/camera_info": 12.2,
+                    "/camera/depth/image_rect_raw": 11.0,
+                    "/camera/depth/camera_info": 11.0,
+                },
+            )
+            rc, report = run_validator(bag)
+            self.assertEqual(rc, 1)
+            failures = [item for item in report["results"] if item["level"] == "FAIL"]
+            self.assertTrue(any(item["check"] == "depth_image" for item in failures))
 
     def test_default_full_system_rgbd_bag_rate_policy_rejects_low_color(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -1093,6 +1157,40 @@ speed=5000
         self.assertEqual(classification, "PASS_WITH_STREAM_WARNINGS")
         self.assertTrue(any("IMU/HID topics produced rate data" in item for item in evidence))
 
+    def test_post_run_imu_coverage_failure_is_hid_timeout(self) -> None:
+        text = """
+  [OK] /camera/color/image_raw: 14.8 Hz
+  [OK] /camera/depth/image_rect_raw: 14.9 Hz
+  [OK] /camera/gyro/sample: 200.0 Hz
+  [FAIL] camera_gyro_sample_coverage: /camera/gyro/sample stops 197.06s before bag end
+  [OK] /camera/accel/sample: 100.0 Hz
+  [FAIL] camera_accel_sample_coverage: /camera/accel/sample stops 197.06s before bag end
+iio_hid_sensor: Frames didn't arrived within the predefined interval
+throttled=0x0
+Driver=uvcvideo, 5000M
+"""
+        classification, evidence, limitations = classify_realsense_fault(text)
+        self.assertEqual(classification, "REALSENSE_HID_IMU_TIMEOUT")
+        self.assertTrue(any("HID/IIO motion frame timeout" in item for item in evidence))
+        self.assertTrue(any("requires A/B swap" in item for item in limitations))
+
+    def test_runtime_guard_only_treats_hid_timeout_as_fatal_when_imu_required(self) -> None:
+        line = "backend-hid.cpp:641 iio_hid_sensor: Frames didn't arrived within the predefined interval"
+        self.assertEqual(classify_realsense_runtime_line(line), "REALSENSE_HID_IMU_TIMEOUT")
+        self.assertIsNone(classify_realsense_runtime_line(line, require_imu=False))
+        self.assertIsNone(classify_realsense_runtime_line("Asic Temperature value is not valid!"))
+
+    def test_repeated_driver_hid_timeouts_classify_without_rate_log(self) -> None:
+        text = """
+iio_hid_sensor: Frames didn't arrived within the predefined interval
+iio_hid_sensor: Frames didn't arrived within the predefined interval
+throttled=0x0
+Driver=uvcvideo, 5000M
+"""
+        classification, evidence, _ = classify_realsense_fault(text)
+        self.assertEqual(classification, "REALSENSE_HID_IMU_TIMEOUT")
+        self.assertTrue(any("2 HID motion frame timeouts" in item for item in evidence))
+
 
 class RobotDoctorDecisionTests(unittest.TestCase):
     def test_operator_decision_block_matches_target_shape(self) -> None:
@@ -1509,6 +1607,54 @@ class RobotDoctorProcessTests(unittest.TestCase):
                 pid = line.strip().split(None, 1)[0]
                 subprocess.run(["kill", "-9", pid], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             self.assertEqual(leftovers, [])
+
+
+class RobotDoctorZenohTests(unittest.TestCase):
+    def run_zenoh_check(self, output: str, profile: str = "dataset") -> CheckResult:
+        with tempfile.TemporaryDirectory() as tmp:
+            args = build_parser().parse_args(
+                ["agvtest", "--profile", profile, "--output-root", tmp]
+            )
+            doctor = Doctor(args)
+            log_path = doctor.log_dir / "zenoh_transport.log"
+            log_path.write_text(output)
+
+            def fake_run(*_args, **_kwargs):
+                return CommandResult("zenoh_transport", "fake", 0, 0.0, False, str(log_path))
+
+            doctor.run = fake_run  # type: ignore[method-assign]
+            old_transport = os.environ.get("ORKAR_ROS_TRANSPORT")
+            old_localhost = os.environ.get("ROS_LOCALHOST_ONLY")
+            old_server = os.environ.get("ROS_DISCOVERY_SERVER")
+            try:
+                os.environ["ORKAR_ROS_TRANSPORT"] = "zenoh-bridge-ros2dds"
+                os.environ["ROS_LOCALHOST_ONLY"] = "1"
+                os.environ.pop("ROS_DISCOVERY_SERVER", None)
+                doctor.check_dds_discovery()
+            finally:
+                for key, value in (
+                    ("ORKAR_ROS_TRANSPORT", old_transport),
+                    ("ROS_LOCALHOST_ONLY", old_localhost),
+                    ("ROS_DISCOVERY_SERVER", old_server),
+                ):
+                    if value is None:
+                        os.environ.pop(key, None)
+                    else:
+                        os.environ[key] = value
+            self.assertEqual(len(doctor.results), 1)
+            return doctor.results[0]
+
+    def test_zenoh_robot_rejects_duplicate_natnet_source(self) -> None:
+        result = self.run_zenoh_check(
+            "SERVICE=active\nCONNECTIONS=1\nNATNET_SERVICE=active\nNATNET_PROCESSES=1\n"
+        )
+        self.assertEqual((result.code, result.status, result.check), ("3.3", "FAIL", "duplicate_natnet_source"))
+
+    def test_zenoh_robot_passes_without_local_natnet_source(self) -> None:
+        result = self.run_zenoh_check(
+            "SERVICE=active\nCONNECTIONS=1\nNATNET_SERVICE=inactive\nNATNET_PROCESSES=0\n"
+        )
+        self.assertEqual((result.code, result.status, result.check), ("3.3", "PASS", "zenoh_gt_transport"))
 
 
 class RobotDoctorD455PhysicalEvidenceTests(unittest.TestCase):

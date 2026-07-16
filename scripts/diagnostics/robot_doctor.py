@@ -2700,16 +2700,30 @@ PY
             result = self.run(
                 "zenoh_transport",
                 "printf 'SERVICE='; systemctl is-active orkar-zenoh-gt.service 2>&1 || true; "
-                "printf 'CONNECTIONS='; ss -Htnp state established 2>/dev/null | grep -c zenoh-bridge-ro || true",
+                "printf 'CONNECTIONS='; ss -Htnp state established 2>/dev/null | grep -c zenoh-bridge-ro || true; "
+                "printf 'NATNET_SERVICE='; systemctl is-active orkar-natnet-pose-source.service 2>&1 || true; "
+                "printf 'NATNET_PROCESSES='; pgrep -af '[n]atnet_ros2_pose_publisher.py' 2>/dev/null | wc -l",
                 timeout=10,
             )
             transport_output = self.command_output(result)
             service_active = "SERVICE=active" in transport_output
             connection_match = re.search(r"CONNECTIONS=([0-9]+)", transport_output)
             connected = bool(connection_match and int(connection_match.group(1)) > 0)
+            natnet_service_active = "NATNET_SERVICE=active" in transport_output
+            natnet_process_match = re.search(r"NATNET_PROCESSES=([0-9]+)", transport_output)
+            natnet_processes = int(natnet_process_match.group(1)) if natnet_process_match else 0
             isolated = os.environ.get("ROS_LOCALHOST_ONLY", "") == "1"
             legacy_server = os.environ.get("ROS_DISCOVERY_SERVER", "")
-            if not service_active:
+            if natnet_service_active or natnet_processes > 0:
+                self.add(
+                    "3.3",
+                    FAIL if self.args.profile == "dataset" else WARN,
+                    "duplicate_natnet_source",
+                    "direct NatNet source is running on a Zenoh-importing robot",
+                    [result.log],
+                    "disable it with `sudo systemctl disable --now orkar-natnet-pose-source.service`; run the NatNet source only on the supervised MoCap-side host",
+                )
+            elif not service_active:
                 self.add(
                     "3.3",
                     FAIL if self.args.profile == "dataset" else WARN,

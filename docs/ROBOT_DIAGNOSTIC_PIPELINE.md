@@ -109,6 +109,31 @@ can perturb or mis-measure a healthy high-rate camera stream. Runtime watchdogs
 stay focused on lower-bandwidth base/scan/GT liveness; camera stream quality is
 decided by the mandatory pre-run gate and post-run bag validator.
 
+Scenario collection adds a distinct log-based D455 guard. With
+`REQUIRE_IMU=true`, `run_s1_mocap_pilot_robot.sh` enables
+`S1_RUNTIME_IMU_GUARD=true`: it tails the existing bringup log without creating
+another ROS subscriber. The first librealsense HID/IIO frame timeout stops
+motion and recording, then preserves kernel, USB, power/thermal, process, and
+driver-log evidence. This proves the failing subsystem and prevents a long
+unusable tail. If that evidence shows USB3 and no disconnect, reset,
+undervoltage, or throttle event, physical ownership still needs the documented
+D455/cable/host A/B matrix; software cannot distinguish those components from a
+single shared USB symptom.
+
+For Zenoh-imported ground truth, the S1 runner uses a temporary discovery
+subscriber only until rosbag2 has confirmed all required subscriptions. The
+recorder then owns the GT route and the temporary subscriber exits. Keeping a
+full-rate `ros2 topic echo` alive during recording needlessly deserializes and
+formats every pose; controlled testing showed that this can remove enough host
+scheduling margin to trigger a five-second D455 HID/IIO outage. The fleet fix is
+software-only and applies uniformly; do not infer a bad camera or request an A/B
+swap unless the runtime evidence points back to the physical path.
+
+`robot_doctor` proves current readiness, not sustained recording endurance. Run
+one five-minute full MCAP commissioning soak after initial setup or a stack
+change. Accept the robot only when the runtime guard stays clean and strict
+post-run validation passes for the synchronized experiment window.
+
 On Raspberry Pi robots the managed logger defaults to a 512 MB rosbag2 cache
 (`ROSBAG2_MAX_CACHE_SIZE=536870912`) and leaves the runtime watchdog disabled
 (`ENABLE_RUNTIME_WATCHDOG=false`). This was the smallest tested setting that
