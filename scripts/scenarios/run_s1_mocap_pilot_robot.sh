@@ -33,16 +33,19 @@ Required/important environment:
 
 Circle overrides:
   S1_RADIUS         Circle radius in metres. Default: 1.0
-  S1_CENTER_X       Optional MoCap-frame center x. If omitted, center is inferred.
-  S1_CENTER_Y       Optional MoCap-frame center y. If omitted, center is inferred.
+  S1_CENTER_X       MoCap-frame center x. Required for shared/fleet circles.
+  S1_CENTER_Y       MoCap-frame center y. Required for shared/fleet circles.
+                    If omitted for a single robot, one center is inferred and
+                    frozen across the precheck and recorded run.
   S1_DURATION       Motion duration in seconds. Default: 70
   S1_LINEAR         Linear speed. Default: 0.10
   S1_MIN_LINEAR     Minimum linear speed while correcting. Default: 0.07
   S1_DIRECTION      ccw or cw. Default: ccw
-  S1_POSE_TIMEOUT   Abort if MoCap pose is stale this long. Default: 0.30s
+  S1_POSE_TIMEOUT   Abort if MoCap pose is stale this long. Default: 0.50s
   S1_FORWARD_YAW_OFFSET_DEG  Per-robot rigid-body-to-forward calibration. Default: 0
   S1_BEST_EFFORT_POSE true/false. Default: true for sensor-data QoS.
   S1_START_AT_EPOCH Unix epoch for synchronized fleet motion. Default: 0 (immediate).
+  S1_START_SIGNAL_FILE  Wait stopped until this file contains a shared start epoch.
   S1_DRY_RUN       true/false. Default: false. Proves lifecycle without publishing motion.
 
 Recording/gates:
@@ -55,7 +58,7 @@ Recording/gates:
   S1_RECORD_GT      Include the control pose in the robot bag. Default: true
   S1_SPLIT_RECORDING  Record image and auxiliary topics in separate MCAP shards. Default: true
   S1_VALIDATE       true/false. Default: true
-  S1_STORAGE_ID     mcap/sqlite3/auto. Default: auto, prefer MCAP when installed.
+  S1_STORAGE_ID     Must be mcap. Default: mcap; collection fails if unavailable.
   S1_MCAP_STORAGE_CONFIG  MCAP writer config. Default: resilient fast-Zstd profile.
   S1_MCAP_STORAGE_PRESET_PROFILE  Optional MCAP preset; overrides the config file.
   ROSBAG2_MAX_CACHE_SIZE  Recorder cache bytes. Default: 536870912 (512 MiB).
@@ -66,6 +69,9 @@ Recording/gates:
   MOCAP_RATE_CHECK_SECONDS  Duration of the pre-motion rate check. Default: 5
   REQUIRE_GT        Require MoCap in validator. Default: true
   REQUIRE_IMU       Require raw D455 gyro+accel in validator. Default: true
+  S1_RUNTIME_IMU_GUARD  Watch the existing bringup log for a fatal D455 HID
+                    stall, capture evidence, and stop the run. Default: true
+                    when REQUIRE_IMU=true. Adds no ROS subscriptions.
 EOF
 }
 
@@ -84,6 +90,14 @@ SCENARIO="${2:-s1_mocap_circle}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+
+MOTION_LOCK_FILE="${S1_MOTION_LOCK_FILE:-/tmp/orkar_s1_motion.lock}"
+exec 9>"${MOTION_LOCK_FILE}"
+if ! flock -n 9; then
+    echo "ERROR: another S1 motion/recording session owns ${MOTION_LOCK_FILE}." >&2
+    echo "       Stop the existing session before starting a second launcher." >&2
+    exit 73
+fi
 cd "${ROOT}"
 
 # Every ROS participant in this script must use the same local transport.
@@ -246,7 +260,7 @@ wait_for_topic_once() {
     fi
     echo "Waiting for ${topic}..."
     timeout "${timeout_sec}" bash -lc \
-        "source /opt/ros/humble/setup.bash; source '${ROOT}/scripts/network/load_ros_transport_env.sh'; [ -f '${ROOT}/agv2_ws/install/setup.bash' ] && source '${ROOT}/agv2_ws/install/setup.bash'; until ros2 topic echo ${echo_args} --no-daemon --spin-time 2 --once >/dev/null 2>&1; do sleep 1; done"
+        "source /opt/ros/humble/setup.bash; source '${ROOT}/scripts/network/load_ros_transport_env.sh'; [ -f '${ROOT}/agv2_ws/install/setup.bash' ] && source '${ROOT}/agv2_ws/install/setup.bash'; until ros2 topic echo ${echo_args} --no-daemon --spin-time 2 --once >/dev/null 2>&1; do grep -q '^FAIL_RUNTIME_GUARD ' '${RUNTIME_GUARD_STATUS}' 2>/dev/null && exit 70; sleep 1; done"
 }
 
 check_topic_rate_range() {
@@ -312,6 +326,11 @@ wait_for_recorder_subscriptions() {
     local topic
 
     while [ "${SECONDS}" -lt "${deadline}" ]; do
+        if runtime_guard_failed; then
+            echo "ERROR: runtime IMU guard failed while waiting for ${recorder_label} recorder." >&2
+            cat "${RUNTIME_GUARD_STATUS}" >&2 || true
+            return 70
+        fi
         if ! kill -0 "${recorder_pid}" 2>/dev/null; then
             echo "ERROR: ${recorder_label} recorder exited before becoming ready." >&2
             tail -120 "${recorder_log}" >&2 || true
@@ -415,7 +434,7 @@ S1_MIN_LINEAR="${S1_MIN_LINEAR:-0.07}"
 S1_DIRECTION="${S1_DIRECTION:-ccw}"
 S1_MAX_RADIUS_ERROR="${S1_MAX_RADIUS_ERROR:-0.45}"
 S1_FORWARD_YAW_OFFSET_DEG="${S1_FORWARD_YAW_OFFSET_DEG:-0}"
-S1_POSE_TIMEOUT="${S1_POSE_TIMEOUT:-0.30}"
+S1_POSE_TIMEOUT="${S1_POSE_TIMEOUT:-0.50}"
 S1_HEADING_KP="${S1_HEADING_KP:-1.10}"
 S1_RADIUS_KP="${S1_RADIUS_KP:-1.50}"
 S1_MAX_ANGULAR="${S1_MAX_ANGULAR:-0.55}"
@@ -423,6 +442,7 @@ S1_MAX_RADIUS_HEADING_OFFSET_DEG="${S1_MAX_RADIUS_HEADING_OFFSET_DEG:-35}"
 S1_BEST_EFFORT_POSE="${S1_BEST_EFFORT_POSE:-true}"
 D455_RESET_MODE="${D455_RESET_MODE:-none}"
 S1_START_AT_EPOCH="${S1_START_AT_EPOCH:-0}"
+S1_START_SIGNAL_FILE="${S1_START_SIGNAL_FILE:-}"
 S1_DRY_RUN="${S1_DRY_RUN:-false}"
 S1_PRECHECK="${S1_PRECHECK:-true}"
 S1_PRECHECK_DURATION="${S1_PRECHECK_DURATION:-5}"
@@ -434,7 +454,7 @@ S1_RECORD="${S1_RECORD:-true}"
 S1_RECORD_GT="${S1_RECORD_GT:-true}"
 S1_SPLIT_RECORDING="${S1_SPLIT_RECORDING:-true}"
 S1_VALIDATE="${S1_VALIDATE:-true}"
-S1_STORAGE_ID="${S1_STORAGE_ID:-auto}"
+S1_STORAGE_ID="${S1_STORAGE_ID:-mcap}"
 S1_MCAP_STORAGE_CONFIG="${S1_MCAP_STORAGE_CONFIG:-${ROOT}/configs/mcap_resilient_high_throughput.yaml}"
 S1_MCAP_STORAGE_PRESET_PROFILE="${S1_MCAP_STORAGE_PRESET_PROFILE:-}"
 ROSBAG2_MAX_CACHE_SIZE="${ROSBAG2_MAX_CACHE_SIZE:-536870912}"
@@ -454,9 +474,14 @@ S1_POST_ROLL_SEC="${S1_POST_ROLL_SEC:-5}"
 S1_MIN_BAG_DURATION="${S1_MIN_BAG_DURATION:-30}"
 REQUIRE_GT="${REQUIRE_GT:-true}"
 REQUIRE_IMU="${REQUIRE_IMU:-true}"
-REQUIRE_RESILIENT_STORAGE="${REQUIRE_RESILIENT_STORAGE:-false}"
+REQUIRE_RESILIENT_STORAGE="${REQUIRE_RESILIENT_STORAGE:-true}"
+S1_RUNTIME_IMU_GUARD="${S1_RUNTIME_IMU_GUARD:-${REQUIRE_IMU}}"
 
 require_nonempty "MOCAP_TOPIC" "${MOCAP_TOPIC}"
+
+if [ -n "${S1_START_SIGNAL_FILE}" ]; then
+    rm -f -- "${S1_START_SIGNAL_FILE}"
+fi
 if ! awk -v min="${MOCAP_MIN_HZ}" -v max="${MOCAP_MAX_HZ}" -v seconds="${MOCAP_RATE_CHECK_SECONDS}" \
     'BEGIN { exit !(min > 0 && max > min && seconds > 0) }'; then
     echo "ERROR: require 0 < MOCAP_MIN_HZ < MOCAP_MAX_HZ and MOCAP_RATE_CHECK_SECONDS > 0." >&2
@@ -464,6 +489,12 @@ if ! awk -v min="${MOCAP_MIN_HZ}" -v max="${MOCAP_MAX_HZ}" -v seconds="${MOCAP_R
 fi
 if [ "${CMD_TOPIC}" = "/cmd_vel" ]; then
     echo "ERROR: refusing to run S1 pilot on root /cmd_vel. Use /${ROBOT_NAME}/cmd_vel." >&2
+    exit 2
+fi
+if awk -v epoch="${S1_START_AT_EPOCH}" 'BEGIN { exit !(epoch > 0) }' && \
+   { [ -z "${S1_CENTER_X:-}" ] || [ -z "${S1_CENTER_Y:-}" ]; }; then
+    echo "ERROR: synchronized S1 runs require one surveyed center via S1_CENTER_X and S1_CENTER_Y." >&2
+    echo "       Per-robot center inference does not produce concentric fleet paths." >&2
     exit 2
 fi
 if bool_true "${S1_RECORD}" && bool_true "${S1_VALIDATE}" && \
@@ -478,6 +509,12 @@ source_ros2
 if [ "${ORKAR_ROS_TRANSPORT:-}" = "zenoh-bridge-ros2dds" ]; then
     if [ "${ROS_LOCALHOST_ONLY:-}" != "1" ]; then
         echo "ERROR: Zenoh robot sessions require ROS_LOCALHOST_ONLY=1." >&2
+        exit 1
+    fi
+    if systemctl is-active --quiet orkar-natnet-pose-source.service || \
+       pgrep -af '[n]atnet_ros2_pose_publisher.py' >/dev/null 2>&1; then
+        echo "ERROR: direct NatNet source is running on this Zenoh-importing robot." >&2
+        echo "       Disable it: sudo systemctl disable --now orkar-natnet-pose-source.service" >&2
         exit 1
     fi
     if ! systemctl is-active --quiet orkar-zenoh-gt.service; then
@@ -502,6 +539,10 @@ GT_RATE_LOG="${HOME}/agv_data/${SESSION_ID}_gt_rate.log"
 SUMMARY_JSON="${HOME}/agv_data/${SESSION_ID}_circle_summary.json"
 PRECHECK_JSON="${HOME}/agv_data/${SESSION_ID}_circle_precheck.json"
 VALIDATION_JSON="${HOME}/agv_data/${SESSION_ID}_validate.json"
+RUNTIME_GUARD_LOG="${HOME}/agv_data/${SESSION_ID}_runtime_imu_guard.log"
+RUNTIME_GUARD_STATUS="${HOME}/agv_data/${SESSION_ID}_runtime_imu_guard.status"
+RUNTIME_GUARD_EVIDENCE_DIR="${HOME}/agv_data/${SESSION_ID}_runtime_imu_guard_evidence"
+RUNTIME_FAULT_CLASSIFICATION="${HOME}/agv_data/${SESSION_ID}_realsense_fault_classification.txt"
 if bool_true "${S1_SPLIT_RECORDING}"; then
     BAG_PATHS=("${SENSOR_BAG}" "${AUX_BAG}")
 else
@@ -513,6 +554,8 @@ REC_PID=""
 SENSOR_REC_PID=""
 AUX_REC_PID=""
 GT_HOLD_PID=""
+RUNTIME_GUARD_PID=""
+DRIVE_PID=""
 
 stop_gt_hold() {
     if [ -n "${GT_HOLD_PID}" ] && kill -0 "${GT_HOLD_PID}" 2>/dev/null; then
@@ -522,8 +565,114 @@ stop_gt_hold() {
     GT_HOLD_PID=""
 }
 
+runtime_guard_failed() {
+    [ -s "${RUNTIME_GUARD_STATUS}" ] && \
+        grep -q '^FAIL_RUNTIME_GUARD ' "${RUNTIME_GUARD_STATUS}"
+}
+
+start_runtime_guard() {
+    if ! bool_true "${S1_RUNTIME_IMU_GUARD}" || ! bool_true "${REQUIRE_IMU}"; then
+        echo "DISABLED" > "${RUNTIME_GUARD_STATUS}"
+        return 0
+    fi
+    if [ ! -r "${ROOT}/scripts/diagnostics/watch_realsense_runtime.py" ]; then
+        echo "ERROR: runtime IMU guard is missing." >&2
+        return 1
+    fi
+
+    echo "Starting no-subscription D455 runtime IMU guard..."
+    setsid python3 "${ROOT}/scripts/diagnostics/watch_realsense_runtime.py" \
+        --bringup-log "${BRINGUP_LOG}" \
+        --status-file "${RUNTIME_GUARD_STATUS}" \
+        --evidence-dir "${RUNTIME_GUARD_EVIDENCE_DIR}" \
+        --require-imu \
+        >"${RUNTIME_GUARD_LOG}" 2>&1 < /dev/null &
+    RUNTIME_GUARD_PID=$!
+    sleep 0.3
+    if ! kill -0 "${RUNTIME_GUARD_PID}" 2>/dev/null; then
+        echo "ERROR: runtime IMU guard exited during startup." >&2
+        cat "${RUNTIME_GUARD_LOG}" >&2 || true
+        return 1
+    fi
+    echo "runtime_imu_guard_pid: ${RUNTIME_GUARD_PID}"
+}
+
+stop_runtime_guard() {
+    [ -n "${RUNTIME_GUARD_PID}" ] || return 0
+    if kill -0 "${RUNTIME_GUARD_PID}" 2>/dev/null; then
+        if runtime_guard_failed; then
+            # Let the guard finish its bounded evidence snapshot before cleanup.
+            wait_for_exit_or_kill "${RUNTIME_GUARD_PID}" "runtime IMU guard evidence capture" 15
+        else
+            stop_process_group "${RUNTIME_GUARD_PID}" TERM
+            wait_for_exit_or_kill "${RUNTIME_GUARD_PID}" "runtime IMU guard" 5
+        fi
+    fi
+    wait "${RUNTIME_GUARD_PID}" 2>/dev/null || true
+    RUNTIME_GUARD_PID=""
+}
+
+classify_runtime_fault() {
+    runtime_guard_failed || return 0
+    [ ! -s "${RUNTIME_FAULT_CLASSIFICATION}" ] || return 0
+
+    python3 "${ROOT}/scripts/diagnostics/classify_realsense_fault.py" \
+        --label "${SESSION_ID}" \
+        --readiness-log "${RUNTIME_GUARD_STATUS}" \
+        --bringup-log "${BRINGUP_LOG}" \
+        --kernel-log "${RUNTIME_GUARD_EVIDENCE_DIR}/kernel_runtime.log" \
+        --hardware-log "${RUNTIME_GUARD_EVIDENCE_DIR}/power_thermal.log" \
+        --hardware-log "${RUNTIME_GUARD_EVIDENCE_DIR}/usb_topology.log" \
+        > "${RUNTIME_FAULT_CLASSIFICATION}" 2>&1 || true
+    echo "--- RealSense runtime fault classification ---"
+    sed -n '1,100p' "${RUNTIME_FAULT_CLASSIFICATION}" || true
+}
+
+run_circle_with_runtime_guard() {
+    local label="$1"
+    shift
+    local rc=0
+
+    if runtime_guard_failed; then
+        echo "ERROR: runtime IMU guard failed before ${label}." >&2
+        cat "${RUNTIME_GUARD_STATUS}" >&2 || true
+        return 70
+    fi
+
+    setsid python3 scripts/logging/drive_mocap_circle_ros2.py "$@" &
+    DRIVE_PID=$!
+    while kill -0 "${DRIVE_PID}" 2>/dev/null; do
+        if runtime_guard_failed; then
+            echo "ERROR: D455 IMU source stalled during ${label}; stopping immediately." >&2
+            cat "${RUNTIME_GUARD_STATUS}" >&2 || true
+            stop_process_group "${DRIVE_PID}" INT
+            wait_for_exit_or_kill "${DRIVE_PID}" "${label}" 5
+            wait "${DRIVE_PID}" 2>/dev/null || true
+            DRIVE_PID=""
+            publish_zero
+            return 70
+        fi
+        sleep 0.2
+    done
+    wait "${DRIVE_PID}" || rc=$?
+    DRIVE_PID=""
+
+    if runtime_guard_failed; then
+        echo "ERROR: D455 IMU source stalled as ${label} ended." >&2
+        cat "${RUNTIME_GUARD_STATUS}" >&2 || true
+        publish_zero
+        return 70
+    fi
+    return "${rc}"
+}
+
 cleanup() {
     set +e
+    if [ -n "${DRIVE_PID}" ] && kill -0 "${DRIVE_PID}" 2>/dev/null; then
+        stop_process_group "${DRIVE_PID}" INT
+        wait_for_exit_or_kill "${DRIVE_PID}" "circle controller" 5
+    fi
+    DRIVE_PID=""
     publish_zero
     if [ -n "${REC_PID}" ] && kill -0 "${REC_PID}" 2>/dev/null; then
         echo "Stopping ros2 bag record..."
@@ -541,6 +690,8 @@ cleanup() {
         wait_for_exit_or_kill "${AUX_REC_PID}" "auxiliary bag recorder" "${S1_RECORDER_STOP_TIMEOUT}"
     fi
     stop_gt_hold
+    stop_runtime_guard
+    classify_runtime_fault
     if [ -n "${BRINGUP_PID}" ] && kill -0 "${BRINGUP_PID}" 2>/dev/null; then
         echo "Stopping bringup..."
         stop_process_group "${BRINGUP_PID}" INT
@@ -566,6 +717,7 @@ echo "linear:       ${S1_LINEAR} m/s"
 echo "pose_qos:     $(bool_true "${S1_BEST_EFFORT_POSE}" && echo best_effort || echo reliable)"
 echo "d455_reset:   ${D455_RESET_MODE}"
 echo "start_epoch:  ${S1_START_AT_EPOCH}"
+echo "start_signal: ${S1_START_SIGNAL_FILE:-none}"
 echo "transport:    ${ORKAR_ROS_TRANSPORT:-local DDS}"
 echo "localhost:    ${ROS_LOCALHOST_ONLY:-unset}"
 echo "precheck:     ${S1_PRECHECK} (${S1_PRECHECK_DURATION}s)"
@@ -576,6 +728,7 @@ echo "storage:      ${S1_STORAGE_ID}"
 echo "mcap_config:  ${S1_MCAP_STORAGE_CONFIG}"
 echo "mcap_preset:  ${S1_MCAP_STORAGE_PRESET_PROFILE:-none}"
 echo "record_cache: ${ROSBAG2_MAX_CACHE_SIZE} bytes"
+echo "runtime_guard: ${S1_RUNTIME_IMU_GUARD}"
 echo "========================================================================"
 
 kill_local_robot_graph
@@ -598,6 +751,29 @@ setsid bash -lc \
     >"${BRINGUP_LOG}" 2>&1 < /dev/null &
 BRINGUP_PID=$!
 echo "bringup_pid: ${BRINGUP_PID}"
+start_runtime_guard
+
+# A Zenoh-imported topic disappears from the local DDS graph when its last
+# local subscriber exits. Establish one subscriber before any one-shot probes
+# and keep it alive through recorder startup so the imported route never gaps.
+echo "Holding ground-truth discovery route..."
+setsid env PYTHONUNBUFFERED=1 stdbuf -oL -eL \
+    ros2 topic echo "${MOCAP_TOPIC}" geometry_msgs/msg/PoseStamped \
+    --qos-reliability best_effort >"${GT_HOLD_LOG}" 2>&1 &
+GT_HOLD_PID=$!
+if ! kill -0 "${GT_HOLD_PID}" 2>/dev/null; then
+    echo "ERROR: ground-truth discovery hold exited before recording." >&2
+    tail -40 "${GT_HOLD_LOG}" >&2 || true
+    exit 1
+fi
+if ! timeout "${S1_GT_HOLD_READY_TIMEOUT}" bash -c \
+    'until grep -q "^header:" "$1" 2>/dev/null; do sleep 0.2; done' \
+    _ "${GT_HOLD_LOG}"; then
+    echo "ERROR: ground-truth discovery hold received no pose within ${S1_GT_HOLD_READY_TIMEOUT}s." >&2
+    tail -40 "${GT_HOLD_LOG}" >&2 || true
+    exit 1
+fi
+echo "Ground-truth discovery route is receiving poses."
 
 required_topics=(
     "/scan"
@@ -623,28 +799,6 @@ for topic in "${required_topics[@]}"; do
     fi
 done
 echo "Required live topic gate passed."
-
-# A Zenoh-imported topic disappears from the local DDS graph when its last
-# local subscriber exits. Keep one lightweight subscriber alive so rosbag2 can
-# discover it during the rate gate, precheck, and recorder startup.
-echo "Holding ground-truth discovery route..."
-setsid env PYTHONUNBUFFERED=1 stdbuf -oL -eL \
-    ros2 topic echo "${MOCAP_TOPIC}" geometry_msgs/msg/PoseStamped \
-    --qos-reliability best_effort >"${GT_HOLD_LOG}" 2>&1 &
-GT_HOLD_PID=$!
-if ! kill -0 "${GT_HOLD_PID}" 2>/dev/null; then
-    echo "ERROR: ground-truth discovery hold exited before recording." >&2
-    tail -40 "${GT_HOLD_LOG}" >&2 || true
-    exit 1
-fi
-if ! timeout "${S1_GT_HOLD_READY_TIMEOUT}" bash -c \
-    'until grep -q "^header:" "$1" 2>/dev/null; do sleep 0.2; done' \
-    _ "${GT_HOLD_LOG}"; then
-    echo "ERROR: ground-truth discovery hold received no pose within ${S1_GT_HOLD_READY_TIMEOUT}s." >&2
-    tail -40 "${GT_HOLD_LOG}" >&2 || true
-    exit 1
-fi
-echo "Ground-truth discovery route is receiving poses."
 
 check_topic_rate_range \
     "${MOCAP_TOPIC}" \
@@ -709,7 +863,7 @@ if bool_true "${S1_PRECHECK}" && ! bool_true "${S1_DRY_RUN}"; then
         --max-radius-error "${S1_PRECHECK_MAX_RADIUS_ERROR}"
         --summary-json "${PRECHECK_JSON}"
     )
-    python3 scripts/logging/drive_mocap_circle_ros2.py "${PRECHECK_ARGS[@]}"
+    run_circle_with_runtime_guard "circle precheck" "${PRECHECK_ARGS[@]}"
     python3 scripts/scenarios/validate_s1_circle_summary.py \
         "${PRECHECK_JSON}" \
         --max-radius-error "${S1_PRECHECK_MAX_RADIUS_ERROR}" \
@@ -722,6 +876,27 @@ if bool_true "${S1_PRECHECK}" && ! bool_true "${S1_DRY_RUN}"; then
 fi
 
 FULL_CIRCLE_ARGS=("${CIRCLE_ARGS[@]}")
+if bool_true "${S1_PRECHECK}" && ! bool_true "${S1_DRY_RUN}" && \
+   [ -z "${S1_CENTER_X:-}" ] && [ -z "${S1_CENTER_Y:-}" ]; then
+    FROZEN_CENTER_VALUES="$(python3 - "${PRECHECK_JSON}" <<'PY'
+import json
+import math
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as handle:
+    summary = json.load(handle)
+center_x = float(summary["center_x_m"])
+center_y = float(summary["center_y_m"])
+if not math.isfinite(center_x) or not math.isfinite(center_y):
+    raise SystemExit("precheck center is not finite")
+print(center_x, center_y)
+PY
+    )"
+    FROZEN_CENTER_X="${FROZEN_CENTER_VALUES%% *}"
+    FROZEN_CENTER_Y="${FROZEN_CENTER_VALUES#* }"
+    FULL_CIRCLE_ARGS+=(--center-x "${FROZEN_CENTER_X}" --center-y "${FROZEN_CENTER_Y}")
+    echo "Frozen inferred center for full run: (${FROZEN_CENTER_X}, ${FROZEN_CENTER_Y})"
+fi
 if ! awk -v epoch="${S1_START_AT_EPOCH}" 'BEGIN { exit !(epoch >= 0) }'; then
     echo "ERROR: S1_START_AT_EPOCH must be a non-negative Unix epoch." >&2
     exit 2
@@ -729,38 +904,47 @@ fi
 if awk -v epoch="${S1_START_AT_EPOCH}" 'BEGIN { exit !(epoch > 0) }'; then
     FULL_CIRCLE_ARGS+=(--start-at-epoch "${S1_START_AT_EPOCH}")
 fi
+if [ -n "${S1_START_SIGNAL_FILE}" ]; then
+    echo "FLEET_READY: sensors passed; waiting stopped before recorder startup on ${S1_START_SIGNAL_FILE}"
+    while [ ! -s "${S1_START_SIGNAL_FILE}" ]; do
+        if grep -q '^FAIL_RUNTIME_GUARD ' "${RUNTIME_GUARD_STATUS}" 2>/dev/null; then
+            echo "ERROR: D455 IMU failed while waiting for fleet release." >&2
+            cat "${RUNTIME_GUARD_STATUS}" >&2 || true
+            exit 70
+        fi
+        sleep 0.2
+    done
+    RELEASE_EPOCH="$(tr -d '[:space:]' < "${S1_START_SIGNAL_FILE}")"
+    if ! awk -v epoch="${RELEASE_EPOCH}" 'BEGIN { exit !(epoch > 0) }'; then
+        echo "ERROR: fleet release file must contain a positive Unix epoch." >&2
+        exit 2
+    fi
+    S1_START_AT_EPOCH="${RELEASE_EPOCH}"
+    FULL_CIRCLE_ARGS+=(--start-at-epoch "${S1_START_AT_EPOCH}")
+    echo "Fleet release received; recorder startup begins for epoch ${S1_START_AT_EPOCH}."
+fi
 
 if bool_true "${S1_RECORD}"; then
-    STORAGE_ID="${S1_STORAGE_ID}"
-    if [ "${STORAGE_ID}" = "auto" ]; then
-        if ros2 bag record --help 2>/dev/null | grep -Eq -- "-s .*mcap|--storage .*mcap|\\bmcap\\b"; then
-            STORAGE_ID="mcap"
-        else
-            STORAGE_ID="sqlite3"
-        fi
+    if [ "${S1_STORAGE_ID}" != "mcap" ]; then
+        echo "ERROR: S1 dataset collection is MCAP-only; got S1_STORAGE_ID=${S1_STORAGE_ID}." >&2
+        exit 2
     fi
-
-    case "${STORAGE_ID}" in
-        mcap|sqlite3) ;;
-        *)
-            echo "ERROR: S1_STORAGE_ID must be auto, mcap, or sqlite3; got ${S1_STORAGE_ID}" >&2
-            exit 2
-            ;;
-    esac
+    if ! ros2 bag record --help 2>/dev/null | grep -Eq -- "-s .*mcap|--storage .*mcap|\\bmcap\\b"; then
+        echo "ERROR: rosbag2 MCAP storage is unavailable; refusing dataset collection." >&2
+        echo "       Install ros-${ROS_DISTRO:-humble}-rosbag2-storage-mcap and rerun setup." >&2
+        exit 1
+    fi
+    STORAGE_ID="mcap"
 
     ROS2_STORAGE_ARGS=(-s "${STORAGE_ID}")
-    if [ "${STORAGE_ID}" = "mcap" ]; then
-        if [ -n "${S1_MCAP_STORAGE_PRESET_PROFILE}" ]; then
-            ROS2_STORAGE_ARGS+=(--storage-preset-profile "${S1_MCAP_STORAGE_PRESET_PROFILE}")
-        else
-            if [ ! -r "${S1_MCAP_STORAGE_CONFIG}" ]; then
-                echo "ERROR: MCAP storage config is not readable: ${S1_MCAP_STORAGE_CONFIG}" >&2
-                exit 1
-            fi
-            ROS2_STORAGE_ARGS+=(--storage-config-file "${S1_MCAP_STORAGE_CONFIG}")
+    if [ -n "${S1_MCAP_STORAGE_PRESET_PROFILE}" ]; then
+        ROS2_STORAGE_ARGS+=(--storage-preset-profile "${S1_MCAP_STORAGE_PRESET_PROFILE}")
+    else
+        if [ ! -r "${S1_MCAP_STORAGE_CONFIG}" ]; then
+            echo "ERROR: MCAP storage config is not readable: ${S1_MCAP_STORAGE_CONFIG}" >&2
+            exit 1
         fi
-    elif [ -f "${ROOT}/configs/sqlite_resilient.yaml" ]; then
-        ROS2_STORAGE_ARGS+=(--storage-config-file "${ROOT}/configs/sqlite_resilient.yaml")
+        ROS2_STORAGE_ARGS+=(--storage-config-file "${S1_MCAP_STORAGE_CONFIG}")
     fi
     if [ -f "${ROOT}/configs/rosbag2_sensor_qos.yaml" ]; then
         ROS2_STORAGE_ARGS+=(--qos-profile-overrides-path "${ROOT}/configs/rosbag2_sensor_qos.yaml")
@@ -876,19 +1060,27 @@ if bool_true "${S1_RECORD}"; then
             "${S1_MAX_RECORDER_SUBSCRIPTION_SKEW_SEC}" \
             "${REQUIRED_RECORD_TOPICS[@]}"
     fi
-    # The active recorder or the controller can now own the imported GT route;
-    # keeping the YAML-formatting probe alive would add avoidable callback load.
-    stop_gt_hold
     sleep "${S1_RECORDER_PREROLL_SEC}"
     echo "Required recorder subscriptions are active; scenario motion may start."
+    if bool_true "${S1_RECORD_GT}"; then
+        # The recorder is now the persistent DDS subscriber that keeps the
+        # on-demand Zenoh route alive. The discovery hold would otherwise
+        # deserialize and format every GT pose for the full run.
+        echo "Ground-truth recorder owns the Zenoh route; stopping discovery hold."
+        stop_gt_hold
+    fi
 fi
 
 set +e
-python3 scripts/logging/drive_mocap_circle_ros2.py "${FULL_CIRCLE_ARGS[@]}"
+run_circle_with_runtime_guard "recorded circle" "${FULL_CIRCLE_ARGS[@]}"
 DRIVE_RC=$?
 set -e
 
-sleep "${S1_POST_ROLL_SEC}"
+if runtime_guard_failed; then
+    echo "Skipping post-roll because the D455 IMU source failed."
+else
+    sleep "${S1_POST_ROLL_SEC}"
+fi
 publish_zero
 
 if bool_true "${S1_RECORD}"; then
@@ -924,6 +1116,8 @@ if bool_true "${S1_RECORD}"; then
 fi
 
 stop_gt_hold
+stop_runtime_guard
+classify_runtime_fault
 
 echo "Stopping bringup..."
 stop_process_group "${BRINGUP_PID}" INT
@@ -933,6 +1127,14 @@ BRINGUP_PID=""
 if bool_true "${S1_RECORD}" && bool_true "${S1_VALIDATE}"; then
     echo "--- bag validation ---"
     VALIDATE_ARGS=(--min-duration "${S1_MIN_BAG_DURATION}" --json-out "${VALIDATION_JSON}")
+    if awk -v epoch="${S1_START_AT_EPOCH}" 'BEGIN { exit !(epoch > 0) }'; then
+        # Recorder pre-roll is useful evidence but is not part of the scenario.
+        # Keep strict continuity checks scoped to the synchronized motion window.
+        VALIDATE_ARGS+=(
+            --window-start-epoch "${S1_START_AT_EPOCH}"
+            --window-duration "${S1_DURATION}"
+        )
+    fi
     if bool_true "${REQUIRE_GT}"; then
         VALIDATE_ARGS+=(--require-gt)
     fi
@@ -948,7 +1150,7 @@ if bool_true "${S1_RECORD}" && bool_true "${S1_VALIDATE}"; then
     REQUIRE_GT="${REQUIRE_GT}" \
     REQUIRE_IMU="${REQUIRE_IMU}" \
     COLOR_BAG_MIN_HZ="${COLOR_BAG_MIN_HZ:-12}" \
-    DEPTH_BAG_MIN_HZ="${DEPTH_BAG_MIN_HZ:-13}" \
+    DEPTH_BAG_MIN_HZ="${DEPTH_BAG_MIN_HZ:-12}" \
     DEPTH_TOPIC="/camera/depth/image_rect_raw" \
     DEPTH_INFO_TOPIC="/camera/depth/camera_info" \
     IMU_TOPICS="/camera/gyro/sample /camera/accel/sample /camera/imu /imu" \
@@ -967,6 +1169,8 @@ printf 'bag:           %s\n' "${BAG_PATHS[@]}"
 echo "precheck_json: ${PRECHECK_JSON}"
 echo "summary_json:  ${SUMMARY_JSON}"
 echo "validate_json: ${VALIDATION_JSON}"
+echo "runtime_guard: ${RUNTIME_GUARD_STATUS}"
+echo "fault_report:  ${RUNTIME_FAULT_CLASSIFICATION}"
 echo "========================================================================"
 
 if [ "${DRIVE_RC}" -ne 0 ]; then

@@ -269,6 +269,15 @@ IMU path. The runtime watchdog is disabled by default because `ros2 topic hz`
 probes can perturb a publishable run; use post-run bag validation as the
 authority.
 
+The S1 runner has a separate `S1_RUNTIME_IMU_GUARD=true` source guard. It tails
+the existing RealSense bringup log and creates no ROS subscriptions. If
+librealsense reports a fatal HID/IIO motion-frame timeout, the runner stops the
+circle and bag within seconds and saves the trigger, kernel log, USB topology,
+Pi throttle/temperature state, and process load under
+`~/agv_data/<session>_runtime_imu_guard_evidence`. The resulting fault report
+identifies the failing layer. Camera-versus-cable-versus-host ownership still
+requires a controlled A/B swap when kernel and power evidence are clean.
+
 The D455 IMU recording keepalive is also disabled by default
 (`ENABLE_IMU_RECORDING_KEEPALIVE=false`). The bag recorder itself subscribes to
 `/camera/gyro/sample` and `/camera/accel/sample`, with `/camera/imu` recorded
@@ -527,6 +536,18 @@ default), direction-normalised progress is positive, and the precheck radius
 error stays within 0.15 m. The upper rate bound rejects duplicate publishers or
 amplified bridge routes instead of recording repeated poses. The post-run bag
 validator accepts both configured MoCap topics and `/gt/<robot>/pose`.
+
+When raw IMU is required, the S1 runner also enables its no-subscription runtime
+guard by default. A D455 HID source stall stops the run immediately rather than
+leaving a long sensor bag with a missing IMU tail. The guard status and evidence
+paths are printed in the run summary.
+
+The temporary Zenoh ground-truth discovery subscriber is stopped as soon as the
+bag recorder owns the GT subscription. Do not replace this with a full-run
+`ros2 topic echo`: formatting every pose adds substantial CPU load and can starve
+the D455 HID/IIO motion path during sustained MCAP recording. A robot-doctor
+readiness pass is a point-in-time gate; commission each new robot with one
+five-minute full MCAP run and pass the post-run validator before dataset use.
 
 The MoCap rate bounds are dataset policy, not robot-specific control logic.
 Change them only when the authoritative source rate changes, and apply the same
