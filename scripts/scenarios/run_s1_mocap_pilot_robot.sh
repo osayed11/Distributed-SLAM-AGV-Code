@@ -45,6 +45,7 @@ Circle overrides:
   S1_FORWARD_YAW_OFFSET_DEG  Per-robot rigid-body-to-forward calibration. Default: 0
   S1_BEST_EFFORT_POSE true/false. Default: true for sensor-data QoS.
   S1_START_AT_EPOCH Unix epoch for synchronized fleet motion. Default: 0 (immediate).
+  S1_START_SIGNAL_FILE  Wait stopped until this file contains a shared start epoch.
   S1_DRY_RUN       true/false. Default: false. Proves lifecycle without publishing motion.
 
 Recording/gates:
@@ -89,6 +90,14 @@ SCENARIO="${2:-s1_mocap_circle}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+
+MOTION_LOCK_FILE="${S1_MOTION_LOCK_FILE:-/tmp/orkar_s1_motion.lock}"
+exec 9>"${MOTION_LOCK_FILE}"
+if ! flock -n 9; then
+    echo "ERROR: another S1 motion/recording session owns ${MOTION_LOCK_FILE}." >&2
+    echo "       Stop the existing session before starting a second launcher." >&2
+    exit 73
+fi
 cd "${ROOT}"
 
 # Every ROS participant in this script must use the same local transport.
@@ -433,6 +442,7 @@ S1_MAX_RADIUS_HEADING_OFFSET_DEG="${S1_MAX_RADIUS_HEADING_OFFSET_DEG:-35}"
 S1_BEST_EFFORT_POSE="${S1_BEST_EFFORT_POSE:-true}"
 D455_RESET_MODE="${D455_RESET_MODE:-none}"
 S1_START_AT_EPOCH="${S1_START_AT_EPOCH:-0}"
+S1_START_SIGNAL_FILE="${S1_START_SIGNAL_FILE:-}"
 S1_DRY_RUN="${S1_DRY_RUN:-false}"
 S1_PRECHECK="${S1_PRECHECK:-true}"
 S1_PRECHECK_DURATION="${S1_PRECHECK_DURATION:-5}"
@@ -468,6 +478,10 @@ REQUIRE_RESILIENT_STORAGE="${REQUIRE_RESILIENT_STORAGE:-true}"
 S1_RUNTIME_IMU_GUARD="${S1_RUNTIME_IMU_GUARD:-${REQUIRE_IMU}}"
 
 require_nonempty "MOCAP_TOPIC" "${MOCAP_TOPIC}"
+
+if [ -n "${S1_START_SIGNAL_FILE}" ]; then
+    rm -f -- "${S1_START_SIGNAL_FILE}"
+fi
 if ! awk -v min="${MOCAP_MIN_HZ}" -v max="${MOCAP_MAX_HZ}" -v seconds="${MOCAP_RATE_CHECK_SECONDS}" \
     'BEGIN { exit !(min > 0 && max > min && seconds > 0) }'; then
     echo "ERROR: require 0 < MOCAP_MIN_HZ < MOCAP_MAX_HZ and MOCAP_RATE_CHECK_SECONDS > 0." >&2
@@ -703,6 +717,7 @@ echo "linear:       ${S1_LINEAR} m/s"
 echo "pose_qos:     $(bool_true "${S1_BEST_EFFORT_POSE}" && echo best_effort || echo reliable)"
 echo "d455_reset:   ${D455_RESET_MODE}"
 echo "start_epoch:  ${S1_START_AT_EPOCH}"
+echo "start_signal: ${S1_START_SIGNAL_FILE:-none}"
 echo "transport:    ${ORKAR_ROS_TRANSPORT:-local DDS}"
 echo "localhost:    ${ROS_LOCALHOST_ONLY:-unset}"
 echo "precheck:     ${S1_PRECHECK} (${S1_PRECHECK_DURATION}s)"
@@ -863,8 +878,7 @@ fi
 FULL_CIRCLE_ARGS=("${CIRCLE_ARGS[@]}")
 if bool_true "${S1_PRECHECK}" && ! bool_true "${S1_DRY_RUN}" && \
    [ -z "${S1_CENTER_X:-}" ] && [ -z "${S1_CENTER_Y:-}" ]; then
-    read -r FROZEN_CENTER_X FROZEN_CENTER_Y < <(
-        python3 - "${PRECHECK_JSON}" <<'PY'
+    FROZEN_CENTER_VALUES="$(python3 - "${PRECHECK_JSON}" <<'PY'
 import json
 import math
 import sys
@@ -877,7 +891,9 @@ if not math.isfinite(center_x) or not math.isfinite(center_y):
     raise SystemExit("precheck center is not finite")
 print(center_x, center_y)
 PY
-    )
+    )"
+    FROZEN_CENTER_X="${FROZEN_CENTER_VALUES%% *}"
+    FROZEN_CENTER_Y="${FROZEN_CENTER_VALUES#* }"
     FULL_CIRCLE_ARGS+=(--center-x "${FROZEN_CENTER_X}" --center-y "${FROZEN_CENTER_Y}")
     echo "Frozen inferred center for full run: (${FROZEN_CENTER_X}, ${FROZEN_CENTER_Y})"
 fi
@@ -887,6 +903,25 @@ if ! awk -v epoch="${S1_START_AT_EPOCH}" 'BEGIN { exit !(epoch >= 0) }'; then
 fi
 if awk -v epoch="${S1_START_AT_EPOCH}" 'BEGIN { exit !(epoch > 0) }'; then
     FULL_CIRCLE_ARGS+=(--start-at-epoch "${S1_START_AT_EPOCH}")
+fi
+if [ -n "${S1_START_SIGNAL_FILE}" ]; then
+    echo "FLEET_READY: sensors passed; waiting stopped before recorder startup on ${S1_START_SIGNAL_FILE}"
+    while [ ! -s "${S1_START_SIGNAL_FILE}" ]; do
+        if grep -q '^FAIL_RUNTIME_GUARD ' "${RUNTIME_GUARD_STATUS}" 2>/dev/null; then
+            echo "ERROR: D455 IMU failed while waiting for fleet release." >&2
+            cat "${RUNTIME_GUARD_STATUS}" >&2 || true
+            exit 70
+        fi
+        sleep 0.2
+    done
+    RELEASE_EPOCH="$(tr -d '[:space:]' < "${S1_START_SIGNAL_FILE}")"
+    if ! awk -v epoch="${RELEASE_EPOCH}" 'BEGIN { exit !(epoch > 0) }'; then
+        echo "ERROR: fleet release file must contain a positive Unix epoch." >&2
+        exit 2
+    fi
+    S1_START_AT_EPOCH="${RELEASE_EPOCH}"
+    FULL_CIRCLE_ARGS+=(--start-at-epoch "${S1_START_AT_EPOCH}")
+    echo "Fleet release received; recorder startup begins for epoch ${S1_START_AT_EPOCH}."
 fi
 
 if bool_true "${S1_RECORD}"; then

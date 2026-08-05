@@ -192,6 +192,38 @@ def drive(node: MocapCircleNode, args) -> CircleSummary:
 
     node.publish_zero(0.5)
 
+    if args.start_signal_file:
+        print(
+            "Waiting stopped for synchronized start signal file %s"
+            % args.start_signal_file,
+            flush=True,
+        )
+        while rclpy.ok() and not stop_requested:
+            try:
+                with open(args.start_signal_file, "r", encoding="utf-8") as handle:
+                    release_text = handle.read().strip()
+                release_epoch = float(release_text)
+                if release_epoch < 0.0:
+                    raise ValueError("release epoch must be non-negative")
+                args.start_at_epoch = release_epoch
+                print(
+                    "Synchronized start signal received: epoch %.3f"
+                    % args.start_at_epoch,
+                    flush=True,
+                )
+                break
+            except FileNotFoundError:
+                pass
+            except (OSError, ValueError) as exc:
+                raise RuntimeError(
+                    "Invalid synchronized start signal file %s: %s"
+                    % (args.start_signal_file, exc)
+                ) from exc
+            node.pub.publish(Twist())
+            rclpy.spin_once(node, timeout_sec=0.05)
+        if stop_requested or not rclpy.ok():
+            raise RuntimeError("Stopped before synchronized start signal")
+
     if args.start_at_epoch > 0.0:
         print(
             "Waiting stopped for synchronized start epoch %.3f (in %.1fs)"
@@ -403,6 +435,11 @@ def parse_args(argv):
         default=0.0,
         help="Remain stopped until this Unix epoch; 0 starts immediately.",
     )
+    parser.add_argument(
+        "--start-signal-file",
+        default="",
+        help="Wait stopped until this file contains a Unix release epoch.",
+    )
     parser.add_argument("--rate", type=float, default=30.0)
     parser.add_argument("--report-period", type=float, default=1.0)
     parser.add_argument("--summary-json", default="")
@@ -432,6 +469,7 @@ def normalise_args(args):
     args.error_grace = max(0.0, args.error_grace)
     args.progress_epsilon = max(0.0, args.progress_epsilon)
     args.start_at_epoch = max(0.0, args.start_at_epoch)
+    args.start_signal_file = os.path.expanduser(args.start_signal_file.strip())
     args.wait_timeout = max(0.1, args.wait_timeout)
     args.rate = max(5.0, args.rate)
     args.report_period = max(0.5, args.report_period)
