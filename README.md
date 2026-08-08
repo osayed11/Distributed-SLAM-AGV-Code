@@ -132,8 +132,8 @@ D455 firmware:                  5.17.0.10
 USB link:                       USB 3.x / 5000 Mb/s
 D455 IMU:                       BMI085
 Standalone librealsense tools:  2.58.1
-ROS driver package:             realsense2_camera 4.58.2
-ROS node LibRealSense runtime:  2.58.2
+ROS driver package:             realsense2_camera 4.58.3
+ROS node LibRealSense runtime:  2.58.3
 RGB-D profile:                  640x480 at 15 Hz
 D455 IMU rate:                  about 200 Hz live, >=150 Hz in recorded bags
 Gyro raw topic:                 /camera/gyro/sample at about 200 Hz

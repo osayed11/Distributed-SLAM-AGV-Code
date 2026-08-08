@@ -1312,8 +1312,8 @@ class RobotDoctorConfigTests(unittest.TestCase):
                         "d455_swap_notes": "/tmp/d455_swap_notes.md",
                         "expected_d455_serial": "333422300768",
                         "expected_d455_firmware": "5.17.0.10",
-                        "expected_realsense_ros_driver": "4.58.2",
-                        "expected_realsense_ros_librealsense": "2.58.2",
+                        "expected_realsense_ros_driver": "4.58.3",
+                        "expected_realsense_ros_librealsense": "2.58.3",
                         "expect_native_ros2": True,
                         "expected_robot_namespace": ["/agv100", "/agv101"],
                         "require_odom_mocap_sanity": True,
@@ -1339,8 +1339,8 @@ class RobotDoctorConfigTests(unittest.TestCase):
             self.assertEqual(args.d455_swap_notes, "/tmp/d455_swap_notes.md")
             self.assertEqual(args.expected_d455_serial, "333422300768")
             self.assertEqual(args.expected_d455_firmware, "5.17.0.10")
-            self.assertEqual(args.expected_realsense_ros_driver, "4.58.2")
-            self.assertEqual(args.expected_realsense_ros_librealsense, "2.58.2")
+            self.assertEqual(args.expected_realsense_ros_driver, "4.58.3")
+            self.assertEqual(args.expected_realsense_ros_librealsense, "2.58.3")
             self.assertTrue(args.expect_native_ros2)
             self.assertEqual(args.expected_robot_namespace, ["/agv100", "/agv101"])
             self.assertTrue(args.require_odom_mocap_sanity)
