@@ -19,12 +19,26 @@ command output, and never assume — confirm.
 
 ## GOLDEN RULES (read first, always apply)
 
-1. **Never `git commit`, `git push`, or merge without explicit user
+1. **Evidence only — never theorize. State only what you are 100% certain of,
+   and back every claim with a measurement.** Do NOT present a cause, diagnosis,
+   or conclusion as fact unless direct evidence proves it. Banned: "probably X",
+   "likely the Y", "it's a Z thing" — any root cause you have not measured.
+   - Always separate **PROVEN** (measured; quote the real output/numbers) from
+     **UNPROVEN** (a hypothesis) — and if something is a hypothesis, say so
+     explicitly; never let it stand as the answer.
+   - Watch for over-reading a single number: e.g. high load average with idle
+     CPU does **not** prove CPU exhaustion. Check the confounders before naming
+     a cause.
+   - If you lack the data to be certain, say "I don't know yet" and run the
+     measurement that settles it (isolate variables, A/B test) before concluding.
+     Ruling a cause **out** with data beats guessing one **in**.
+   - When you do conclude, cite what proved it and what you ruled out and how.
+2. **Never `git commit`, `git push`, or merge without explicit user
    confirmation.** Show the diff / plan first and wait for a clear yes. This
    applies even when the change seems obviously correct.
-2. **Never add `Co-Authored-By` (or any co-author) lines to commits.** Standing
+3. **Never add `Co-Authored-By` (or any co-author) lines to commits.** Standing
    user instruction.
-3. **Branch model — respect it strictly:**
+4. **Branch model — respect it strictly:**
    - `main` = the **last known-good, fleet-validated** version. Stable baseline.
    - `ros2-migration` = **staging** for changes not yet proven on every robot.
    - Do **all** work on `ros2-migration`. New robots are set up from it too.
@@ -32,20 +46,20 @@ command output, and never assume — confirm.
      the fleet, and **only with explicit user sign-off**. It is normal and
      desired for `ros2-migration` to sit ahead of `main`. Do not "fix" that.
    - **Never force-push** a shared branch (`main` or `ros2-migration`).
-4. **Always run the doctor and validation scripts** — never declare a robot or
+5. **Always run the doctor and validation scripts** — never declare a robot or
    bag "ready" from eyeballing logs. The **post-run bag validator is the
    authority** on publishability. `READY: false` / `dataset_ready=false` on the
    preflight/sensor-logging gate is **normal** (it isn't the dataset gate).
-5. **Report outcomes honestly.** If a gate FAILs, say so with the evidence. Never
+6. **Report outcomes honestly.** If a gate FAILs, say so with the evidence. Never
    soften or skip a failure. Distinguish benign failures (e.g. `cmd_vel` missing
    in a stationary test) from real ones.
-6. **Confirm before anything hard to reverse:** reboot, reflash, `apt`
+7. **Confirm before anything hard to reverse:** reboot, reflash, `apt`
    install/upgrade, killing processes, deleting bags, pushing, merging. State
    what you're about to do and why, then wait.
-7. **Physical faults are not software-fixable.** USB `-71`/HID-timeout, SD-card
+8. **Physical faults are not software-fixable.** USB `-71`/HID-timeout, SD-card
    read-only, cable/port issues → diagnose, present the evidence, and hand off
    to the human. Do not loop on software "fixes" for hardware problems.
-8. **Networking:** use **NetworkManager (`nmcli`) only**. Never run manual
+9. **Networking:** use **NetworkManager (`nmcli`) only**. Never run manual
    `wpa_supplicant`/`dhclient` — duplicate WiFi/DHCP processes break SSH and ROS
    discovery.
 
@@ -87,7 +101,7 @@ with the ROS packages.
 ## Workflow A — Set up a new or reflashed robot
 
 1. Console (or SSH): `sudo hostnamectl set-hostname agv<N> && sudo reboot`.
-2. WiFi via `nmcli` (see Golden Rule 8):
+2. WiFi via `nmcli` (see Golden Rule 9):
    `sudo nmcli device wifi connect "<SSID>" password "<PW>"`, then verify with
    `ping -c3 8.8.8.8`.
 3. Clone + provision (needs internet + sudo password):
@@ -208,6 +222,21 @@ DDS multicast. Robots stay `ROS_LOCALHOST_ONLY=1` on `rmw_fastrtps_cpp`; only
   power off ~30 s, not a warm reboot) then `fsck -y /dev/mmcblk0p2`. If fsck
   reports "unable to set superblock flags" or the OS can't even
   unmount/probe the card, it's dead — **reflash a fresh card**; don't fight it.
+- **Build wedges / `task kworker … blocked for more than N seconds` during
+  `colcon build`** → often *not* a bad card. On a **low-RAM Pi (2 GB)** a
+  full-parallel build exhausts RAM; the kernel thrashes dirty-page writeback to
+  the slow SD, a `kworker` blocks on I/O, and the whole box wedges (SSH dies with
+  it). It *looks* like card death but the card is usually fine. Rule out the
+  imposters first: `free -h` (is it a 2 GB board?) and `vcgencmd get_throttled`
+  (`0x0` = not under-voltage). The fix is to **throttle the build** —
+  `setup_robot_ros2.sh` does NOT (it runs `colcon build --symlink-install` on all
+  cores). Kill the hung build (via its process group), clean `agv2_ws/{build,
+  install,log}`, then build by hand: source ROS + the workspace, then
+  `MAKEFLAGS=-j2 colcon build --symlink-install --parallel-workers 1` — one
+  package at a time stays in RAM (often never even swaps). Optional headroom: a
+  2 GB swapfile helps under *moderate* pressure, but prefer **zram** (compressed
+  RAM swap, no SD I/O) over an SD swapfile, which can itself thrash when it
+  collides with build writes. Long-term fix: a 4/8 GB Pi or USB-SSD boot.
 - **Pi 4 USB buses:** bus 2 = USB3 (blue, 5000 Mb/s), bus 1 = USB2 (480). A
   D455 that enumerates on bus 1 is in the wrong port and will be degraded.
 - **`D455_RESET_MODE` default is `none`** — a healthy camera must not be reset
