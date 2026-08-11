@@ -269,6 +269,24 @@ IMU path. The runtime watchdog is disabled by default because `ros2 topic hz`
 probes can perturb a publishable run; use post-run bag validation as the
 authority.
 
+The recording write bottleneck on a 2 GB Pi with a standard SD card is **SD
+write bandwidth, not CPU** — measured on two robots (agv24 and agv110). During a
+full MCAP recording the SD card runs at about 100% utilization while the CPU
+holds 25-55% idle, i.e. the recorder is waiting on the disk. The write load is
+about 99% raw RGB-D images: `/camera/color/image_raw` ~11 MB/s (58%) and
+`/camera/depth/image_rect_raw` ~8 MB/s (41%); raw IMU, LiDAR, odometry, TF, and
+ground truth combined are under 1% (ground truth alone ~0.01 MB/s). Zstd barely
+compresses the raw images, so on-disk writes (~20-25 MB/s) are close to the raw
+data volume and MCAP compression is not a useful lever here. The effect is RGB-D
+recorded at about 13 Hz (dropped image frames) instead of 15, marginally under
+the 12 Hz floor on some runs, while every other stream (IMU ~200/100 Hz, LiDAR,
+odometry, TF) records at full rate — the small `camera_info` topics stay at
+15 Hz while the large image frames drop, which confirms the constraint is write
+bandwidth. This is why the commissioning full MCAP run plus post-run validator
+is required per robot. Faster storage (USB-SSD or a higher-endurance card) or
+recording compressed image topics are the expected mitigations, but neither has
+been verified by intervention on this hardware.
+
 The S1 runner has a separate `S1_RUNTIME_IMU_GUARD=true` source guard. It tails
 the existing RealSense bringup log and creates no ROS subscriptions. If
 librealsense reports a fatal HID/IIO motion-frame timeout, the runner stops the
