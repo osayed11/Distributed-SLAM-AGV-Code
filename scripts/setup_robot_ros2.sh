@@ -491,6 +491,28 @@ path.write_text(" ".join(parts) + "\n")'
     echo "installed ${rule_file}; /dev/ydlidar -> /dev/${target}"
 }
 
+install_recording_writeback_tuning() {
+    section "recording writeback tuning"
+    # RGB-D MCAP recording pegs the SD card. With ratio-based writeback (the Pi
+    # default and the pre-existing 99-agv-writeback.conf), hundreds of MB of
+    # dirty pages accumulate on a 2 GB Pi then flush in one stall that starves
+    # the Zenoh ground-truth client, aborting MoCap drives on pose staleness.
+    # Force small continuous writeback instead. The 99-orkar name sorts after
+    # 99-agv-writeback.conf so these dirty_bytes settings win on sysctl --system.
+    local conf_file="/etc/sysctl.d/99-orkar-recording.conf"
+    local conf_content="# Continuous SD writeback so heavy RGB-D recording I/O does not stall the
+# Zenoh ground-truth client (proven cause of MoCap pose staleness on a 2 GB Pi:
+# with recording on, GT stalled 0.8-1.2s and aborted the drive; with these
+# settings GT max age stays ~0.13s and a full S1 circle completes).
+vm.dirty_bytes = 16777216
+vm.dirty_background_bytes = 8388608
+vm.dirty_writeback_centisecs = 100
+vm.dirty_expire_centisecs = 200"
+    sudo_write_file "${conf_file}" 0644 "${conf_content}"
+    sudo_run sysctl -p "${conf_file}" >/dev/null 2>&1 || true
+    echo "installed ${conf_file}"
+}
+
 check_python_binding() {
     section "pyrealsense2 import"
     if python3 - <<'PY'
@@ -606,6 +628,7 @@ if [ "${APPLY_LOW_RISK_FIXES}" = "true" ]; then
     install_d455_power_rule
     install_d455_uvc_bind_rule
     install_ydlidar_uart_rule
+    install_recording_writeback_tuning
 fi
 
 if [ "${INSTALL_YDLIDAR_SDK}" = "true" ]; then
