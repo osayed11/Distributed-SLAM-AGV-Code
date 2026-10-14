@@ -10,10 +10,10 @@ whenever a robot is gated, driven, or reconfigured.
 |-------|--------------|---------------|-------------|--------------|---------------|
 | agv24  | **2026-10-12** | 192.168.50.158 | PASS (0 FAIL, 0 WARN) | **PASS/WARN — 0 FAIL** | **Yes** — needs operator sign-off + a real bag |
 | agv104 | **2026-10-12** | 192.168.50.192 | PASS (0 FAIL, 0 WARN) | **PASS/WARN — 0 FAIL** | **No** — min-speed floors block S1 |
-| agv103 | **2026-10-14** | 192.168.50.176 | PASS (0 FAIL, 0 WARN) | FAIL — `odom_mocap_sanity` only | Pending 1 m drive (yaw offset + odom scale) |
-| agv106 | **2026-10-14** | 192.168.50.208 | PASS (0 FAIL, 0 WARN) | FAIL — `odom_mocap_sanity` only | Pending 1 m drive (yaw offset + odom scale) |
+| agv103 | **2026-10-14** | 192.168.50.176 | PASS (0 FAIL, 0 WARN) | **PASS/WARN — 0 FAIL** | Yaw **180**, no floor, linear ok (1.027 suggested); needs sign-off |
+| agv106 | **2026-10-14** | 192.168.50.208 | PASS (0 FAIL, 0 WARN) | **PASS/WARN — 0 FAIL** | Yaw **−7**, no floor, linear 1.054 suggested; **odom yaw drifts to 16°/m**; needs sign-off |
 | agv107 | August 2026 | 192.168.1.19 | PASS | not recorded | Yes — full S1 circle completed |
-| agv110 | **2026-10-14** | 192.168.50.132 | PASS (0 FAIL, 0 WARN) | FAIL — `odom_mocap_sanity` only | Motion started: yaw offset **0**, no floor; odom scale **unresolved** (yaw drift); **dropped offline mid-session** |
+| agv110 | **2026-10-14** | 192.168.50.132 | PASS (0 FAIL, 0 WARN) | **PASS/WARN — 0 FAIL** | Yaw **0**, no floor, linear 1.026 suggested; **odom yaw drifts ~18°/m**; WiFi assoc-rejects; needs sign-off |
 
 ---
 
@@ -310,9 +310,24 @@ agv104 in August. **Reboot before gating after any RealSense package change.**
 **Disk cleared 2026-10-14** by the operator: `~/agv_data` emptied (41 GB of
 July runs), now **47 GB free**.
 
-**Open:** 1 m open-loop straight for yaw offset + `linear_scale` (unmeasured --
-do not copy other robots' values); operator sign-offs; decide on the two
-untracked `.run0[67]_wrapper.sh` files.
+**Motion phase 2026-10-14 (traced open-loop 1 m straights, 0.08 m/s):**
+- **Marker frame is 180 deg from drive direction**: with offset 0 every run drove
+  *backwards* 0.10 m and tripped the script's reverse-abort (measured travel-rigid
+  offset +177.8..+179.6). With `--line-yaw-offset-deg 180` three 1 m runs
+  completed. **`S1_FORWARD_YAW_OFFSET_DEG=180`** (measured mean +178.6, sd 0.3).
+- **No speed floor**: 0.077 m/s against 0.08 commanded; lateral 1.8-3.1 cm.
+- **Linear odometry nearly right**: odom path / GT straight-line **0.9741**
+  (sd 0.0070, n=3) -> suggested `linear_scale 1.027` (**not applied**). Endpoint
+  method would have said 0.926 -> 1.08, wrong (see fleet gotcha).
+- Odom yaw drift +2.2 / -0.6 / +2.7 deg per metre (mean +1.4) -- small.
+- GT via Zenoh 70-72 Hz, max gap 0.17 s.
+
+**Dataset gate with trace-derived sanity evidence: PASS/WARN, 0 FAIL.**
+`odom_mocap_sanity` OK at 2.6% (odom 0.953 m vs mocap 0.978 m). 46.4 GB free.
+
+**Open:** operator sign-offs (mechanical / MoCap visibility / anchors); whether
+to apply `linear_scale 1.027`; commissioning bag; the two untracked
+`.run0[67]_wrapper.sh` files.
 
 ---
 
@@ -363,9 +378,22 @@ MAC `e4:5f:01:c1:75:d0`.
 - Dataset gate -- FAIL: the two pin checks + expected `odom_mocap_sanity`; the 4
   operator WARNs; everything else OK.
 
-**Open:** 1 m open-loop straight for yaw offset + `linear_scale` (unmeasured --
-do not copy other robots' values); operator sign-offs; the unexplained failed
-first reboot.
+**Motion phase 2026-10-14 (traced open-loop 1 m straights, 0.08 m/s):**
+- **Yaw offset -6.5 deg** (sd 0.6, probe + 3 runs) -> **`S1_FORWARD_YAW_OFFSET_DEG=-7`**.
+- **No speed floor**: 0.078 m/s against 0.08; lateral 0.5-2.0 cm.
+- **Linear odometry**: odom path / GT **0.9492** (sd 0.0017 -- tightest in the
+  fleet) -> suggested `linear_scale 1.054` (**not applied**). Endpoint method
+  0.907 -> 1.10, wrong.
+- **Odom yaw drift is the worst measured: -1.1 / -6.3 / -16.3 deg per metre** on
+  runs MoCap held to <2 deg. Linear scale is fine; angular odometry is not
+  (`angular_scale` / gyro bias). Do not trust this robot's odom heading.
+- GT via Zenoh 69-74 Hz, max gap 0.12 s.
+
+**Dataset gate with trace-derived sanity evidence: PASS/WARN, 0 FAIL.**
+`odom_mocap_sanity` OK at 5.1% (odom 0.927 m vs mocap 0.977 m). 43.2 GB free.
+
+**Open:** operator sign-offs; whether to apply `linear_scale 1.054`; the angular
+odometry drift; commissioning bag; the unexplained failed first reboot.
 
 ---
 
@@ -426,17 +454,51 @@ already configured (`tcp/192.168.50.98:7447`).
   impact unknown.
 - **Then it dropped off the network entirely** during the traced-run batch: no
   ping/mDNS/ARP, MAC absent from the subnet, Zenoh link gone, while Motive kept
-  tracking its (stationary) markers. Pi lost power or WiFi; needs a physical
-  look. Bringup had also lost `/odom` just before.
+  tracking its (stationary) markers. **Root cause found after the operator's
+  restart**, in the previous-boot journal: `wlan0: CTRL-EVENT-ASSOC-REJECT
+  bssid=00:00:00:00:00:00 status_code=16` on `DELTA_FLIGHT_ARENA`, then
+  `CTRL-EVENT-SSID-TEMP-DISABLED ... auth_fail`, re-enabled ~90 s later. The Pi
+  stayed up; WiFi re-association was being rejected. This robot's WiFi is
+  **marginal** -- it also had a 0.5 s and a 2.6 s GT gap abort drives today.
 
-**Open:** get it back online and find out why it dropped; 3 traced runs to
-settle linear vs angular odom scale; operator sign-offs; no bag recorded under
-the new writeback tuning yet.
+**Traced runs after restart (offset 0, 0.08 m/s), 2 of 3 completed** (the third
+aborted on the 2.6 s GT gap):
+- **Linear odometry**: odom path / GT **0.9746** (sd 0.0027) -> suggested
+  `linear_scale 1.026` (**not applied**). Endpoint 0.908 -> 1.10, wrong.
+- **Odom yaw drift -19.2 / -16.7 deg per metre** on MoCap-straight runs (GT yaw
+  change +0.5 / +5.4). Angular odometry is badly off; linear is fine.
+- Yaw offset confirmed ~0 (+0.1, +3.7).
+
+**Dataset gate with trace-derived sanity evidence: PASS/WARN, 0 FAIL.**
+`odom_mocap_sanity` OK at 2.5% (odom 0.954 m vs mocap 0.978 m). 47.2 GB free.
+
+**Open:** WiFi reliability on this robot (assoc rejects); operator sign-offs;
+whether to apply `linear_scale 1.026`; the angular odometry drift; D455 MIPI
+warning; commissioning bag.
 
 **History:** in August 2026 it produced a validator-clean S1 bag
 (`PASS 42 / WARN 5 / FAIL 1` benign) on stock writeback settings.
 
 ---
+
+## Fleet-wide finding: odometry *heading* drifts on straight runs
+
+Measured 2026-10-14 with continuous traces (odom yaw change minus MoCap yaw change
+over a 1 m open-loop straight, `linear_scale` 1.0 on all):
+
+| Robot | odom yaw drift per metre | linear path ratio |
+|-------|--------------------------|-------------------|
+| agv103 | +1.4 deg (small) | 0.974 |
+| agv106 | -1.1 / -6.3 / **-16.3** deg | 0.949 |
+| agv110 | **-19.2 / -16.7** deg | 0.975 |
+| agv104 | angular rate under-read ~40% vs GT (sweep) | 0.840 (open-loop) |
+
+Linear scales are within 3-6% across 103/106/110 and 10-16% on 24/104; the
+*angular* channel is the bigger problem on at least three robots. Any
+`linear_scale` must be derived from odom **path length** (not endpoints) or it
+silently absorbs this drift. `angular_scale` is still 1.0 everywhere and
+unmeasured as a correction; a yaw-rate sweep against GT (as done on agv104) per
+robot is the next calibration step.
 
 ## Fleet-wide gotchas
 
