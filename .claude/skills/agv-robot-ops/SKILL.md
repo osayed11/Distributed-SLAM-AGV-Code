@@ -59,9 +59,12 @@ command output, and never assume — confirm.
 8. **Physical faults are not software-fixable.** USB `-71`/HID-timeout, SD-card
    read-only, cable/port issues → diagnose, present the evidence, and hand off
    to the human. Do not loop on software "fixes" for hardware problems.
-9. **Networking:** use **NetworkManager (`nmcli`) only**. Never run manual
+9. **Networking:** use **one persistent managed path** — NetworkManager
+   (`nmcli`) *or* netplan/systemd-networkd; `robot_doctor.py`'s
+   `wifi_management` check passes either. Never run manual
    `wpa_supplicant`/`dhclient` — duplicate WiFi/DHCP processes break SSH and ROS
-   discovery.
+   discovery. Check `ls /etc/netplan/` before reaching for `nmcli`: fleet robots
+   have shipped on netplan with no NetworkManager installed at all.
 
 ## Repo orientation
 
@@ -101,17 +104,26 @@ with the ROS packages.
 ## Workflow A — Set up a new or reflashed robot
 
 1. Console (or SSH): `sudo hostnamectl set-hostname agv<N> && sudo reboot`.
-2. WiFi via `nmcli` (see Golden Rule 9):
-   `sudo nmcli device wifi connect "<SSID>" password "<PW>"`, then verify with
-   `ping -c3 8.8.8.8`.
+2. WiFi (see Golden Rule 9). NetworkManager image:
+   `sudo nmcli device wifi connect "<SSID>" password "<PW>"`. Netplan image: add
+   the SSID under `wifis.wlan0.access-points` in the existing `/etc/netplan/*.yaml`
+   (keep lab and home SSIDs side by side so it roams), `sudo netplan apply`.
+   Either way verify with `ping -c3 8.8.8.8`.
 3. Clone + provision (needs internet + sudo password):
    ```
    git clone -b ros2-migration https://github.com/osayed11/Distributed-SLAM-AGV-Code.git ~/slam_project
    SUDO_PASSWORD=<pw> bash ~/slam_project/scripts/setup_robot_ros2.sh agv<N>
    ```
-4. Re-add the operator's SSH public key to `~/.ssh/authorized_keys` if remote
+4. **Reboot before the first camera gate.** `setup_robot_ros2.sh` writes
+   `usbcore.quirks=8086:0b5c:kn` to `cmdline.txt` but does not reboot, and the
+   quirk only applies at boot. Until then a D455 can fail outright —
+   `UVCIOC_CTRL_QUERY ... Connection timed out`, kernel `-110`, no camera topics
+   after the full bringup wait. Do **not** reach for `d455-usb-reset` /
+   `d455-authorize-cycle` first: on a hot-plugged camera without the quirk that
+   escalated the fault to `VIDIOC_S_FMT errno=5`. A plain reboot cleared it.
+5. Re-add the operator's SSH public key to `~/.ssh/authorized_keys` if remote
    access is needed (ask the user for the key; do not invent one).
-5. Prefer a **high-endurance SD card or USB-SSD boot** — recording write loads
+6. Prefer a **high-endurance SD card or USB-SSD boot** — recording write loads
    wear out cheap cards (see SD gotcha below).
 
 ## Workflow B — Update code on an existing robot
@@ -186,8 +198,18 @@ DDS multicast. Robots stay `ROS_LOCALHOST_ONLY=1` on `rmw_fastrtps_cpp`; only
 `/optitrack/rigid_bodies/orkar_agv*` is bridged in. **Never combine with
 `ROS_DISCOVERY_SERVER`.**
 
-1. Lab laptop: `configure_zenoh.sh router-run` + start the NatNet pose source
-   (Motive streaming, rigid body `orkar_agv<N>`).
+1. Lab laptop, in this order: start the NatNet pose source (Motive streaming,
+   rigid body `orkar_agv<N>` **enabled** — a disabled asset is absent from the
+   streamed model definitions, and the publisher only enumerates at connect, so
+   re-enabling one in Motive needs a publisher restart to take effect), then the
+   router (`configure_zenoh.sh router-run`) **with `ROS_DISTRO=humble` set**.
+   Without it the bridge assumes `iron`, rejects every Humble
+   `ros_discovery_info` as a bad GID length, and routes **nothing** while
+   looking healthy — listening on `:7447`, robots connected, zero
+   `Discovered ROS Node` lines. Confirm `Route Publisher ... created` in the
+   router log. Its REST plugin binds `127.0.0.1:8000`; if something else holds
+   that port the router panics on start — run from a config copy with a free
+   `http_port`.
 2. Robot: `bash scripts/network/configure_zenoh.sh robot <LAPTOP_IP> 7447` then
    `source scripts/network/load_ros_transport_env.sh`. (Pre-staging the pinned
    bridge binary at `/usr/local/bin/zenoh-bridge-ros2dds` while on reliable
@@ -196,7 +218,12 @@ DDS multicast. Robots stay `ROS_LOCALHOST_ONLY=1` on `rmw_fastrtps_cpp`; only
    `ros2 topic echo /optitrack/rigid_bodies/orkar_agv<N> --once` and
    `ros2 topic hz ...` (must be inside the configured 20–120 Hz band).
 4. Run the gated S1 circle (needs a measured per-robot
-   `S1_FORWARD_YAW_OFFSET_DEG` — never inferred from robot ID):
+   `S1_FORWARD_YAW_OFFSET_DEG` — never inferred from robot ID). To measure it:
+   one open-loop 1 m straight (`drive_mocap_straight_ros2.py --heading-kp 0
+   --max-angular 0 --yes`), offset = travel bearing − rigid-body yaw at start.
+   Marker frames differ per robot (one robot measured −90°, another ~0°);
+   measured values live in `docs/FLEET_STATUS.md`. With the wrong offset the
+   precheck fails on `direction-normalised progress` — that is the gate working.
    ```
    MOCAP_TOPIC=/optitrack/rigid_bodies/orkar_agv<N> CMD_TOPIC=/agv<N>/cmd_vel \
      bash scripts/scenarios/run_s1_mocap_pilot_robot.sh agv<N> s1_circle_1m
@@ -210,7 +237,13 @@ DDS multicast. Robots stay `ROS_LOCALHOST_ONLY=1` on `rmw_fastrtps_cpp`; only
 ## Hard-won gotchas
 
 - **IMU missing from a bag** (`/camera/gyro|accel/sample` count 0) despite live
-  rates before recording → usually a **marginal USB3 cable**. The kernel shows
+  rates before recording → **first confirm the bag was compressed.** Older
+  `start_session.sh` passed `--storage-config-file` only for sqlite3, so MCAP
+  sessions ran with no chunk compression at ~2× the S1 runner's write rate —
+  enough to stall a 2 GB Pi and drop the HID stream with exactly this signature,
+  on a perfectly good cable. Read the MCAP chunk indexes to check (rosbag2's
+  `compression_format` in `metadata.yaml` is empty either way). Only with the
+  writer profile right is a **marginal USB3 cable** the suspect. The kernel shows
   `uvcvideo ... Non-zero status (-71)` (EPROTO) and
   `hid-sensor-hub ... No report`; librealsense logs `Frames didn't arrive`.
   Video (UVC) survives, IMU (HID) dies under combined load — the gates test
