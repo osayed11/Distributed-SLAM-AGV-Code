@@ -13,7 +13,7 @@ whenever a robot is gated, driven, or reconfigured.
 | agv103 | **2026-10-14** | 192.168.50.176 | PASS (0 FAIL, 0 WARN) | FAIL — `odom_mocap_sanity` only | Pending 1 m drive (yaw offset + odom scale) |
 | agv106 | **2026-10-14** | 192.168.50.208 | PASS (0 FAIL, 0 WARN) | FAIL — `odom_mocap_sanity` only | Pending 1 m drive (yaw offset + odom scale) |
 | agv107 | August 2026 | 192.168.1.19 | PASS | not recorded | Yes — full S1 circle completed |
-| agv110 | **2026-10-14** | 192.168.50.132 | PASS (0 FAIL, 0 WARN) | FAIL — `odom_mocap_sanity` only | Pending 1 m drive (yaw offset + odom scale) |
+| agv110 | **2026-10-14** | 192.168.50.132 | PASS (0 FAIL, 0 WARN) | FAIL — `odom_mocap_sanity` only | Motion started: yaw offset **0**, no floor; odom scale **unresolved** (yaw drift); **dropped offline mid-session** |
 
 ---
 
@@ -404,9 +404,34 @@ already configured (`tcp/192.168.50.98:7447`).
 - Dataset gate — **FAIL, single item** `odom_mocap_sanity` (needs the 1 m drive)
   + the 4 operator WARNs. `mocap_topic @ 75.3 Hz`, `zenoh_gt_transport` OK.
 
-**Open:** 1 m open-loop straight for yaw offset + `linear_scale` (not yet measured
-on this robot -- do NOT copy 1.106/1.191 from the others); operator sign-offs;
-no bag recorded under the new writeback tuning yet.
+**Motion phase started 2026-10-14 (open-loop 1 m straights at 0.08 m/s):**
+- **Yaw offset ~0** (-0.6 deg, +0.5 deg across runs): marker frame is aligned.
+  `S1_FORWARD_YAW_OFFSET_DEG=0`.
+- **No speed floor**: mean |vx| 0.079 m/s against 0.08 commanded; 1 m runs reach
+  target with 0.5-1.4 cm lateral error and <2.3 deg heading. agv24-class base.
+- **Odometry scale UNRESOLVED -- do not derive it from endpoints on this robot.**
+  Endpoint ratios scattered 0.82 / 0.89 / 0.90 / 1.09 (vs agv24's sd 0.009). A
+  continuous trace explained why: on a MoCap-confirmed straight run odom's
+  integrated *path* was 0.965 m but its *endpoint* only 0.882 m -- odom's yaw
+  integrates a bias and curves its own track. Path-length ratio was
+  0.965/0.977 = **0.988**, i.e. the linear scale is nearly right and the fault is
+  **angular drift** (cf. agv104's ~40% angular under-read). Deriving
+  `linear_scale` from endpoints would have set ~1.10 and over-corrected the
+  linear axis to hide a yaw problem. Needs 3+ traced runs (path-length for
+  linear, odom-vs-GT yaw change per metre for angular) before any scale is set.
+- One GT stall (0.503 s) aborted a run with nothing recording -- WiFi on this
+  robot may be marginal.
+- D455 logged `Hardware Notification: Right MIPI error ... Hardware Error` twice
+  at bringup -- not seen on other robots; gates still passed with 0 timeouts;
+  impact unknown.
+- **Then it dropped off the network entirely** during the traced-run batch: no
+  ping/mDNS/ARP, MAC absent from the subnet, Zenoh link gone, while Motive kept
+  tracking its (stationary) markers. Pi lost power or WiFi; needs a physical
+  look. Bringup had also lost `/odom` just before.
+
+**Open:** get it back online and find out why it dropped; 3 traced runs to
+settle linear vs angular odom scale; operator sign-offs; no bag recorded under
+the new writeback tuning yet.
 
 **History:** in August 2026 it produced a validator-clean S1 bag
 (`PASS 42 / WARN 5 / FAIL 1` benign) on stock writeback settings.
@@ -440,3 +465,9 @@ These bite repeatedly; full detail lives in the session memory notes.
 - **Reboot before gating after any RealSense package install** -- on agv103 the
   install alone wedged UVC (`SET_CUR ... -110`, camera invisible to librealsense)
   with the quirk active; a reboot cleared it. The USB-reset remedies make it worse.
+- **Odom-vs-MoCap scale: compare odom *path length* to GT straight-line, from a
+  continuous trace, not endpoint snapshots.** If a robot's odom yaw drifts, its
+  endpoint under-measures its own travelled distance and an endpoint-derived
+  `linear_scale` over-corrects. Endpoints were fine on agv24 (no yaw drift) and
+  misleading on agv110. Quantify yaw drift (odom yaw change minus GT yaw change
+  per metre) as a separate `angular_scale` question.
