@@ -60,7 +60,7 @@ ROSBAG2_MAX_CACHE_SIZE="${ROSBAG2_MAX_CACHE_SIZE:-536870912}"
 ROSBAG2_MAX_BAG_SIZE="${ROSBAG2_MAX_BAG_SIZE:-2147483648}"
 ROSBAG2_STORAGE_ID="${ROSBAG2_STORAGE_ID:-auto}"
 ROSBAG2_STORAGE_ID_EFFECTIVE="${ROSBAG2_STORAGE_ID}"
-ROSBAG2_STORAGE_CONFIG="${ROSBAG2_STORAGE_CONFIG:-${ROOT}/configs/sqlite_resilient.yaml}"
+ROSBAG2_STORAGE_CONFIG="${ROSBAG2_STORAGE_CONFIG:-}"
 ROSBAG2_STORAGE_PRESET_PROFILE="${ROSBAG2_STORAGE_PRESET_PROFILE:-}"
 ROSBAG2_QOS_OVERRIDES="${ROSBAG2_QOS_OVERRIDES:-${ROOT}/configs/rosbag2_sensor_qos.yaml}"
 ROSBAG_STOP_TIMEOUT="${ROSBAG_STOP_TIMEOUT:-180}"
@@ -246,6 +246,18 @@ if [ "${ROSBAG2_STORAGE_ID}" = "auto" ]; then
     fi
 else
     ROSBAG2_STORAGE_ID_EFFECTIVE="${ROSBAG2_STORAGE_ID}"
+fi
+
+# Default the rosbag2 writer config to the backend actually in use. Previously
+# the sqlite WAL profile was the only default and it was only ever passed for
+# sqlite3, so MCAP sessions ran with rosbag2's defaults: no chunk compression and
+# roughly twice the SD write rate of the S1 runner's zstd profile, enough to stall
+# a 2 GB Pi mid-recording. Keep the two paths on the same writer profile.
+if [ -z "${ROSBAG2_STORAGE_CONFIG}" ]; then
+    case "${ROSBAG2_STORAGE_ID_EFFECTIVE}" in
+        mcap)    ROSBAG2_STORAGE_CONFIG="${ROOT}/configs/mcap_resilient_high_throughput.yaml" ;;
+        sqlite3) ROSBAG2_STORAGE_CONFIG="${ROOT}/configs/sqlite_resilient.yaml" ;;
+    esac
 fi
 
 # ---------------------------------------------------------------------------
@@ -1408,7 +1420,7 @@ ROS2_STORAGE_ARGS=()
 if [ -n "${ROSBAG2_STORAGE_ID_EFFECTIVE}" ]; then
     ROS2_STORAGE_ARGS+=(-s "${ROSBAG2_STORAGE_ID_EFFECTIVE}")
 fi
-if [ "${ROSBAG2_STORAGE_ID_EFFECTIVE}" = "sqlite3" ] && [ -n "${ROSBAG2_STORAGE_CONFIG}" ]; then
+if [ -n "${ROSBAG2_STORAGE_CONFIG}" ]; then
     if [ -f "${ROSBAG2_STORAGE_CONFIG}" ]; then
         ROS2_STORAGE_ARGS+=(--storage-config-file "${ROSBAG2_STORAGE_CONFIG}")
     else
