@@ -13,6 +13,7 @@ logs/
 *.db3
 *.mcap
 metadata.yaml
+diagnostic_reports/
 *.swp
 swapfile
 # pixi environments

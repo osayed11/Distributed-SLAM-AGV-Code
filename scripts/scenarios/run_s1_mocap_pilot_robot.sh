@@ -63,8 +63,10 @@ Recording/gates:
   S1_MCAP_STORAGE_PRESET_PROFILE  Optional MCAP preset; overrides the config file.
   ROSBAG2_MAX_CACHE_SIZE  Recorder cache bytes. Default: 536870912 (512 MiB).
   S1_RECORDER_READY_TIMEOUT  Wait for required recorder subscriptions. Default: 60s
+  S1_MAX_RECORDER_SUBSCRIPTION_SKEW_SEC  Maximum startup spread after all
+                    subscriptions exist. Default: COVERAGE_TOLERANCE_SEC or 3s.
   S1_TOPIC_WAIT_SEC Wait per required topic. Default: 180
-  MOCAP_MIN_HZ     Minimum accepted GT transport rate. Default: 20
+  MOCAP_MIN_HZ     Minimum accepted GT transport rate. Default: 30
   MOCAP_MAX_HZ     Maximum accepted GT transport rate. Default: 120
   MOCAP_RATE_CHECK_SECONDS  Duration of the pre-motion rate check. Default: 5
   REQUIRE_GT        Require MoCap in validator. Default: true
@@ -461,10 +463,10 @@ ROSBAG2_MAX_CACHE_SIZE="${ROSBAG2_MAX_CACHE_SIZE:-536870912}"
 S1_SENSOR_CACHE_SIZE="${S1_SENSOR_CACHE_SIZE:-402653184}"
 S1_AUX_CACHE_SIZE="${S1_AUX_CACHE_SIZE:-67108864}"
 S1_RECORDER_READY_TIMEOUT="${S1_RECORDER_READY_TIMEOUT:-60}"
-S1_MAX_RECORDER_SUBSCRIPTION_SKEW_SEC="${S1_MAX_RECORDER_SUBSCRIPTION_SKEW_SEC:-2.0}"
+S1_MAX_RECORDER_SUBSCRIPTION_SKEW_SEC="${S1_MAX_RECORDER_SUBSCRIPTION_SKEW_SEC:-${COVERAGE_TOLERANCE_SEC:-3.0}}"
 S1_RECORDER_PREROLL_SEC="${S1_RECORDER_PREROLL_SEC:-2}"
 S1_TOPIC_WAIT_SEC="${S1_TOPIC_WAIT_SEC:-180}"
-MOCAP_MIN_HZ="${MOCAP_MIN_HZ:-20}"
+MOCAP_MIN_HZ="${MOCAP_MIN_HZ:-30}"
 MOCAP_MAX_HZ="${MOCAP_MAX_HZ:-120}"
 MOCAP_RATE_CHECK_SECONDS="${MOCAP_RATE_CHECK_SECONDS:-5}"
 S1_GT_HOLD_READY_TIMEOUT="${S1_GT_HOLD_READY_TIMEOUT:-15}"

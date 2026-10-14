@@ -62,6 +62,8 @@ ROSBAG2_STORAGE_ID="${ROSBAG2_STORAGE_ID:-auto}"
 ROSBAG2_STORAGE_ID_EFFECTIVE="${ROSBAG2_STORAGE_ID}"
 ROSBAG2_STORAGE_CONFIG="${ROSBAG2_STORAGE_CONFIG:-}"
 ROSBAG2_STORAGE_PRESET_PROFILE="${ROSBAG2_STORAGE_PRESET_PROFILE:-}"
+ROSBAG2_STORAGE_CONFIG_APPLIED=""
+ROSBAG2_STORAGE_PRESET_PROFILE_APPLIED=""
 ROSBAG2_QOS_OVERRIDES="${ROSBAG2_QOS_OVERRIDES:-${ROOT}/configs/rosbag2_sensor_qos.yaml}"
 ROSBAG_STOP_TIMEOUT="${ROSBAG_STOP_TIMEOUT:-180}"
 BRINGUP_STOP_TIMEOUT="${BRINGUP_STOP_TIMEOUT:-60}"
@@ -248,16 +250,30 @@ else
     ROSBAG2_STORAGE_ID_EFFECTIVE="${ROSBAG2_STORAGE_ID}"
 fi
 
-# Default the rosbag2 writer config to the backend actually in use. Previously
-# the sqlite WAL profile was the only default and it was only ever passed for
-# sqlite3, so MCAP sessions ran with rosbag2's defaults: no chunk compression and
-# roughly twice the SD write rate of the S1 runner's zstd profile, enough to stall
-# a 2 GB Pi mid-recording. Keep the two paths on the same writer profile.
-if [ -z "${ROSBAG2_STORAGE_CONFIG}" ]; then
-    case "${ROSBAG2_STORAGE_ID_EFFECTIVE}" in
-        mcap)    ROSBAG2_STORAGE_CONFIG="${ROOT}/configs/mcap_resilient_high_throughput.yaml" ;;
-        sqlite3) ROSBAG2_STORAGE_CONFIG="${ROOT}/configs/sqlite_resilient.yaml" ;;
-    esac
+# Select a backend-compatible resilient profile only after resolving `auto`.
+# An explicit preset owns the policy and therefore takes precedence over a
+# config file. A selected config must exist; silently falling back would make
+# the manifest claim resilience that rosbag2 did not apply.
+if [ -n "${ROSBAG2_STORAGE_PRESET_PROFILE}" ]; then
+    ROSBAG2_STORAGE_PRESET_PROFILE_APPLIED="${ROSBAG2_STORAGE_PRESET_PROFILE}"
+else
+    if [ -z "${ROSBAG2_STORAGE_CONFIG}" ]; then
+        case "${ROSBAG2_STORAGE_ID_EFFECTIVE}" in
+            mcap)
+                ROSBAG2_STORAGE_CONFIG="${ROOT}/configs/mcap_resilient_high_throughput.yaml"
+                ;;
+            sqlite3)
+                ROSBAG2_STORAGE_CONFIG="${ROOT}/configs/sqlite_resilient.yaml"
+                ;;
+        esac
+    fi
+    if [ -n "${ROSBAG2_STORAGE_CONFIG}" ]; then
+        if [ ! -r "${ROSBAG2_STORAGE_CONFIG}" ]; then
+            echo "ERROR: rosbag2 storage config is not readable: ${ROSBAG2_STORAGE_CONFIG}" >&2
+            exit 1
+        fi
+        ROSBAG2_STORAGE_CONFIG_APPLIED="${ROSBAG2_STORAGE_CONFIG}"
+    fi
 fi
 
 # ---------------------------------------------------------------------------
@@ -436,8 +452,8 @@ rosbag2_max_cache_size_bytes: ${ROSBAG2_MAX_CACHE_SIZE}
 rosbag2_max_bag_size_bytes: ${ROSBAG2_MAX_BAG_SIZE}
 rosbag2_storage_id_requested: "${ROSBAG2_STORAGE_ID}"
 rosbag2_storage_id_effective: "${ROSBAG2_STORAGE_ID_EFFECTIVE}"
-rosbag2_storage_config: "${ROSBAG2_STORAGE_CONFIG}"
-rosbag2_storage_preset_profile: "${ROSBAG2_STORAGE_PRESET_PROFILE}"
+rosbag2_storage_config: "${ROSBAG2_STORAGE_CONFIG_APPLIED}"
+rosbag2_storage_preset_profile: "${ROSBAG2_STORAGE_PRESET_PROFILE_APPLIED}"
 rosbag2_qos_overrides: "${ROSBAG2_QOS_OVERRIDES}"
 rosbag_stop_timeout_sec: ${ROSBAG_STOP_TIMEOUT}
 bringup_stop_timeout_sec: ${BRINGUP_STOP_TIMEOUT}
@@ -1420,15 +1436,11 @@ ROS2_STORAGE_ARGS=()
 if [ -n "${ROSBAG2_STORAGE_ID_EFFECTIVE}" ]; then
     ROS2_STORAGE_ARGS+=(-s "${ROSBAG2_STORAGE_ID_EFFECTIVE}")
 fi
-if [ -n "${ROSBAG2_STORAGE_CONFIG}" ]; then
-    if [ -f "${ROSBAG2_STORAGE_CONFIG}" ]; then
-        ROS2_STORAGE_ARGS+=(--storage-config-file "${ROSBAG2_STORAGE_CONFIG}")
-    else
-        echo "  [WARN] rosbag2 storage config not found: ${ROSBAG2_STORAGE_CONFIG}; using rosbag2 defaults."
-    fi
+if [ -n "${ROSBAG2_STORAGE_CONFIG_APPLIED}" ]; then
+    ROS2_STORAGE_ARGS+=(--storage-config-file "${ROSBAG2_STORAGE_CONFIG_APPLIED}")
 fi
-if [ -n "${ROSBAG2_STORAGE_PRESET_PROFILE}" ]; then
-    ROS2_STORAGE_ARGS+=(--storage-preset-profile "${ROSBAG2_STORAGE_PRESET_PROFILE}")
+if [ -n "${ROSBAG2_STORAGE_PRESET_PROFILE_APPLIED}" ]; then
+    ROS2_STORAGE_ARGS+=(--storage-preset-profile "${ROSBAG2_STORAGE_PRESET_PROFILE_APPLIED}")
 fi
 if [ -n "${ROSBAG2_QOS_OVERRIDES}" ]; then
     if [ -f "${ROSBAG2_QOS_OVERRIDES}" ]; then

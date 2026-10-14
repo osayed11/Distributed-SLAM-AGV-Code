@@ -30,8 +30,8 @@ APPLY_LOW_RISK_FIXES=true
 
 ROS_DISTRO="${ROS_DISTRO:-humble}"
 EXPECTED_LIBREALSENSE="${EXPECTED_LIBREALSENSE:-2.58.1}"
-EXPECTED_REALSENSE_ROS_DRIVER="${EXPECTED_REALSENSE_ROS_DRIVER:-4.58.3}"
-EXPECTED_REALSENSE_ROS_LIBREALSENSE="${EXPECTED_REALSENSE_ROS_LIBREALSENSE:-2.58.3}"
+EXPECTED_REALSENSE_ROS_DRIVER="${EXPECTED_REALSENSE_ROS_DRIVER:-4.58.4}"
+EXPECTED_REALSENSE_ROS_LIBREALSENSE="${EXPECTED_REALSENSE_ROS_LIBREALSENSE:-2.58.4}"
 EXPECTED_D455_FIRMWARE="${EXPECTED_D455_FIRMWARE:-5.17.0.10}"
 PYREALSENSE2_PIP_VERSION="${PYREALSENSE2_PIP_VERSION:-2.58.1.10581}"
 ALLOW_REALSENSE_VERSION_DRIFT="${ALLOW_REALSENSE_VERSION_DRIFT:-false}"
@@ -336,12 +336,21 @@ install_realsense_stack() {
 
 install_realsense_ros_stack() {
     section "realsense ros packages"
-    install_expected_version_package "ros-${ROS_DISTRO}-librealsense2" "${EXPECTED_REALSENSE_ROS_LIBREALSENSE}"
-    install_expected_version_package "ros-${ROS_DISTRO}-realsense2-camera-msgs" "${EXPECTED_REALSENSE_ROS_DRIVER}"
-    install_expected_version_package "ros-${ROS_DISTRO}-realsense2-camera" "${EXPECTED_REALSENSE_ROS_DRIVER}"
+    local pkg
+    local realsense_ros_packages=(
+        "ros-${ROS_DISTRO}-librealsense2"
+        "ros-${ROS_DISTRO}-realsense2-camera-msgs"
+        "ros-${ROS_DISTRO}-realsense2-camera"
+    )
+    install_expected_version_package "${realsense_ros_packages[0]}" "${EXPECTED_REALSENSE_ROS_LIBREALSENSE}"
+    install_expected_version_package "${realsense_ros_packages[1]}" "${EXPECTED_REALSENSE_ROS_DRIVER}"
+    install_expected_version_package "${realsense_ros_packages[2]}" "${EXPECTED_REALSENSE_ROS_DRIVER}"
     apt_install \
         "ros-${ROS_DISTRO}-diagnostic-updater" \
         "ros-${ROS_DISTRO}-realsense2-description"
+    for pkg in "${realsense_ros_packages[@]}"; do
+        sudo_run apt-mark hold "${pkg}" >/dev/null || true
+    done
 }
 
 install_d455_boot_quirk() {

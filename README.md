@@ -132,8 +132,8 @@ D455 firmware:                  5.17.0.10
 USB link:                       USB 3.x / 5000 Mb/s
 D455 IMU:                       BMI085
 Standalone librealsense tools:  2.58.1
-ROS driver package:             realsense2_camera 4.58.3
-ROS node LibRealSense runtime:  2.58.3
+ROS driver package:             realsense2_camera 4.58.4
+ROS node LibRealSense runtime:  2.58.4
 RGB-D profile:                  640x480 at 15 Hz
 D455 IMU rate:                  about 200 Hz live, >=150 Hz in recorded bags
 Gyro raw topic:                 /camera/gyro/sample at about 200 Hz
@@ -269,6 +269,17 @@ IMU path. The runtime watchdog is disabled by default because `ros2 topic hz`
 probes can perturb a publishable run; use post-run bag validation as the
 authority.
 
+Dataset-mode Robot Doctor also requires the active continuous-writeback policy
+(`dirty_bytes=16 MiB`, `dirty_background_bytes=8 MiB`, writeback `100 cs`,
+expiry `200 cs`). The setup script installs it to prevent burst SD flushing from
+stalling the robot-local Zenoh GT client during RGB-D recording.
+
+`ROSBAG2_STORAGE_ID=auto` resolves before the storage profile is selected:
+MCAP uses `configs/mcap_resilient_high_throughput.yaml`, while SQLite uses
+`configs/sqlite_resilient.yaml`. An explicit preset overrides the config, and a
+missing selected config aborts before recording instead of silently falling
+back to an untracked storage policy.
+
 The recording write bottleneck on a 2 GB Pi with a standard SD card is **SD
 write bandwidth, not CPU** — measured on two robots (agv24 and agv110). During a
 full MCAP recording the SD card runs at about 100% utilization while the CPU
@@ -351,6 +362,16 @@ FAIL 0, WARN 0       ideal
 FAIL 0, WARN >0      review warnings; often acceptable for home/non-GT tests
 FAIL >0              not publishable; fix the failed branch and rerun
 ```
+
+Raw D455 IMU gaps over `0.10s` and at most `0.25s` are explicit warnings;
+larger gaps are failures. The strict fleet audit rejects warnings, so accepting
+a bounded gap for a final release remains a deliberate dataset-level decision.
+Required ground truth must average at least `30 Hz`; internal GT gaps over
+`0.25s` warn and gaps over the controller's `0.50s` stale-pose timeout fail.
+When `MOCAP_TOPIC` is set, that exact per-robot stream is authoritative;
+unrelated GT-like topics are informational and cannot fail or rescue the run.
+For an explicit scenario window, the validator checks every gap and requires
+each stream at the window boundaries instead of applying recorder edge grace.
 
 For final copied dataset artifacts on the laptop:
 
@@ -454,7 +475,9 @@ data.
 The ROS 2 validator ignores a small start/stop edge window for gap checks while
 still enforcing coverage and mid-run continuity. This avoids rejecting bags just
 because the `ros2 bag` recorder and drivers shut down at different speeds after
-`Ctrl+C`.
+`Ctrl+C`. When an explicit experiment window is supplied, no edge gaps are
+ignored and every required stream must cover the window within its hard-gap
+tolerance.
 
 Mid-run gaps still fail.
 
@@ -549,7 +572,7 @@ bash scripts/scenarios/run_s1_mocap_pilot_robot.sh agv103 s1_circle_0p8
 ```
 
 The recorder cannot start unless GT is fresh, its measured transport rate is
-inside the configured `MOCAP_MIN_HZ` to `MOCAP_MAX_HZ` band (20 to 120 Hz by
+inside the configured `MOCAP_MIN_HZ` to `MOCAP_MAX_HZ` band (30 to 120 Hz by
 default), direction-normalised progress is positive, and the precheck radius
 error stays within 0.15 m. The upper rate bound rejects duplicate publishers or
 amplified bridge routes instead of recording repeated poses. The post-run bag
