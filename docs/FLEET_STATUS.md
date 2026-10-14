@@ -481,6 +481,27 @@ warning; commissioning bag.
 
 ---
 
+## NOTE — fleet pin moved to 4.58.4 / 2.58.4 (commit `8847489`, 2026-10-14)
+
+Every gate verdict recorded on this page for 2026-10-12..14 was run against the
+**4.58.3 / 2.58.3** pin. Commit `8847489` (Riyaadh, "Harden ROS2 dataset recording
+and validation") raises `expected_realsense_ros_driver` / `_librealsense` to
+**4.58.4 / 2.58.4** in both gate JSONs and `setup_robot_ros2.sh`, raises
+`mocap_min_hz` 20 -> 30 in the dataset gate, and adds a `recording_writeback`
+check. Consequences:
+- All five gated robots (24, 104, 103, 106, 110) are at 4.58.3 and will FAIL the
+  version checks as soon as they pull `8847489` or later. They need
+  `ros-humble-realsense2-camera 4.58.4` + `ros-humble-librealsense2 2.58.4` (+
+  `-camera-msgs`, `-description`) from `packages.ros.org`, **then a reboot**
+  before re-gating (the install wedges UVC -- see gotchas).
+- The cached 4.58.3 `.deb`s (agv110 apt cache, session scratchpad) are now the
+  *old* standard; keep them only as a rollback.
+- `mocap_min_hz 30`: all robots measured 56-81 Hz, so no impact.
+- The `start_session.sh` per-backend writer-config fix survived: `8847489`
+  keeps the same `case` and adds a readable-file check and `_APPLIED` manifest
+  fields.
+Robots were deliberately **not** pulled past `d96758e` pending this upgrade.
+
 ## Fleet-wide finding: odometry *heading* drifts on straight runs
 
 Measured 2026-10-14 with continuous traces (odom yaw change minus MoCap yaw change
