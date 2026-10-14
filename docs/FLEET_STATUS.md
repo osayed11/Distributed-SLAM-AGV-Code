@@ -14,10 +14,10 @@ whenever a robot is gated, driven, or reconfigured.
 | agv107 | **2026-10-14** | DHCP | PASS | **PASS/WARN - 0 FAIL** | **Yes** - out/back passed; yaw offset **+90** |
 | agv24  | **2026-10-12** | 192.168.50.158 | PASS (0 FAIL, 0 WARN) | **PASS/WARN — 0 FAIL** | **Yes** — needs operator sign-off + a real bag |
 | agv104 | **2026-10-12** | 192.168.50.192 | PASS (0 FAIL, 0 WARN) | **PASS/WARN — 0 FAIL** | **No** — min-speed floors block S1 |
-| agv103 | **2026-10-14** | 192.168.50.176 | PASS (0 FAIL, 0 WARN) | **PASS/WARN — 0 FAIL** | Yaw **180**, no floor, linear ok (1.027 suggested); needs sign-off |
-| agv106 | **2026-10-14** | 192.168.50.208 | PASS (0 FAIL, 0 WARN) | **PASS/WARN — 0 FAIL** | Yaw **−7**, no floor, linear 1.054 suggested; **odom yaw drifts to 16°/m**; needs sign-off |
+| agv103 | **2026-10-14** | 192.168.50.176 | PASS (0 FAIL, 0 WARN) | **PASS/WARN — 0 FAIL** | Calibrated: yaw **180**, `linear_scale` **1.027** (verified 1.012); needs sign-off + 4.58.4 upgrade |
+| agv106 | **2026-10-14** | 192.168.50.208 | PASS (0 FAIL, 0 WARN) | **PASS/WARN — 0 FAIL** | Calibrated: yaw **−7**, `linear_scale` **1.054** (verified 1.003); **odom yaw drifts to 19°/m**; WiFi GT gaps; needs sign-off + 4.58.4 upgrade |
 | agv107 | August 2026 | 192.168.1.19 | PASS | not recorded | Yes — full S1 circle completed |
-| agv110 | **2026-10-14** | 192.168.50.132 | PASS (0 FAIL, 0 WARN) | **PASS/WARN — 0 FAIL** | Yaw **0**, no floor, linear 1.026 suggested; **odom yaw drifts ~18°/m**; WiFi assoc-rejects; needs sign-off |
+| agv110 | **2026-10-14** | 192.168.50.132 | PASS (0 FAIL, 0 WARN) | **PASS/WARN — 0 FAIL** | Calibrated: yaw **0**, `linear_scale` **1.026** (verified 0.998); **odom yaw drifts to 23°/m**; WiFi assoc-rejects + GT gaps; needs sign-off + 4.58.4 upgrade |
 
 ---
 
@@ -354,9 +354,14 @@ July runs), now **47 GB free**.
 **Dataset gate with trace-derived sanity evidence: PASS/WARN, 0 FAIL.**
 `odom_mocap_sanity` OK at 2.6% (odom 0.953 m vs mocap 0.978 m). 46.4 GB free.
 
-**Open:** operator sign-offs (mechanical / MoCap visibility / anchors); whether
-to apply `linear_scale 1.027`; commissioning bag; the two untracked
-`.run0[67]_wrapper.sh` files.
+**`linear_scale 1.027` APPLIED** (uncommitted, `base_ros2.yaml`; backup
+`/tmp/base_ros2.prescale`). Verification, 3 traced 1 m runs: path ratio **1.0119**
+(sd 0.0095) -- within noise of 1.0 (endpoint 0.965, the yaw-drift effect). Odom
+yaw drift on these runs -6.1 / -13.2 / +4.0 deg -- more erratic than the first
+batch; the angular channel is not addressed by this scale.
+
+**Open:** operator sign-offs; 4.58.4 upgrade + holds (see fleet note); commissioning
+bag; the two untracked `.run0[67]_wrapper.sh` files.
 
 ---
 
@@ -421,8 +426,14 @@ MAC `e4:5f:01:c1:75:d0`.
 **Dataset gate with trace-derived sanity evidence: PASS/WARN, 0 FAIL.**
 `odom_mocap_sanity` OK at 5.1% (odom 0.927 m vs mocap 0.977 m). 43.2 GB free.
 
-**Open:** operator sign-offs; whether to apply `linear_scale 1.054`; the angular
-odometry drift; commissioning bag; the unexplained failed first reboot.
+**`linear_scale 1.054` APPLIED** (uncommitted; backup `/tmp/base_ros2.prescale`).
+Verification, 2 of 3 traced runs completed: path ratio **1.0028** (sd 0.0088).
+Third run aborted on a 0.61 s GT gap before moving -- the same marginal-WiFi
+signature as agv110. Odom yaw drift -18.7 / -11.7 deg per metre persists.
+
+**Open:** operator sign-offs; 4.58.4 upgrade + holds; the angular odometry drift
+(worst in fleet with agv110); WiFi GT gaps; commissioning bag; the unexplained
+failed first reboot.
 
 ---
 
@@ -501,9 +512,14 @@ aborted on the 2.6 s GT gap):
 **Dataset gate with trace-derived sanity evidence: PASS/WARN, 0 FAIL.**
 `odom_mocap_sanity` OK at 2.5% (odom 0.954 m vs mocap 0.978 m). 47.2 GB free.
 
-**Open:** WiFi reliability on this robot (assoc rejects); operator sign-offs;
-whether to apply `linear_scale 1.026`; the angular odometry drift; D455 MIPI
-warning; commissioning bag.
+**`linear_scale 1.026` APPLIED** (uncommitted; backup `/tmp/base_ros2.prescale`).
+Verification, 2 of 3 traced runs completed: path ratio **0.9979** (sd 0.0048).
+GT gaps 0.63 s (aborted run 1) and 0.74 s (run 3) -- WiFi remains marginal. Odom
+yaw drift -23.0 / -2.6 deg per metre.
+
+**Open:** WiFi reliability (assoc rejects, 3 GT-gap aborts today); operator
+sign-offs; 4.58.4 upgrade + holds; the angular odometry drift; D455 MIPI warning;
+commissioning bag.
 
 **History:** in August 2026 it produced a validator-clean S1 bag
 (`PASS 42 / WARN 5 / FAIL 1` benign) on stock writeback settings.
@@ -529,7 +545,16 @@ check. Consequences:
 - The `start_session.sh` per-backend writer-config fix survived: `8847489`
   keeps the same `case` and adds a readable-file check and `_APPLIED` manifest
   fields.
-Robots were deliberately **not** pulled past `d96758e` pending this upgrade.
+- `realsense_package_holds` now requires **every installed RealSense package to be
+  held** (`hold_targets = installed`), not just standalone `librealsense2*`. No
+  robot currently holds the ROS packages (agv106's were dropped by the cache
+  install; the others never had them), so that check fails fleet-wide too until
+  `apt-mark hold ros-humble-realsense2-camera ros-humble-librealsense2
+  ros-humble-realsense2-camera-msgs ros-humble-realsense2-description` is set.
+Robots were deliberately **not** pulled past `d96758e` pending this upgrade; the
+operator chose to **defer it to the next session** (2026-10-14). Procedure per
+robot: install 4.58.4/2.58.4 (with `--allow-change-held-packages` where held),
+hold all four, **reboot**, pull, re-gate with the existing sanity JSON.
 
 ## Fleet-wide finding: odometry *heading* drifts on straight runs
 
