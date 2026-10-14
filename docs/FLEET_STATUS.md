@@ -11,7 +11,7 @@ whenever a robot is gated, driven, or reconfigured.
 | agv24  | **2026-10-12** | 192.168.50.158 | PASS (0 FAIL, 0 WARN) | **PASS/WARN — 0 FAIL** | **Yes** — needs operator sign-off + a real bag |
 | agv104 | **2026-10-12** | 192.168.50.192 | PASS (0 FAIL, 0 WARN) | **PASS/WARN — 0 FAIL** | **No** — min-speed floors block S1 |
 | agv103 | **2026-10-14** | 192.168.50.176 | PASS (0 FAIL, 0 WARN) | FAIL — `odom_mocap_sanity` only | Pending 1 m drive (yaw offset + odom scale) |
-| agv106 | **2026-10-14** | 192.168.50.208 | FAIL — pin only at time of gate; pins since installed, **re-gate pending** | FAIL — pin + `odom_mocap_sanity` | **OFFLINE after post-install reboot — needs console** |
+| agv106 | **2026-10-14** | 192.168.50.208 | PASS (0 FAIL, 0 WARN) | FAIL — `odom_mocap_sanity` only | Pending 1 m drive (yaw offset + odom scale) |
 | agv107 | August 2026 | 192.168.1.19 | PASS | not recorded | Yes — full S1 circle completed |
 | agv110 | **2026-10-14** | 192.168.50.132 | PASS (0 FAIL, 0 WARN) | FAIL — `odom_mocap_sanity` only | Pending 1 m drive (yaw offset + odom scale) |
 
@@ -307,8 +307,10 @@ agv104 in August. **Reboot before gating after any RealSense package change.**
   `clock_sync` OK, stream 888/888 0 timeouts. **Disk now 5.5 GB free** -- each
   gate run consumes space; offload before it crosses the 5 GB gate minimum.
 
-**Open:** offload `~/agv_data` before any recording (5.7 GB free vs 5 GB gate
-minimum); 1 m open-loop straight for yaw offset + `linear_scale` (unmeasured --
+**Disk cleared 2026-10-14** by the operator: `~/agv_data` emptied (41 GB of
+July runs), now **47 GB free**.
+
+**Open:** 1 m open-loop straight for yaw offset + `linear_scale` (unmeasured --
 do not copy other robots' values); operator sign-offs; decide on the two
 untracked `.run0[67]_wrapper.sh` files.
 
@@ -317,7 +319,7 @@ untracked `.run0[67]_wrapper.sh` files.
 ## agv106 — last checked 2026-10-14
 
 Stationary commissioning run by a delegated agent (~23 min, no motion), then a
-pin install and reboot by the operator's session. **Currently OFFLINE.**
+pin install, reboot and re-gate by the operator's session.
 
 **Hardware:** Pi 4 2 GB, kernel `5.15.0-1061-raspi`, 44 G free, 2 GB swapfile
 (0 used). D455 fw `5.17.0.10` @ USB 5000 Mb/s, `/dev/ydlidar -> ttyS0`,
@@ -337,10 +339,19 @@ standalone `librealsense2*` is held, matching the fleet). Then rebooted
 pre-emptively before re-gating (because agv103's camera wedged after the same
 install).
 
-**It did not come back from that reboot.** No ping, no mDNS, not present under
-any IP in a subnet sweep 15+ min later (agv103 returned in 45 s from the same
-procedure). Cause unknown -- WiFi persistence on this fresh install, or a boot
-problem. **Needs a console look.** Last known MAC `e4:5f:01:c1:75:d0`.
+**It did not come back from that reboot on its own** -- no ping/mDNS for 15+ min
+(agv103 returned in 45 s from the same procedure). The operator power-cycled it
+and it came up normally on `.208` with everything intact (4.58.3/2.58.3, quirk
+active, 6 D455 interfaces, 0 UVC errors, Zenoh active, tuning applied). Cause of
+the failed first reboot **not established**; watch for it on the next reboot.
+MAC `e4:5f:01:c1:75:d0`.
+
+**Checks (post-install, post-power-cycle, at 4.58.3):**
+- Sensor-logging gate -- **PASS, 0 FAIL, 0 WARN.** Colour/depth 15.0 Hz, gyro
+  199.2 Hz, accel 101.0 Hz, standalone RGB-D 895/895 0 timeouts, no UVC errors.
+- Dataset gate -- **FAIL, single item** `odom_mocap_sanity` + the 4 operator
+  WARNs. `mocap_topic @ 69.8 Hz`, `zenoh_gt_transport` OK, `clock_sync` OK,
+  43.2 GB free.
 
 **Checks (agent run, pre-install, at 4.58.2 -- so both gates failed on the pin):**
 - Sensor-logging gate -- FAIL on the two pin checks **only**; 0 WARN; hardware all
@@ -352,9 +363,9 @@ problem. **Needs a console look.** Last known MAC `e4:5f:01:c1:75:d0`.
 - Dataset gate -- FAIL: the two pin checks + expected `odom_mocap_sanity`; the 4
   operator WARNs; everything else OK.
 
-**Open:** get it back on the network; re-run both gates at 4.58.3 (expect sensor
-gate 0 FAIL, dataset gate `odom_mocap_sanity` only); 1 m open-loop straight for
-yaw offset + `linear_scale`; operator sign-offs.
+**Open:** 1 m open-loop straight for yaw offset + `linear_scale` (unmeasured --
+do not copy other robots' values); operator sign-offs; the unexplained failed
+first reboot.
 
 ---
 
@@ -414,9 +425,11 @@ These bite repeatedly; full detail lives in the session memory notes.
   with the long-running `uvicorn` app on the laptop.
 - **A rigid body disabled in Motive** is absent from streamed model definitions;
   re-enabling it requires restarting the NatNet publisher to pick it up.
-- **`start_session.sh` does not apply the MCAP storage config** (gated on sqlite3
-  only), so home-test bags record uncompressed at ~2× the I/O and stall. Real S1
-  runs compress and are fine.
+- **`start_session.sh` used to skip the MCAP storage config** (gated on sqlite3
+  only), so home-test bags recorded uncompressed at ~2x the I/O and stalled. Fixed
+  in `91c7575` (per-backend default writer config; validated on agv110: 199 zstd
+  chunks at 1.82x). agv104 still carries the old hand-patched one-liner locally and
+  needs `git checkout -- scripts/logging/start_session.sh` before it can pull.
 - **Mask `apt-daily` timers** before a session; unattended-upgrades blocks dpkg
   and starves SD I/O mid-run.
 - **`packages.ros.org` keeps only the latest RealSense build**, so the fleet pin
