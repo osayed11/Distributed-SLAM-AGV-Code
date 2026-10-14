@@ -8,12 +8,41 @@ whenever a robot is gated, driven, or reconfigured.
 
 | Robot | Last checked | Last known IP | Sensor gate | Dataset gate | Fit to run S1 |
 |-------|--------------|---------------|-------------|--------------|---------------|
+| agv100 | **2026-10-14** | DHCP (offline at final motion check) | PASS | **PASS/WARN - 0 FAIL** | Pending guarded out-and-back only; MoCap live |
+| agv102 | **2026-10-14** | 192.168.50.196 | PASS | **PASS/WARN - 0 FAIL** | **Yes** - out/back passed; yaw offset **0** |
+| agv105 | **2026-10-14** | 192.168.50.226 | PASS | **PASS/WARN - 0 FAIL** | **Yes** - out/back passed; yaw offset **0** |
+| agv107 | **2026-10-14** | DHCP | PASS | **PASS/WARN - 0 FAIL** | **Yes** - out/back passed; yaw offset **+90** |
 | agv24  | **2026-10-12** | 192.168.50.158 | PASS (0 FAIL, 0 WARN) | **PASS/WARN — 0 FAIL** | **Yes** — needs operator sign-off + a real bag |
 | agv104 | **2026-10-12** | 192.168.50.192 | PASS (0 FAIL, 0 WARN) | **PASS/WARN — 0 FAIL** | **No** — min-speed floors block S1 |
 | agv103 | **2026-10-14** | 192.168.50.176 | PASS (0 FAIL, 0 WARN) | **PASS/WARN — 0 FAIL** | Yaw **180**, no floor, linear ok (1.027 suggested); needs sign-off |
 | agv106 | **2026-10-14** | 192.168.50.208 | PASS (0 FAIL, 0 WARN) | **PASS/WARN — 0 FAIL** | Yaw **−7**, no floor, linear 1.054 suggested; **odom yaw drifts to 16°/m**; needs sign-off |
 | agv107 | August 2026 | 192.168.1.19 | PASS | not recorded | Yes — full S1 circle completed |
 | agv110 | **2026-10-14** | 192.168.50.132 | PASS (0 FAIL, 0 WARN) | **PASS/WARN — 0 FAIL** | Yaw **0**, no floor, linear 1.026 suggested; **odom yaw drifts ~18°/m**; WiFi assoc-rejects; needs sign-off |
+
+---
+
+## Scenario quartet - last checked 2026-10-14
+
+All four robots have strict, GT-inclusive MCAP evidence with **zero validator
+FAILs**. Recorded RGB-D rates were 13.5-14.1 Hz, gyro rates 199.7-200.3 Hz,
+accel rates 100.7-101.5 Hz, and GT rates 75.3-77.0 Hz.
+
+Guarded 0.4 m forward/reverse tests returned agv105 within 1.4 cm and agv107
+within 3.2 mm of their starts. A guarded 0.15 m calibration returned agv102
+within 1 cm. Use these measured marker-to-forward offsets:
+
+| Robot | `S1_FORWARD_YAW_OFFSET_DEG` | Motion status |
+|-------|-----------------------------:|---------------|
+| agv100 | 0 (previously measured; recheck after marker changes) | Pending final out/back because SSH was unavailable |
+| agv102 | 0 | PASS |
+| agv105 | 0 | PASS |
+| agv107 | 90 | PASS - recreated rigid body is rotated 90 degrees |
+
+AGV100 remained live at the NatNet source, but did not expose SSH anywhere on
+the lab subnet during the final check. Restore its Wi-Fi connection and run the
+same guarded out/back before including it in a scenario. Re-run the five-second
+dry check whenever a rigid body is recreated; marker yaw is a physical
+calibration, not a robot-ID default.
 
 ---
 

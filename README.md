@@ -652,6 +652,10 @@ python3 scripts/logging/drive_mocap_straight_ros2.py \
   --verbose
 ```
 
+Add `--reverse` to return along the opposite direction without turning the
+robot. This mode is intended for guarded out-and-back commissioning tests; it
+still uses MoCap progress, lateral-error, stale-pose, and stuck-timeout aborts.
+
 Mocap square:
 
 ```bash

@@ -96,7 +96,10 @@ def drive(pub, args):
     wait_for_pose(args.wait_timeout)
     origin_pose = pose
     origin_yaw = origin_pose[3]
+    motion_sign = -1.0 if args.reverse else 1.0
     line_yaw_offset = math.radians(args.line_yaw_offset_deg)
+    if args.reverse:
+        line_yaw_offset += math.pi
     target = args.distance
     start = time.time()
     next_tick = start
@@ -111,7 +114,7 @@ def drive(pub, args):
 
     print(
         "Mocap straight ROS2: topic=%s frame=%s start=(%.3f, %.3f, %.3f) "
-        "rigid_yaw=%.1fdeg line_yaw=%.1fdeg target=%.3fm dry_run=%s"
+        "rigid_yaw=%.1fdeg line_yaw=%.1fdeg target=%.3fm direction=%s dry_run=%s"
         % (
             args.pose_topic,
             origin_pose[4],
@@ -121,6 +124,7 @@ def drive(pub, args):
             math.degrees(origin_yaw),
             math.degrees(origin_yaw + line_yaw_offset),
             target,
+            "reverse" if args.reverse else "forward",
             args.dry_run,
         )
     )
@@ -177,7 +181,7 @@ def drive(pub, args):
         linear = clamp(linear, 0.0, args.linear)
 
         msg = Twist()
-        msg.linear.x = linear
+        msg.linear.x = motion_sign * linear
         msg.angular.z = clamp(args.heading_kp * heading_error, -args.max_angular, args.max_angular)
         if not args.disable_lateral:
             msg.linear.y = clamp(-args.lateral_kp * lateral, -args.max_lateral, args.max_lateral)
@@ -243,6 +247,11 @@ def parse_args(argv):
     parser.add_argument("--lateral-kp", type=float, default=0.0)
     parser.add_argument("--max-lateral", type=float, default=0.05)
     parser.add_argument("--line-yaw-offset-deg", type=float, default=0.0)
+    parser.add_argument(
+        "--reverse",
+        action="store_true",
+        help="Drive backward while measuring progress toward the opposite line direction",
+    )
     parser.add_argument("--max-lateral-error", type=float, default=0.25)
     parser.add_argument("--disable-lateral", action="store_true", default=True)
     parser.add_argument("--position-tolerance", type=float, default=0.04)
