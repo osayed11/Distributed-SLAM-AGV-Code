@@ -10,8 +10,10 @@ whenever a robot is gated, driven, or reconfigured.
 |-------|--------------|---------------|-------------|--------------|---------------|
 | agv24  | **2026-10-12** | 192.168.50.158 | PASS (0 FAIL, 0 WARN) | **PASS/WARN — 0 FAIL** | **Yes** — needs operator sign-off + a real bag |
 | agv104 | **2026-10-12** | 192.168.50.192 | PASS (0 FAIL, 0 WARN) | **PASS/WARN — 0 FAIL** | **No** — min-speed floors block S1 |
+| agv103 | **2026-10-14** | 192.168.50.176 | PASS (0 FAIL, 0 WARN) | FAIL — `odom_mocap_sanity` only | Pending 1 m drive (yaw offset + odom scale) |
+| agv106 | **2026-10-14** | 192.168.50.208 | FAIL — pin only at time of gate; pins since installed, **re-gate pending** | FAIL — pin + `odom_mocap_sanity` | **OFFLINE after post-install reboot — needs console** |
 | agv107 | August 2026 | 192.168.1.19 | PASS | not recorded | Yes — full S1 circle completed |
-| agv110 | August 2026 | 192.168.50.132 | PASS | not recorded | Yes — produced a clean bag |
+| agv110 | **2026-10-14** | 192.168.50.132 | PASS (0 FAIL, 0 WARN) | FAIL — `odom_mocap_sanity` only | Pending 1 m drive (yaw offset + odom scale) |
 
 ---
 
@@ -256,6 +258,106 @@ Real but irrelevant next to the MCU issue.
 
 ---
 
+## agv103 — last checked 2026-10-14
+
+Stationary commissioning run by a delegated agent (~18.5 min, no motion, no reboot).
+
+**Hardware:** Pi 4 2 GB, kernel `5.15.0-1105-raspi`, **SD 90% full — 5.7 GB free**
+(the dataset gate's `min_free_gb` is 5, so this is on the edge), 2 GB swapfile
+present (0 used). D455 fw `5.17.0.10` @ USB 5000 Mb/s, serial 234322303415,
+`/dev/ydlidar -> ttyS0`, `/dev/ttyACM0`. Clock offset 0.15-0.22 ms. Quirk active.
+
+**Software:** repo `d78dc2d -> cee3e6c` (ff-only, no rebuild needed). Two
+untracked files left in place: `scripts/scenarios/.run06_wrapper.sh` /
+`.run07_wrapper.sh` (`.run07` is byte-identical to `run_s1_mocap_pilot_robot.sh`;
+`.run06` adds an 8-line `flock` motion-lock block) -- decide delete vs commit.
+
+**Changed 2026-10-14:** created `99-orkar-recording.conf` (was stock); masked
+`apt-daily` timers; **Zenoh `zenoh.env` was pointed at a stale router
+`tcp/192.168.50.153:7447`** -- re-pointed to `tcp/192.168.50.98:7447` via
+`configure_zenoh.sh`, service restarted. Nothing else.
+
+**RealSense pin -- RESOLVED without a fleet decision.** Robot had
+`4.58.2 / 2.58.2`; fleet pin `4.58.3 / 2.58.3`; `packages.ros.org` now offers only
+`4.58.4 / 2.58.4` (it keeps just the latest). Instead of bumping the pin (which
+would have failed the three robots already at 4.58.3), the exact-pin `.deb`s were
+pulled from **agv110's `/var/cache/apt/archives`** and installed:
+`realsense2-camera 4.58.3-1jammy.20260804.190440`,
+`ros-humble-librealsense2 2.58.3-1jammy.20260720.173911`, `-camera-msgs 4.58.3`,
+`-description 4.58.3`. Copies kept for future robots.
+
+**The install wedged the camera; a reboot cleared it.** Immediately after the
+package install the sensor gate failed completely -- `D455 not visible to
+librealsense`, six kernel `usb 2-2: Failed to query (SET_CUR) UVC control 1 on
+unit 3: -110`, every standalone probe timing out, no camera topics -- with the
+USB quirk active and the camera still enumerated at 5000 Mb/s. `systemctl reboot`
+cleared it (0 UVC errors, 6 interfaces bound). Same signature and same fix as
+agv104 in August. **Reboot before gating after any RealSense package change.**
+
+**Checks (post-install, post-reboot):**
+- Sensor-logging gate -- **PASS, 0 FAIL, 0 WARN** at 4.58.3/2.58.3: colour/depth
+  15.0 Hz, gyro 200.3 Hz, accel 100.4 Hz, standalone RGB-D 890/890 0 timeouts,
+  no UVC/xHCI kernel errors. (Pre-install run: all hardware checks OK too, with
+  `/scan` 16.9 Hz, `/odom` 12.7 Hz, motion probe 2956/2956.)
+- Dev checks -- selftest **OK** (exit 0); audit **28 / 0 / 0**.
+- GT -- `orkar_agv103` 70.7-72.8 Hz via Zenoh from `.98`, route created, max gap
+  0.043 s.
+- Dataset gate -- **FAIL, single item** `odom_mocap_sanity` (needs the 1 m drive)
+  + the 4 operator WARNs. `mocap_topic @ 70.1 Hz`, `zenoh_gt_transport` OK,
+  `clock_sync` OK, stream 888/888 0 timeouts. **Disk now 5.5 GB free** -- each
+  gate run consumes space; offload before it crosses the 5 GB gate minimum.
+
+**Open:** offload `~/agv_data` before any recording (5.7 GB free vs 5 GB gate
+minimum); 1 m open-loop straight for yaw offset + `linear_scale` (unmeasured --
+do not copy other robots' values); operator sign-offs; decide on the two
+untracked `.run0[67]_wrapper.sh` files.
+
+---
+
+## agv106 — last checked 2026-10-14
+
+Stationary commissioning run by a delegated agent (~23 min, no motion), then a
+pin install and reboot by the operator's session. **Currently OFFLINE.**
+
+**Hardware:** Pi 4 2 GB, kernel `5.15.0-1061-raspi`, 44 G free, 2 GB swapfile
+(0 used). D455 fw `5.17.0.10` @ USB 5000 Mb/s, `/dev/ydlidar -> ttyS0`,
+`/dev/ttyACM0`. Clock offset 56 us. USB quirk active. Passwordless sudo.
+
+**Software:** repo `8adbd70 -> cee3e6c` (ff-only, clean, no rebuild needed).
+Fresh-ish install: no Zenoh, no writeback conf, apt timers enabled.
+
+**Changed 2026-10-14:** created `99-orkar-recording.conf`; masked `apt-daily`
+timers; **Zenoh bridge installed from scratch** (`configure_zenoh.sh robot
+192.168.50.98 7447`, service active + enabled); RealSense ROS packages
+`4.58.2 -> 4.58.3 / 2.58.2 -> 2.58.3` from agv110's apt cache -- this robot had
+the three ROS packages `apt-mark hold`-ed, so the first attempt was refused
+(`Held packages were changed ... without --allow-change-held-packages`) and did
+nothing; the retry with that flag succeeded and **dropped those holds** (now only
+standalone `librealsense2*` is held, matching the fleet). Then rebooted
+pre-emptively before re-gating (because agv103's camera wedged after the same
+install).
+
+**It did not come back from that reboot.** No ping, no mDNS, not present under
+any IP in a subnet sweep 15+ min later (agv103 returned in 45 s from the same
+procedure). Cause unknown -- WiFi persistence on this fresh install, or a boot
+problem. **Needs a console look.** Last known MAC `e4:5f:01:c1:75:d0`.
+
+**Checks (agent run, pre-install, at 4.58.2 -- so both gates failed on the pin):**
+- Sensor-logging gate -- FAIL on the two pin checks **only**; 0 WARN; hardware all
+  OK: colour/depth 15.0 Hz, gyro 199.7 Hz, accel 101.1 Hz, `/scan` 17.1 Hz,
+  `/odom` 12.7 Hz, standalone RGB-D 895/895 0 timeouts, no UVC `-110` (two `-71`
+  teardown lines only).
+- Dev checks -- selftest **OK** (exit 0); audit **28 / 0 / 0**.
+- GT -- `orkar_agv106` 71.4-73.8 Hz via Zenoh, route created.
+- Dataset gate -- FAIL: the two pin checks + expected `odom_mocap_sanity`; the 4
+  operator WARNs; everything else OK.
+
+**Open:** get it back on the network; re-run both gates at 4.58.3 (expect sensor
+gate 0 FAIL, dataset gate `odom_mocap_sanity` only); 1 m open-loop straight for
+yaw offset + `linear_scale`; operator sign-offs.
+
+---
+
 ## agv107 — last checked August 2026
 
 **Reference robot for the GT-staleness fix.** `99-orkar-recording.conf` was
@@ -267,14 +369,36 @@ Note it was last seen on the home network and may still carry the superseded
 
 ---
 
-## agv110 — last checked August 2026
+## agv110 — last checked 2026-10-14
 
-Produced a validator-clean bag through the real S1 path (zstd-compressed MCAP):
-`PASS 42 / WARN 5 / FAIL 1`, the single FAIL being the benign `cmd_vel: missing`
-on a stationary run. Ran stock `dirty_ratio` at the time — the writeback fix has
-not been applied here.
+Stationary commissioning run by a delegated agent (~16 min, no motion, no reboot).
 
-Its MoCap rigid body was disabled/untracked at that time (0 poses published).
+**Hardware:** Pi 4 2 GB (1844 MB), kernel `5.15.0-1061-raspi`, 48 G free, **no swap
+configured**. D455 fw `5.17.0.10` @ USB 5000 Mb/s, `/dev/ydlidar -> ttyS0`,
+`/dev/ttyACM0`. Clock offset 0.11 ms. USB quirk active in `/proc/cmdline`.
+
+**Software:** repo `f415f4d -> cee3e6c` (ff-only, clean tree, no rebuild needed).
+RealSense already at pins (4.58.3 / 2.58.3 / standalone 2.58.1). Zenoh bridge was
+already configured (`tcp/192.168.50.98:7447`).
+
+**Changed 2026-10-14:** created `/etc/sysctl.d/99-orkar-recording.conf` (was stock
+`dirty_ratio 20/10`); masked `apt-daily` timers. Nothing else.
+
+**Checks:**
+- Sensor-logging gate — **PASS, 0 FAIL, 0 WARN.** Colour/depth 15.0 Hz, gyro
+  199.6 Hz, accel 100.6 Hz, `/scan` 17.3 Hz, `/odom` 12.7 Hz, standalone RGB-D
+  895/895 frames 0 timeouts, no UVC/xHCI kernel errors.
+- Dev checks — selftest **OK** (exit 0); audit **28 PASS / 0 FAIL / 0 WARN**.
+- GT — `orkar_agv110` 74-78 Hz via Zenoh, route created, max gap 0.073 s.
+- Dataset gate — **FAIL, single item** `odom_mocap_sanity` (needs the 1 m drive)
+  + the 4 operator WARNs. `mocap_topic @ 75.3 Hz`, `zenoh_gt_transport` OK.
+
+**Open:** 1 m open-loop straight for yaw offset + `linear_scale` (not yet measured
+on this robot -- do NOT copy 1.106/1.191 from the others); operator sign-offs;
+no bag recorded under the new writeback tuning yet.
+
+**History:** in August 2026 it produced a validator-clean S1 bag
+(`PASS 42 / WARN 5 / FAIL 1` benign) on stock writeback settings.
 
 ---
 
@@ -295,3 +419,11 @@ These bite repeatedly; full detail lives in the session memory notes.
   runs compress and are fine.
 - **Mask `apt-daily` timers** before a session; unattended-upgrades blocks dpkg
   and starves SD I/O mid-run.
+- **`packages.ros.org` keeps only the latest RealSense build**, so the fleet pin
+  drifts out of reach (4.58.3 pinned, only 4.58.4 offered by Oct 2026). Before
+  changing the pin, pull the exact `.deb`s from a sibling robot's
+  `/var/cache/apt/archives` and install those. If the robot has the ROS packages
+  held, add `--allow-change-held-packages` (it drops the holds).
+- **Reboot before gating after any RealSense package install** -- on agv103 the
+  install alone wedged UVC (`SET_CUR ... -110`, camera invisible to librealsense)
+  with the quirk active; a reboot cleared it. The USB-reset remedies make it worse.
