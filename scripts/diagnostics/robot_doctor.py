@@ -1416,7 +1416,7 @@ class Doctor:
             "echo DPKG; dpkg-query -W 'librealsense2*' 'ros-*-librealsense2' "
             "'ros-*-realsense2-camera-msgs' 'ros-*-realsense2-camera' 2>/dev/null || true; "
             "echo APT_HOLDS; apt-mark showhold 2>/dev/null | "
-            "grep -E '^(librealsense2|python3-pyrealsense2|ros-[[:alnum:]]+-(librealsense2|realsense2-camera(-msgs)?))(:|$)' || true; "
+            "grep -E '^(librealsense2(-[[:alnum:]-]+)?|python3-pyrealsense2|ros-[[:alnum:]]+-(librealsense2|realsense2-camera(-msgs)?))(:|$)' || true; "
             "echo REALSENSE_APT_SOURCES; "
             "for f in /etc/apt/sources.list.d/*librealsense* /etc/apt/sources.list.d/archive_uri-https_librealsense*; do "
             "[ -f \"$f\" ] || continue; echo FILE:$f; sed -n '1,20p' \"$f\"; done 2>/dev/null || true; "
