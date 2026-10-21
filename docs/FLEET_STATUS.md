@@ -18,6 +18,7 @@ whenever a robot is gated, driven, or reconfigured.
 | agv106 | **2026-10-14** | 192.168.50.208 | PASS (0 FAIL, 0 WARN) | **PASS/WARN — 0 FAIL** | Calibrated: yaw **−7**, `linear_scale` **1.054** (verified 1.003); **odom yaw drifts to 19°/m**; WiFi GT gaps; needs sign-off + 4.58.4 upgrade |
 | agv107 | August 2026 | 192.168.1.19 | PASS | not recorded | Yes — full S1 circle completed |
 | agv110 | **2026-10-14** | 192.168.50.132 | PASS (0 FAIL, 0 WARN) | **PASS/WARN — 0 FAIL** | Calibrated: yaw **0**, `linear_scale` **1.026** (verified 0.998); **odom yaw drifts to 23°/m**; WiFi assoc-rejects + GT gaps; needs sign-off + 4.58.4 upgrade |
+| agv101 | **2026-10-21** | 192.168.50.218 | not yet run (needs reboot + **D455 on USB 3**) | not yet run | **No** — stationary phase half done; first robot at the 4.58.4 pin with all four holds |
 
 ---
 
@@ -523,6 +524,47 @@ commissioning bag.
 
 **History:** in August 2026 it produced a validator-clean S1 bag
 (`PASS 42 / WARN 5 / FAIL 1` benign) on stock writeback settings.
+
+---
+
+## agv101 — last checked 2026-10-21
+
+First contact. Was invisible on the lab network until 2026-10-21 (Motive tracked
+`orkar_agv101`, id 23, the whole time); appeared at `192.168.50.218` after the
+operator got it onto `DELTA_FLIGHT_ARENA` and added the SSH key.
+
+**Hardware:** Pi 4 2 GB (1844 MB), kernel `5.15.0-1103-raspi`, 18 G free
+(`~/agv_data` holds 31 G of July `fixed_center_test` logs — not touched),
+`/dev/ydlidar`, `/dev/ttyACM0`. USB quirk active in `/proc/cmdline`. D455
+fw `5.13.0.55` enumerates — **but on port `1-1.2` at 480 Mb/s (USB 2)**; every
+other robot runs it at 5000 Mb/s on a `2-x` port. It is in a black USB 2 socket
+or on a USB 2 cable. **Physical: move it to a blue USB 3 port before gating.**
+Note the camera was not enumerated at all on the first look (3 min after boot)
+and appeared a few minutes later — watch for that.
+
+**Software, changed 2026-10-21:**
+- Repo `ffe0588 -> d2b1318` (ff-only). Two tracked files carried an older hand
+  copy of the `d78dc2d` fleet-start feature; stashed as `stash@{0}` (strictly a
+  superseded draft: MOCAP_MIN_HZ 20 vs 30, no motion lock) — not deleted. One
+  untracked `scripts/scenarios/.run06_wrapper.sh` left in place (same as agv103).
+- RealSense **4.58.2 -> 4.58.4 / 2.58.4** from packages.ros.org (exact builds
+  `4.58.4-1jammy.20260916.045339`, `2.58.4-1jammy.20260831.021400`, msgs
+  `20260907.223031`, description `20260908.040315` — first install of the
+  description package). **All four ROS packages now `apt-mark hold`**, as the
+  `8847489` gate requires. Install completed cleanly (dpkg audit clean); the
+  SSH session that drove it timed out at 10 min, the install did not.
+- `/etc/sysctl.d/99-orkar-recording.conf` created (was stock); `apt-daily`
+  timers masked.
+- Zenoh bridge re-pointed `tcp/192.168.50.153:7447 -> tcp/192.168.50.98:7447`;
+  service active; **GT `orkar_agv101` 75 Hz on the robot**, single publisher.
+
+**Checks so far:** selftest **OK** (152 tests, exit 0); pipeline audit **30 PASS /
+0 FAIL**. Sensor and dataset gates **not run** — blocked on the reboot the
+RealSense install requires and on the USB 2 port.
+
+**Next:** operator moves D455 to USB 3 → reboot → sensor gate → dataset gate
+(needs the 1 m traced drive for `odom_mocap_sanity`) → motion phase (yaw offset,
+`linear_scale`, currently 1.0).
 
 ---
 
