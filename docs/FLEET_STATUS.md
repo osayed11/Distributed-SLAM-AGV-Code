@@ -46,6 +46,17 @@ Bags: `~/agv_data/agv<N>_s1_concentric_20261022_*_{sensors,aux}` with
 agv101 over the run (same ring, started 180° apart) — fine for 70 s, not for
 longer runs; give agv104 its own ring or match speeds.
 
+**Second run, same session, agv103 in agv104's place (101 and 105 swapped
+rings by the operator): inner 1.0 m = agv106 + agv101, outer 1.7 m = agv103 +
+agv105, cw, 0.10 m/s, 70 s, shared epoch (skew ≤ 2 s).** All four prechecks
+passed first time (GT max age ≤ 0.04 s); 106 1.07 laps / 101 1.31 / 103 0.68 /
+105 0.65; max radius error 0.04–0.14 m; **validator 0 FAIL on all four**
+(agv101 PASS 52 / WARN 3; 103/105/106 PASS 51 / WARN 4 — the unrecorded
+`/diagnostics`, `/tag_detections`, `/aruco/target_pose` plus depth gaps of
+0.27–0.49 s). GT 76.2 Hz, gyro 199–200 Hz, colour 13.5–14.2 Hz. agv103 ran
+with yaw offset **180** as calibrated. Bags
+`~/agv_data/agv<N>_s1_concentric_20261022_*_{sensors,aux}` (second set).
+
 **agv104 "wiggled" through its circle while the other three were smooth (same
 controller, same gains — seven other robots run it cleanly).** Bag analysis:
 commanded ω changed sign 97 times in 70 s (105: 0), actual yaw-rate sd 0.49 rad/s
@@ -56,7 +67,19 @@ agrees, 0.69–0.71) — magnitude ignored, sign honoured, pure bang-bang. The
 driver sends the rot byte unscaled (`writeSpeed`), so no gain or command scale
 above the MCU can fix it; it is the base firmware (same family as its 0.145 m/s
 linear floor). **agv104 removed from the lineup; agv103 takes its ring.** Needs
-an MCU firmware fix/reflash before any S1 use.
+an MCU firmware fix/reflash before any S1 use. Ruled out on the Pi side the
+same day: the driver source is identical to HEAD (last change 2026-06-28) and a
+**clean rebuild** of `myagv_odometry` reproduced the identical sweep
+(0.69–0.71 rad/s for every command). With the base IMU topic enabled
+(`publish_imu: true`, reverted afterwards) the **MCU's own gyro reports
++0.76 / −0.80 / +0.80 rad/s for commands of +0.20 / −0.20 / +0.05** — the MCU
+measures the turn correctly and still drives a fixed rate, so this is not a
+dead-sensor saturation; the firmware maps any non-zero rotation byte to one
+speed. The other bases (agv106 measured: +0.20 → 0.25–0.27 rad/s) scale
+proportionally. Decisive next step: swap agv104's Pi onto a good base (or a good
+Pi onto agv104's base) — if the behaviour follows the base, reflash its MCU with
+the firmware the good bases carry (the protocol as used here carries no version
+field, so the version can only be established from the board/tooling).
 
 **What it took to get there (all fleet-relevant):**
 1. **WiFi power-save was ON on every robot** and caused 0.4–0.6 s GT stalls that
