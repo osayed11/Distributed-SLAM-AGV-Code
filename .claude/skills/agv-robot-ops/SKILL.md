@@ -209,14 +209,23 @@ DDS multicast. Robots stay `ROS_LOCALHOST_ONLY=1` on `rmw_fastrtps_cpp`; only
    `Discovered ROS Node` lines. Confirm `Route Publisher ... created` in the
    router log. Its REST plugin binds `127.0.0.1:8000`; if something else holds
    that port the router panics on start — run from a config copy with a free
-   `http_port`.
+   `http_port`. **The order matters for a second reason:** on bridge 1.9.0 a
+   `Route Publisher ... removed` keeps forwarding, so every time the NatNet
+   publisher is restarted under a running router each pose reaches the robots
+   one more time (3 `created` lines in the log = every sample delivered 3×).
+   Restart the router after the publisher's *final* start, and whenever you
+   restart the publisher later (e.g. to add a rigid body).
 2. Robot: `bash scripts/network/configure_zenoh.sh robot <LAPTOP_IP> 7447` then
    `source scripts/network/load_ros_transport_env.sh`. (Pre-staging the pinned
    bridge binary at `/usr/local/bin/zenoh-bridge-ros2dds` while on reliable
    internet lets this step skip the download.)
 3. **Prove GT samples actually arrive** (a discovered topic ≠ a publishing one):
    `ros2 topic echo /optitrack/rigid_bodies/orkar_agv<N> --once` and
-   `ros2 topic hz ...` (must be inside the configured 20–120 Hz band).
+   `ros2 topic hz ...` (must be inside the configured 20–120 Hz band). A rate
+   well above Motive's frame rate (~75–80 Hz here) means duplicated routes, not
+   a faster MoCap: count messages vs distinct `header.stamp` over 10 s on the
+   robot — the ratio must be 1.00. The dataset gate's `mocap_rate` check fails
+   above 120 Hz for this reason; the sensor gate does not look at GT.
 4. Run the gated S1 circle (needs a measured per-robot
    `S1_FORWARD_YAW_OFFSET_DEG` — never inferred from robot ID). To measure it:
    one open-loop 1 m straight (`drive_mocap_straight_ros2.py --heading-kp 0
@@ -236,6 +245,23 @@ DDS multicast. Robots stay `ROS_LOCALHOST_ONLY=1` on `rmw_fastrtps_cpp`; only
 
 ## Hard-won gotchas
 
+- **GT stalls of 0.3–0.6 s that abort prechecks/drives on some robots but not
+  others at the same instant → WiFi power-save on the Pi** (brcmfmac default is
+  ON). Check `iw dev wlan0 get power_save` (`apt-get install iw`; `/usr/sbin`
+  is not on the non-login PATH) and set it off; `orkar-wifi-powersave-off.service`
+  makes it persistent. Pings show 0 % loss but 120–190 ms bursts. Found
+  2026-10-22; fixed the fleet run on the next attempt (GT age 0.6 s → 0.03 s).
+- **"another S1 motion/recording session owns the lock" with no runner alive**
+  → the lock fd was inherited by bringup's `static_transform_publisher`
+  children of a killed run (`fuser /tmp/orkar_s1_motion.lock` names them).
+  The runner now closes fd 9 for bringup; older checkouts: kill the holders.
+- **Fleet circles: the centre is wherever the robots are, not the MoCap
+  origin.** Read all rigid-body poses, fit the line/rings, and pass the derived
+  `S1_CENTER_X/Y` and the *measured* radii; robots must already sit within
+  0.15 m of their ring and face its tangent for the chosen direction (the
+  default is ccw — robots lined up facing one way are usually cw for half of
+  them). Release with `S1_START_SIGNAL_FILE` only after every runner prints
+  `FLEET_READY`; write the same epoch (now + ~25 s) to each robot.
 - **IMU missing from a bag** (`/camera/gyro|accel/sample` count 0) despite live
   rates before recording → **first confirm the bag was compressed.** Older
   `start_session.sh` passed `--storage-config-file` only for sqlite3, so MCAP

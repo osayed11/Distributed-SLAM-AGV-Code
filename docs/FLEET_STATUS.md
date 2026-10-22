@@ -10,16 +10,70 @@ whenever a robot is gated, driven, or reconfigured.
 |-------|--------------|---------------|-------------|--------------|---------------|
 | agv100 | **2026-10-14** | DHCP (offline at final motion check) | PASS | **PASS/WARN - 0 FAIL** | Pending guarded out-and-back only; MoCap live |
 | agv102 | **2026-10-14** | 192.168.50.196 | PASS | **PASS/WARN - 0 FAIL** | **Yes** - out/back passed; yaw offset **0** |
-| agv105 | **2026-10-14** | 192.168.50.226 | PASS | **PASS/WARN - 0 FAIL** | **Yes** - out/back passed; yaw offset **0** |
+| agv105 | **2026-10-22** | 192.168.50.226 | PASS (61 OK, 0 FAIL, 0 WARN) at 4.58.4 / fw 5.17.0.10 | 2026-10-14: PASS/WARN - 0 FAIL; **2026-10-22: FAIL only `odom_mocap_sanity` — no sanity JSON on the robot** (GT 72–78 Hz, Zenoh OK) | out/back passed 10-14; yaw offset **0**; needs the 1 m traced run to restore sanity evidence. 10-22: pulled to `335f2c7`, all ROS RealSense pkgs held, apt timers masked, Zenoh re-pointed `.125 -> .98` |
 | agv107 | **2026-10-14** | DHCP | PASS | **PASS/WARN - 0 FAIL** | **Yes** - out/back passed; yaw offset **+90** |
 | agv24  | **2026-10-12** | 192.168.50.158 | PASS (0 FAIL, 0 WARN) | **PASS/WARN — 0 FAIL** | **Yes** — needs operator sign-off + a real bag |
-| agv104 | **2026-10-12** | 192.168.50.192 | PASS (0 FAIL, 0 WARN) | **PASS/WARN — 0 FAIL** | **No** — min-speed floors block S1 |
-| agv103 | **2026-10-14** | 192.168.50.176 | PASS (0 FAIL, 0 WARN) | **PASS/WARN — 0 FAIL** | Calibrated: yaw **180**, `linear_scale` **1.027** (verified 1.012); needs sign-off + 4.58.4 upgrade |
-| agv106 | **2026-10-14** | 192.168.50.208 | PASS (0 FAIL, 0 WARN) | **PASS/WARN — 0 FAIL** | Calibrated: yaw **−7**, `linear_scale` **1.054** (verified 1.003); **odom yaw drifts to 19°/m**; WiFi GT gaps; needs sign-off + 4.58.4 upgrade |
+| agv104 | **2026-10-22** | 192.168.50.192 | PASS (61 OK, 0 FAIL, 0 WARN) at **4.58.4** | **PASS/WARN — 0 FAIL** (65 OK; sanity 1.3%; GT 63–76 Hz) | **No** — completed a 70 s fleet circle at 0.16 m/s but **wiggling**: base angular output is a constant ~0.75 rad/s for any ω command (bang-bang, MoCap-measured). MCU firmware fix needed |
+| agv103 | **2026-10-22** | 192.168.50.176 | 2026-10-14 PASS; **still 4.58.3 (not upgraded)** | 2026-10-14 PASS/WARN — 0 FAIL | Calibrated: yaw **180**, `linear_scale` **1.027**. 10-22: pulled to `f350b51`, WiFi power-save off + unit, apt timers masked; standing in for agv104 on the 1.7 m ring |
+| agv106 | **2026-10-22** | 192.168.50.208 | PASS (61 OK, 0 FAIL, 0 WARN) at **4.58.4** | **PASS/WARN — 0 FAIL** (65 OK; sanity 5.1%; GT 77 Hz) | Calibrated: yaw **−7**, `linear_scale` **1.054** (verified 1.003); **odom yaw drifts to 19°/m**; WiFi GT gaps; needs sign-off |
 | agv107 | August 2026 | 192.168.1.19 | PASS | not recorded | Yes — full S1 circle completed |
 | agv110 | **2026-10-14** | 192.168.50.132 | PASS (0 FAIL, 0 WARN) | **PASS/WARN — 0 FAIL** | Calibrated: yaw **0**, `linear_scale` **1.026** (verified 0.998); **odom yaw drifts to 23°/m**; WiFi assoc-rejects + GT gaps; needs sign-off + 4.58.4 upgrade |
+| agv101 | **2026-10-22** | 192.168.50.218 | PASS (62 OK, 0 FAIL, 0 WARN) | **FAIL — only `odom_mocap_sanity` missing** (needs the 1 m drive) + 4 operator WARNs | **Not yet** — stationary phase complete at 4.58.4 / fw 5.17.0.10; motion phase (yaw offset, `linear_scale`) next |
 
 ---
+
+## Fleet run 2026-10-22 — S1 concentric circles, four robots, one start epoch
+
+**agv105 + agv106 on r = 1.0 m, agv101 + agv104 on r = 1.7 m**, all clockwise
+about a centre derived from the robots themselves (they were lined up on one
+diameter; centre = midpoint of the outer pair = MoCap `(-0.655, 0.002)`), 70 s,
+0.10 m/s (agv104 0.16 m/s to clear its speed floor). Released via
+`S1_START_SIGNAL_FILE` with a shared epoch; robot clocks agreed within 1 s.
+
+| Robot | precheck | laps | max radius err | validator | sensors bag |
+|---|---|---|---|---|---|
+| agv105 | PASS (GT age 0.033 s) | 1.11 | 0.060 m | **PASS 52 / WARN 3 / FAIL 0** | 1.1 GB |
+| agv106 | PASS (GT age 0.03 s) | 1.07 | 0.097 m | **PASS 51 / WARN 4 / FAIL 0** | 1.1 GB |
+| agv104 | PASS with `S1_PRECHECK_MAX_RADIUS_ERROR=0.20` (0.151 m) | 1.06 | 0.137 m | **PASS 51 / WARN 4 / FAIL 0** | 1.1 GB |
+| agv101 | PASS (GT age 0.033 s), **yaw offset 0 confirmed** | 0.67 | 0.133 m | **PASS 51 / WARN 4 / FAIL 0** | 1.2 GB |
+
+Recorded rates on all four: colour 13.7–14.1 Hz, GT 76.3 Hz, gyro 199–200 Hz,
+`/odom` 12.7 Hz, `/scan` 17.3–17.9 Hz; GT pose age ≤ 0.04 s for the whole run.
+WARNs are the usual unrecorded `/diagnostics`, `/tag_detections`,
+`/aruco/target_pose`, plus one or two image gaps of 0.27–0.33 s on agv101/106.
+Bags: `~/agv_data/agv<N>_s1_concentric_20261022_*_{sensors,aux}` with
+`_circle_summary.json` and `_validate.json`. agv104 at 0.16 m/s gained ~140° on
+agv101 over the run (same ring, started 180° apart) — fine for 70 s, not for
+longer runs; give agv104 its own ring or match speeds.
+
+**agv104 "wiggled" through its circle while the other three were smooth (same
+controller, same gains — seven other robots run it cleanly).** Bag analysis:
+commanded ω changed sign 97 times in 70 s (105: 0), actual yaw-rate sd 0.49 rad/s
+(105: 0.04), 1.4 s limit cycle, heading error ±25°. An in-place ω sweep against
+MoCap afterwards gave the mechanism: **the base rotates at a constant
+0.74–0.79 rad/s for any commanded angular from 0.05 to 0.55 rad/s** (odom twist
+agrees, 0.69–0.71) — magnitude ignored, sign honoured, pure bang-bang. The
+driver sends the rot byte unscaled (`writeSpeed`), so no gain or command scale
+above the MCU can fix it; it is the base firmware (same family as its 0.145 m/s
+linear floor). **agv104 removed from the lineup; agv103 takes its ring.** Needs
+an MCU firmware fix/reflash before any S1 use.
+
+**What it took to get there (all fleet-relevant):**
+1. **WiFi power-save was ON on every robot** and caused 0.4–0.6 s GT stalls that
+   failed prechecks (agv101/105 while agv104 was clean at the same instant).
+   `iw dev wlan0 set power_save off` → next prechecks 0.033 s. Persisted as
+   `orkar-wifi-powersave-off.service` on 101/104/105/106; **still needed on
+   agv24, agv103, agv110, agv100, agv102, agv107.**
+2. The robots must face their **cw tangent**; a first launch with the ccw
+   default spun them ~120° and dragged them off-radius.
+3. agv106 and agv101 each once came up **without IMU** (`/camera/gyro/sample`
+   never published, HID timeout) — a reboot fixed both. agv106 once failed the
+   GT rate check right after a reboot (clock still 2024 at bridge start).
+4. A killed runner leaves the **motion lock held** by orphaned
+   `static_transform_publisher` children (fd 9 inherited) — fixed in the runner
+   after this session's run.
+5. The NatNet publisher **died when Motive was restarted** (NatNet version
+   handshake returned `None`); relaunch publisher, then router.
 
 ## Scenario quartet - last checked 2026-10-14
 
@@ -526,6 +580,63 @@ commissioning bag.
 
 ---
 
+## agv101 — last checked 2026-10-21
+
+First contact. Was invisible on the lab network until 2026-10-21 (Motive tracked
+`orkar_agv101`, id 23, the whole time); appeared at `192.168.50.218` after the
+operator got it onto `DELTA_FLIGHT_ARENA` and added the SSH key.
+
+**Hardware:** Pi 4 2 GB (1844 MB), kernel `5.15.0-1103-raspi`, 18 G free
+(`~/agv_data` holds 31 G of July `fixed_center_test` logs — not touched),
+`/dev/ydlidar`, `/dev/ttyACM0`. USB quirk active in `/proc/cmdline`. D455
+fw `5.13.0.55` enumerates — **but on port `1-1.2` at 480 Mb/s (USB 2)**; every
+other robot runs it at 5000 Mb/s on a `2-x` port. It is in a black USB 2 socket
+or on a USB 2 cable. **Physical: move it to a blue USB 3 port before gating.**
+Note the camera was not enumerated at all on the first look (3 min after boot)
+and appeared a few minutes later — watch for that.
+
+**Software, changed 2026-10-21:**
+- Repo `ffe0588 -> d2b1318` (ff-only). Two tracked files carried an older hand
+  copy of the `d78dc2d` fleet-start feature; stashed as `stash@{0}` (strictly a
+  superseded draft: MOCAP_MIN_HZ 20 vs 30, no motion lock) — not deleted. One
+  untracked `scripts/scenarios/.run06_wrapper.sh` left in place (same as agv103).
+- RealSense **4.58.2 -> 4.58.4 / 2.58.4** from packages.ros.org (exact builds
+  `4.58.4-1jammy.20260916.045339`, `2.58.4-1jammy.20260831.021400`, msgs
+  `20260907.223031`, description `20260908.040315` — first install of the
+  description package). **All four ROS packages now `apt-mark hold`**, as the
+  `8847489` gate requires. Install completed cleanly (dpkg audit clean); the
+  SSH session that drove it timed out at 10 min, the install did not.
+- `/etc/sysctl.d/99-orkar-recording.conf` created (was stock); `apt-daily`
+  timers masked.
+- Zenoh bridge re-pointed `tcp/192.168.50.153:7447 -> tcp/192.168.50.98:7447`;
+  service active; **GT `orkar_agv101` 75 Hz on the robot**, single publisher.
+
+**Checks 2026-10-21:** selftest **OK** (152 tests, exit 0); pipeline audit
+**30 PASS / 0 FAIL**.
+
+**2026-10-22 (operator moved the D455 to USB 3 and restarted):**
+- D455 now `2-2` @ **5000 Mb/s**. First sensor gate: **1 FAIL** `d455_firmware`
+  (`5.13.0.55`, fleet `5.17.0.10`) + a `realsense_package_holds` WARN that was
+  a doctor bug (filter only matched bare `librealsense2`; fixed `d4f665b`).
+- **Firmware flashed to `5.17.0.10`** with Intel's signed image
+  `D4XX_FW_Image-5.17.0.10.bin` (from `librealsense.intel.com/Releases/RS4xx/FW/`,
+  sha256 `a7e10cf7…`, kept in `~/d455_fw/`). `rs-fw-update -b` (backup) hung
+  for 7 min and was abandoned; the plain `-f` flash took ~2.5 min. Rebooted.
+- Sensor gate: **PASS, 62 OK / 0 FAIL / 0 WARN** — 15.0 Hz colour/depth,
+  890/890 standalone frames, 0 timeouts, 0 UVC errors.
+- Dataset gate: **65 OK, 1 FAIL (`odom_mocap_sanity` evidence missing — needs
+  the 1 m drive), 4 operator WARNs.** `mocap_topic` 70 Hz, `zenoh_gt_transport`
+  OK, `recording_writeback` OK. (A first attempt failed `mocap_rate` at 122 Hz —
+  the Mac router was delivering every GT pose twice after a publisher restart;
+  router restarted, now 1.00× — see Fleet-wide gotchas.)
+
+**Next:** motion phase — three open-loop 1 m traced straights for yaw offset
+and `linear_scale` (currently 1.0), write
+`~/agv_data/agv101_odom_mocap_sanity.json`, re-run dataset gate; operator
+sign-offs; commissioning bag.
+
+---
+
 ## NOTE — fleet pin moved to 4.58.4 / 2.58.4 (commit `8847489`, 2026-10-14)
 
 Every gate verdict recorded on this page for 2026-10-12..14 was run against the
@@ -576,6 +687,16 @@ unmeasured as a correction; a yaw-rate sweep against GT (as done on agv104) per
 robot is the next calibration step.
 
 ## Fleet-wide gotchas
+
+- **GT duplication from the Mac Zenoh router (found 2026-10-22).** With
+  zenoh-bridge-ros2dds 1.9.0 as the router, every restart of the NatNet
+  publisher under a running router adds one more copy of every GT pose
+  delivered to the robots (3 `Route Publisher ... created` lines in the router
+  log = each `header.stamp` arriving 3×; robot-side `topic hz` showed 230 Hz).
+  The Mac DDS side stays 1×. Restart the **router after the publisher's final
+  start**, and check messages vs distinct stamps on a robot (ratio must be
+  1.00). The dataset gate's `mocap_rate` (>120 Hz FAIL) catches it; the sensor
+  gate does not. Bags recorded under this condition carry inflated GT counts.
 
 These bite repeatedly; full detail lives in the session memory notes.
 
