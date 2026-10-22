@@ -750,7 +750,7 @@ esac
 echo "Starting one bringup..."
 setsid bash -lc \
     "source /opt/ros/humble/setup.bash; source '${ROOT}/scripts/network/load_ros_transport_env.sh'; [ -f '${ROOT}/agv2_ws/install/setup.bash' ] && source '${ROOT}/agv2_ws/install/setup.bash'; exec ros2 launch agv_bringup bringup.launch.py agv_serial_port:=/dev/ttyACM0 agv_color_profile:=640x480x15 agv_depth_profile:=640x480x15 enable_sync:=false initial_reset:=false agv_cmd_vel_topic:='${CMD_TOPIC}'" \
-    >"${BRINGUP_LOG}" 2>&1 < /dev/null &
+    >"${BRINGUP_LOG}" 2>&1 < /dev/null 9>&- &
 BRINGUP_PID=$!
 echo "bringup_pid: ${BRINGUP_PID}"
 start_runtime_guard
