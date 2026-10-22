@@ -10,12 +10,12 @@ whenever a robot is gated, driven, or reconfigured.
 |-------|--------------|---------------|-------------|--------------|---------------|
 | agv100 | **2026-10-14** | DHCP (offline at final motion check) | PASS | **PASS/WARN - 0 FAIL** | Pending guarded out-and-back only; MoCap live |
 | agv102 | **2026-10-14** | 192.168.50.196 | PASS | **PASS/WARN - 0 FAIL** | **Yes** - out/back passed; yaw offset **0** |
-| agv105 | **2026-10-14** | 192.168.50.226 | PASS | **PASS/WARN - 0 FAIL** | **Yes** - out/back passed; yaw offset **0** |
+| agv105 | **2026-10-22** | 192.168.50.226 | PASS (61 OK, 0 FAIL, 0 WARN) at 4.58.4 / fw 5.17.0.10 | 2026-10-14: PASS/WARN - 0 FAIL; **2026-10-22: FAIL only `odom_mocap_sanity` — no sanity JSON on the robot** (GT 72–78 Hz, Zenoh OK) | out/back passed 10-14; yaw offset **0**; needs the 1 m traced run to restore sanity evidence. 10-22: pulled to `335f2c7`, all ROS RealSense pkgs held, apt timers masked, Zenoh re-pointed `.125 -> .98` |
 | agv107 | **2026-10-14** | DHCP | PASS | **PASS/WARN - 0 FAIL** | **Yes** - out/back passed; yaw offset **+90** |
 | agv24  | **2026-10-12** | 192.168.50.158 | PASS (0 FAIL, 0 WARN) | **PASS/WARN — 0 FAIL** | **Yes** — needs operator sign-off + a real bag |
-| agv104 | **2026-10-22** | 192.168.50.192 | PASS (61 OK, 0 FAIL, 0 WARN) at **4.58.4** | 2026-10-12: PASS/WARN — 0 FAIL; **not re-run 2026-10-22 (Motive not streaming `orkar_agv104`)** | **No** — min-speed floors block S1 |
+| agv104 | **2026-10-22** | 192.168.50.192 | PASS (61 OK, 0 FAIL, 0 WARN) at **4.58.4** | **PASS/WARN — 0 FAIL** (65 OK; sanity 1.3%; GT 63–76 Hz) | **No** — min-speed floors block S1 |
 | agv103 | **2026-10-14** | 192.168.50.176 | PASS (0 FAIL, 0 WARN) | **PASS/WARN — 0 FAIL** | Calibrated: yaw **180**, `linear_scale` **1.027** (verified 1.012); needs sign-off + 4.58.4 upgrade |
-| agv106 | **2026-10-22** | 192.168.50.208 | PASS (61 OK, 0 FAIL, 0 WARN) at **4.58.4** | 2026-10-14: PASS/WARN — 0 FAIL; **not re-run 2026-10-22 (Motive not streaming `orkar_agv106`)** | Calibrated: yaw **−7**, `linear_scale` **1.054** (verified 1.003); **odom yaw drifts to 19°/m**; WiFi GT gaps; needs sign-off |
+| agv106 | **2026-10-22** | 192.168.50.208 | PASS (61 OK, 0 FAIL, 0 WARN) at **4.58.4** | **PASS/WARN — 0 FAIL** (65 OK; sanity 5.1%; GT 77 Hz) | Calibrated: yaw **−7**, `linear_scale` **1.054** (verified 1.003); **odom yaw drifts to 19°/m**; WiFi GT gaps; needs sign-off |
 | agv107 | August 2026 | 192.168.1.19 | PASS | not recorded | Yes — full S1 circle completed |
 | agv110 | **2026-10-14** | 192.168.50.132 | PASS (0 FAIL, 0 WARN) | **PASS/WARN — 0 FAIL** | Calibrated: yaw **0**, `linear_scale` **1.026** (verified 0.998); **odom yaw drifts to 23°/m**; WiFi assoc-rejects + GT gaps; needs sign-off + 4.58.4 upgrade |
 | agv101 | **2026-10-22** | 192.168.50.218 | PASS (62 OK, 0 FAIL, 0 WARN) | **FAIL — only `odom_mocap_sanity` missing** (needs the 1 m drive) + 4 operator WARNs | **Not yet** — stationary phase complete at 4.58.4 / fw 5.17.0.10; motion phase (yaw offset, `linear_scale`) next |
