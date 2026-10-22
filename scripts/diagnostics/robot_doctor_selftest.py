@@ -554,10 +554,10 @@ class ValidateRos2BagTests(unittest.TestCase):
             write_ros2_bag(
                 bag,
                 topic_hz_overrides={
-                    "/camera/color/image_raw": 12.2,
-                    "/camera/color/camera_info": 12.2,
-                    "/camera/depth/image_rect_raw": 12.2,
-                    "/camera/depth/camera_info": 12.2,
+                    "/camera/color/image_raw": 10.5,
+                    "/camera/color/camera_info": 10.5,
+                    "/camera/depth/image_rect_raw": 10.5,
+                    "/camera/depth/camera_info": 10.5,
                 },
             )
             rc, report = run_validator(bag)
@@ -573,7 +573,7 @@ class ValidateRos2BagTests(unittest.TestCase):
                 topic_hz_overrides={
                     "/camera/color/image_raw": 12.2,
                     "/camera/color/camera_info": 12.2,
-                    "/camera/depth/image_rect_raw": 11.0,
+                    "/camera/depth/image_rect_raw": 9.0,
                     "/camera/depth/camera_info": 11.0,
                 },
             )
@@ -588,7 +588,7 @@ class ValidateRos2BagTests(unittest.TestCase):
             write_ros2_bag(
                 bag,
                 topic_hz_overrides={
-                    "/camera/color/image_raw": 11.0,
+                    "/camera/color/image_raw": 9.0,
                     "/camera/color/camera_info": 11.0,
                     "/camera/depth/image_rect_raw": 13.2,
                     "/camera/depth/camera_info": 13.2,

@@ -15,6 +15,7 @@ import sys
 import time
 from dataclasses import asdict, dataclass
 from typing import Optional, Tuple
+from motion_recovery import MotionRecovery, atomic_json, read_control
 
 ROS2_IMPORT_ERROR = None
 try:
@@ -37,6 +38,13 @@ except ModuleNotFoundError as exc:
 
 
 stop_requested = False
+resume_generation = 0
+
+
+def request_resume(signum=None, frame=None):
+    del signum, frame
+    global resume_generation
+    resume_generation += 1
 
 
 def request_stop(signum=None, frame=None):
@@ -59,6 +67,16 @@ def angle_delta(target: float, current: float) -> float:
 
 def clamp(value: float, low: float, high: float) -> float:
     return max(low, min(high, value))
+
+
+def circle_velocity(args, radius_error: float, heading_error: float) -> Tuple[float, float]:
+    linear = args.linear
+    if abs(radius_error) > args.slow_radius_error:
+        linear = max(args.min_linear, args.linear * args.slow_linear_scale)
+    # Preserve the requested curvature when the radial-error guard slows motion.
+    feedforward = clamp(args.turn_sign * linear / args.radius, -args.max_angular, args.max_angular)
+    angular = clamp(feedforward + args.heading_kp * heading_error, -args.max_angular, args.max_angular)
+    return linear, angular
 
 
 @dataclass
@@ -89,6 +107,12 @@ class CircleSummary:
     pose_samples: int
     max_pose_age_sec: float
     abort_reason: str
+    active_sec: float = 0.0
+    paused_sec: float = 0.0
+    pause_count: int = 0
+    interrupted: bool = False
+    start_epoch: float = 0.0
+    end_epoch: float = 0.0
 
 
 class MocapCircleNode(Node):
@@ -97,6 +121,7 @@ class MocapCircleNode(Node):
         self.args = args
         self.pose: Optional[PoseSample] = None
         self.pose_samples = 0
+        self.pose_fault = ''
         qos = QoSProfile(
             history=HistoryPolicy.KEEP_LAST,
             depth=1,
@@ -107,7 +132,28 @@ class MocapCircleNode(Node):
 
     def pose_cb(self, msg: PoseStamped):
         p = msg.pose.position
+        q = msg.pose.orientation
         stamp_sec = float(msg.header.stamp.sec) + float(msg.header.stamp.nanosec) * 1e-9
+        values = (p.x, p.y, p.z, q.x, q.y, q.z, q.w, stamp_sec)
+        if not all(math.isfinite(v) for v in values) or abs(sum(v*v for v in (q.x,q.y,q.z,q.w)) - 1) > 0.1:
+            self.pose_fault = 'invalid_pose'
+            return
+        if not msg.header.frame_id or stamp_sec <= 0:
+            self.pose_fault = 'missing_pose_frame_or_stamp'
+            return
+        now = time.monotonic()
+        if self.pose is not None:
+            dt = now - self.pose.wall_time
+            if msg.header.frame_id != self.pose.frame_id or stamp_sec <= self.pose.stamp_sec:
+                self.pose_fault = 'pose_frame_or_timestamp_changed'
+                return
+            if dt <= self.args.pose_timeout and (
+                math.hypot(p.x-self.pose.x, p.y-self.pose.y) > 0.03 + self.args.max_pose_speed * dt or
+                abs(angle_delta(yaw_from_quat(q), self.pose.yaw)) > math.radians(5) + self.args.max_pose_yaw_rate * dt
+            ):
+                self.pose_fault = 'implausible_pose_jump'
+                return
+        self.pose_fault = ''
         self.pose = PoseSample(
             x=float(p.x),
             y=float(p.y),
@@ -115,24 +161,24 @@ class MocapCircleNode(Node):
             yaw=yaw_from_quat(msg.pose.orientation),
             frame_id=msg.header.frame_id,
             stamp_sec=stamp_sec,
-            wall_time=time.time(),
+            wall_time=now,
         )
         self.pose_samples += 1
 
     def publish_zero(self, seconds: float = 0.8):
         msg = Twist()
-        end = time.time() + seconds
-        while rclpy.ok() and time.time() < end:
+        end = time.monotonic() + seconds
+        while rclpy.ok() and time.monotonic() < end:
             self.pub.publish(msg)
             rclpy.spin_once(self, timeout_sec=0.02)
 
     def wait_for_pose(self, timeout: float) -> PoseSample:
-        start = time.time()
+        start = time.monotonic()
         while rclpy.ok() and not stop_requested:
             rclpy.spin_once(self, timeout_sec=0.05)
-            if self.pose is not None:
+            if self.pose is not None and not self.pose_fault:
                 return self.pose
-            if time.time() - start > timeout:
+            if time.monotonic() - start > timeout:
                 raise RuntimeError(f"Timed out waiting for MoCap pose on {self.args.pose_topic}")
         raise RuntimeError("Stopped before first MoCap pose")
 
@@ -151,9 +197,40 @@ def compute_center(args, start: PoseSample, robot_yaw: float) -> Tuple[float, fl
 def write_summary(path: str, summary: CircleSummary):
     if not path:
         return
-    with open(path, "w", encoding="utf-8") as handle:
-        json.dump(asdict(summary), handle, indent=2, sort_keys=True)
-        handle.write("\n")
+    atomic_json(path, asdict(summary))
+
+
+def report_state(args, state, reason='', **values):
+    data = dict(run_id=args.run_id, state=state, reason=reason,
+                monotonic=time.monotonic(), epoch=time.time(), **values)
+    last = getattr(args, '_last_status', (None, 0.0))
+    if args.status_json and (state != last[0] or data['monotonic'] - last[1] >= 0.2):
+        atomic_json(args.status_json, data)
+        args._last_status = (state, data['monotonic'])
+    return data
+
+
+def record_event(args, state, reason):
+    data = report_state(args, state, reason)
+    print('MOTION_STATE ' + json.dumps(data), flush=True)
+    if args.events_jsonl:
+        with open(args.events_jsonl, 'a', encoding='utf-8') as handle:
+            handle.write(json.dumps(data) + '\n')
+
+
+def check_start_pose(node, args, center_x, center_y, forward_offset):
+    pose = node.pose
+    if pose is None or node.pose_fault or time.monotonic() - pose.wall_time > args.pose_timeout:
+        raise RuntimeError('Start gate: missing, invalid or stale pose')
+    source_age = time.time() - pose.stamp_sec
+    if not -args.max_future_stamp <= source_age <= args.max_source_age:
+        raise RuntimeError('Start gate: source clock/latency outside bounds')
+    dx, dy = pose.x-center_x, pose.y-center_y
+    if abs(math.hypot(dx, dy)-args.radius) > args.max_radius_error:
+        raise RuntimeError('Start gate: robot is outside the configured circle corridor')
+    heading = angle_delta(math.atan2(dy, dx) + args.turn_sign*math.pi/2, pose.yaw+forward_offset)
+    if abs(heading) > math.radians(args.max_start_heading_error_deg):
+        raise RuntimeError('Start gate: robot is not tangent in the requested direction')
 
 
 def drive(node: MocapCircleNode, args) -> CircleSummary:
@@ -191,6 +268,8 @@ def drive(node: MocapCircleNode, args) -> CircleSummary:
     )
 
     node.publish_zero(0.5)
+    check_start_pose(node, args, center_x, center_y, forward_offset)
+    report_state(args, 'ARMED')
 
     if args.start_signal_file:
         print(
@@ -199,6 +278,10 @@ def drive(node: MocapCircleNode, args) -> CircleSummary:
             flush=True,
         )
         while rclpy.ok() and not stop_requested:
+            command, fault = read_control(args.control_file, args.run_id, time.monotonic(), args.coordinator_timeout)
+            if fault or command['mode'] == 'abort':
+                raise RuntimeError(fault or 'coordinator_abort')
+            report_state(args, 'ARMED')
             try:
                 with open(args.start_signal_file, "r", encoding="utf-8") as handle:
                     release_text = handle.read().strip()
@@ -231,13 +314,21 @@ def drive(node: MocapCircleNode, args) -> CircleSummary:
             flush=True,
         )
         while rclpy.ok() and not stop_requested and time.time() < args.start_at_epoch:
+            command, fault = read_control(args.control_file, args.run_id, time.monotonic(), args.coordinator_timeout)
+            if fault or command['mode'] != 'run':
+                raise RuntimeError(fault or 'start_permission_withdrawn')
+            node.pub.publish(Twist())
+            report_state(args, 'ARMED')
             remaining = args.start_at_epoch - time.time()
             rclpy.spin_once(node, timeout_sec=min(0.05, max(0.0, remaining)))
         if stop_requested or not rclpy.ok():
             raise RuntimeError("Stopped before synchronized start")
         sample = node.pose
-        if sample is None or time.time() - sample.wall_time > args.pose_timeout:
+        if time.time() - args.start_at_epoch > args.start_late_tolerance:
+            raise RuntimeError('Missed synchronized start; refusing a late independent start')
+        if sample is None or node.pose_fault or time.monotonic() - sample.wall_time > args.pose_timeout:
             raise RuntimeError("MoCap pose is stale at synchronized start")
+        check_start_pose(node, args, center_x, center_y, forward_offset)
         print("Synchronized start released.", flush=True)
 
     first = node.pose or start_pose
@@ -254,31 +345,48 @@ def drive(node: MocapCircleNode, args) -> CircleSummary:
     abort_reason = ""
     reached_duration = False
     last_progress = 0.0
-    last_progress_time = time.time()
-    start_time = time.time()
+    last_progress_time = time.monotonic()
+    start_time = time.monotonic()
+    start_epoch = time.time()
+    recovery = MotionRecovery(args.recovery_timeout, args.recovery_stable_sec,
+                              args.max_pauses, args.max_pause_seconds)
+    active_sec = 0.0
+    previous_tick = start_time
+    previous_state = 'RUNNING'
+    record_event(args, 'RUNNING', '')
     last_report = 0.0
-    feedforward = clamp(args.turn_sign * args.linear / args.radius, -args.max_angular, args.max_angular)
     msg = Twist()
 
     while rclpy.ok() and not stop_requested:
-        cycle_started = time.time()
+        cycle_started = time.monotonic()
         rclpy.spin_once(node, timeout_sec=0.0)
-        now = time.time()
+        now = time.monotonic()
         elapsed = now - start_time
-        if elapsed >= args.duration:
+        if recovery.state == 'RUNNING':
+            active_sec += now - previous_tick
+        previous_tick = now
+        command, lease_fault = read_control(args.control_file, args.run_id, now, args.coordinator_timeout)
+        if command['mode'] == 'abort':
+            abort_reason = 'coordinator_abort'
+            break
+        if active_sec >= args.duration:
             reached_duration = True
             break
 
         sample = node.pose
-        if sample is None:
-            abort_reason = "no mocap pose"
-            break
-
-        pose_age = now - sample.wall_time
+        pose_age = now - sample.wall_time if sample else args.pose_timeout + 1
         max_pose_age = max(max_pose_age, pose_age)
-        if pose_age > args.pose_timeout:
-            abort_reason = "mocap pose stale for %.3fs" % pose_age
+        fault = lease_fault or node.pose_fault
+        if not fault and pose_age > args.pose_timeout:
+            fault = "mocap pose stale for %.3fs" % pose_age
+        if sample is None:
+            fault = fault or 'no_mocap_pose'
+            # wait_for_pose established a sample; losing it is not recoverable.
+            abort_reason = fault
             break
+        source_age = time.time() - sample.stamp_sec
+        if not fault and (source_age > args.max_source_age or source_age < -args.max_future_stamp):
+            fault = 'pose_source_timestamp_out_of_bounds'
 
         radial_x = sample.x - center_x
         radial_y = sample.y - center_y
@@ -288,26 +396,10 @@ def drive(node: MocapCircleNode, args) -> CircleSummary:
             break
 
         theta = math.atan2(radial_y, radial_x)
-        progress += args.turn_sign * angle_delta(theta, last_theta)
-        last_theta = theta
-
         radius_error = current_radius - args.radius
         final_radius_error = radius_error
-        max_abs_radius_error = max(max_abs_radius_error, abs(radius_error))
-        if elapsed > args.error_grace and abs(radius_error) > args.max_radius_error:
-            abort_reason = "radius error %.3fm exceeds %.3fm" % (radius_error, args.max_radius_error)
-            break
-
-        if progress > last_progress + args.progress_epsilon:
-            last_progress = progress
-            last_progress_time = now
-        elif (
-            not args.dry_run
-            and elapsed > args.progress_grace
-            and now - last_progress_time > args.stuck_timeout
-        ):
-            abort_reason = "no circle progress for %.1fs" % args.stuck_timeout
-            break
+        if abs(radius_error) > args.max_radius_error:
+            fault = fault or "radius error %.3fm exceeds %.3fm" % (radius_error, args.max_radius_error)
 
         tangent_yaw = theta + args.turn_sign * math.pi * 0.5
         radius_heading_offset = args.turn_sign * clamp(
@@ -318,14 +410,48 @@ def drive(node: MocapCircleNode, args) -> CircleSummary:
         target_robot_yaw = tangent_yaw + radius_heading_offset
         robot_yaw = sample.yaw + forward_offset
         heading_error = angle_delta(target_robot_yaw, robot_yaw)
+        if abs(heading_error) > math.radians(args.max_heading_error_deg):
+            fault = fault or 'heading_error_exceeds_limit'
+        if not node.pose_fault and pose_age <= args.pose_timeout:
+            max_abs_radius_error = max(max_abs_radius_error, abs(radius_error))
+            max_abs_heading_error = max(max_abs_heading_error, abs(heading_error))
+        state = recovery.tick(now, fault, command['mode'] == 'run',
+                              int(command['resume_generation']) if args.control_file else resume_generation)
+        if state != 'RUNNING':
+            # Braking takes priority over filesystem/status reporting.
+            node.pub.publish(Twist())
+        if state != previous_state:
+            record_event(args, state, recovery.reason)
+        just_resumed = state == 'RUNNING' and previous_state == 'PAUSED'
+        previous_state = state
+        report_state(args, state, recovery.reason, recovery_ready=recovery.ready(now),
+                     active_sec=active_sec, radius_error_m=radius_error,
+                     heading_error_deg=math.degrees(heading_error), pause_count=recovery.pause_count,
+                     resume_generation_seen=int(command['resume_generation']))
+        if state == 'ABORTED':
+            abort_reason = recovery.reason
+            break
+        if state == 'PAUSED':
+            node.pub.publish(Twist())
+            last_theta = theta
+            last_progress_time = now
+            time.sleep(1.0 / args.rate)
+            continue
+        if just_resumed:
+            last_theta = theta
+            last_progress_time = now
+        progress += args.turn_sign * angle_delta(theta, last_theta)
+        last_theta = theta
+        if progress > last_progress + args.progress_epsilon:
+            last_progress = progress
+            last_progress_time = now
+        elif not args.dry_run and active_sec > args.progress_grace and now - last_progress_time > args.stuck_timeout:
+            abort_reason = "no circle progress for %.1fs" % args.stuck_timeout
+            break
+        max_abs_radius_error = max(max_abs_radius_error, abs(radius_error))
         max_abs_heading_error = max(max_abs_heading_error, abs(heading_error))
 
-        linear = args.linear
-        if abs(radius_error) > args.slow_radius_error:
-            linear = max(args.min_linear, args.linear * args.slow_linear_scale)
-
-        msg.linear.x = linear
-        msg.angular.z = clamp(feedforward + args.heading_kp * heading_error, -args.max_angular, args.max_angular)
+        msg.linear.x, msg.angular.z = circle_velocity(args, radius_error, heading_error)
         if not args.dry_run:
             node.pub.publish(msg)
 
@@ -348,12 +474,16 @@ def drive(node: MocapCircleNode, args) -> CircleSummary:
             last_report = now
 
         sleep_until = cycle_started + 1.0 / args.rate
-        sleep_remaining = sleep_until - time.time()
+        sleep_remaining = sleep_until - time.monotonic()
         if sleep_remaining > 0.0:
             time.sleep(sleep_remaining)
 
+    if stop_requested:
+        abort_reason = abort_reason or 'operator_stop'
+    elapsed = time.monotonic() - start_time
+    node.pub.publish(Twist())
+    record_event(args, 'COMPLETE' if reached_duration and not abort_reason else 'ABORTED', abort_reason)
     node.publish_zero(1.0)
-    elapsed = time.time() - start_time
     summary = CircleSummary(
         reached_duration=reached_duration,
         elapsed_sec=elapsed,
@@ -370,6 +500,12 @@ def drive(node: MocapCircleNode, args) -> CircleSummary:
         pose_samples=node.pose_samples,
         max_pose_age_sec=max_pose_age,
         abort_reason=abort_reason,
+        active_sec=active_sec,
+        paused_sec=recovery.total_paused(start_time + elapsed),
+        pause_count=recovery.pause_count,
+        interrupted=recovery.pause_count > 0,
+        start_epoch=start_epoch,
+        end_epoch=start_epoch + elapsed,
     )
     print(
         "Mocap circle complete: reached_duration=%s elapsed=%.1fs laps=%.2f "
@@ -424,6 +560,22 @@ def parse_args(argv):
     parser.add_argument("--slow-radius-error", type=float, default=0.12)
     parser.add_argument("--slow-linear-scale", type=float, default=0.70)
     parser.add_argument("--pose-timeout", type=float, default=0.30)
+    parser.add_argument('--recovery-timeout', type=float, default=15.0)
+    parser.add_argument('--recovery-stable-sec', type=float, default=1.0)
+    parser.add_argument('--max-pauses', type=int, default=3)
+    parser.add_argument('--max-pause-seconds', type=float, default=30.0)
+    parser.add_argument('--max-heading-error-deg', type=float, default=60.0)
+    parser.add_argument('--max-start-heading-error-deg', type=float, default=30.0)
+    parser.add_argument('--max-pose-speed', type=float, default=1.0)
+    parser.add_argument('--max-pose-yaw-rate', type=float, default=3.0)
+    parser.add_argument('--max-source-age', type=float, default=0.5)
+    parser.add_argument('--max-future-stamp', type=float, default=0.1)
+    parser.add_argument('--control-file', default='')
+    parser.add_argument('--run-id', default='standalone')
+    parser.add_argument('--coordinator-timeout', type=float, default=2.0)
+    parser.add_argument('--start-late-tolerance', type=float, default=0.25)
+    parser.add_argument('--status-json', default='')
+    parser.add_argument('--events-jsonl', default='')
     parser.add_argument("--stuck-timeout", type=float, default=8.0)
     parser.add_argument("--progress-grace", type=float, default=3.0)
     parser.add_argument("--error-grace", type=float, default=3.0)
@@ -452,6 +604,16 @@ def parse_args(argv):
 
 
 def normalise_args(args):
+    for key, value in vars(args).items():
+        if isinstance(value, float) and not math.isfinite(value):
+            raise ValueError('%s must be finite' % key)
+    for key in ('recovery_timeout', 'recovery_stable_sec', 'max_pause_seconds',
+                'max_heading_error_deg', 'max_start_heading_error_deg', 'max_pose_speed', 'max_pose_yaw_rate',
+                'max_source_age', 'max_future_stamp', 'coordinator_timeout', 'start_late_tolerance'):
+        if getattr(args, key) <= 0:
+            raise ValueError('%s must be positive' % key)
+    if args.max_pauses < 0 or (args.center_x is None) != (args.center_y is None):
+        raise ValueError('Invalid pause budget or incomplete circle center')
     args.radius = max(0.10, abs(args.radius))
     args.linear = clamp(abs(args.linear), 0.0, 0.50)
     args.min_linear = clamp(abs(args.min_linear), 0.0, args.linear if args.linear > 0 else 0.50)
@@ -491,6 +653,7 @@ def main(argv=None):
         return 1
     signal.signal(signal.SIGINT, request_stop)
     signal.signal(signal.SIGTERM, request_stop)
+    signal.signal(signal.SIGUSR1, request_resume)
 
     rclpy.init()
     node = MocapCircleNode(args)
@@ -501,6 +664,10 @@ def main(argv=None):
         try:
             node.publish_zero(1.0)
         except Exception:
+            pass
+        try:
+            record_event(args, 'ABORTED', str(exc))
+        except OSError:
             pass
         print(f"ERROR: {exc}", file=sys.stderr, flush=True)
         return 1

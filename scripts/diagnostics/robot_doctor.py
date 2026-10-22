@@ -88,9 +88,9 @@ DEFAULT_TOPIC_SPECS = {
     "/scan": {"min_hz": 5.0, "target_hz": 18.0},
     "/odom": {"min_hz": 12.0, "target_hz": 20.0},
     "/tf": {"min_hz": 10.0, "target_hz": 50.0},
-    "/camera/color/image_raw": {"min_hz": 12.0, "target_hz": 15.0},
+    "/camera/color/image_raw": {"min_hz": 10.0, "target_hz": 15.0},
     "/camera/color/camera_info": {"min_hz": 0.0, "target_hz": 0.0},
-    "/camera/depth/image_rect_raw": {"min_hz": 12.0, "target_hz": 15.0},
+    "/camera/depth/image_rect_raw": {"min_hz": 10.0, "target_hz": 15.0},
     "/camera/depth/camera_info": {"min_hz": 0.0, "target_hz": 0.0},
     "/camera/gyro/sample": {"min_hz": 150.0, "target_hz": 200.0},
     "/camera/accel/sample": {"min_hz": 60.0, "target_hz": 100.0},
@@ -1416,7 +1416,7 @@ class Doctor:
             "echo DPKG; dpkg-query -W 'librealsense2*' 'ros-*-librealsense2' "
             "'ros-*-realsense2-camera-msgs' 'ros-*-realsense2-camera' 2>/dev/null || true; "
             "echo APT_HOLDS; apt-mark showhold 2>/dev/null | "
-            "grep -E '^(librealsense2|python3-pyrealsense2|ros-[[:alnum:]]+-(librealsense2|realsense2-camera(-msgs)?))(:|$)' || true; "
+            "grep -E '^(librealsense2(-[[:alnum:]+.-]+)?|python3-pyrealsense2|ros-[[:alnum:]]+-(librealsense2|realsense2-camera(-msgs)?))(:|$)' || true; "
             "echo REALSENSE_APT_SOURCES; "
             "for f in /etc/apt/sources.list.d/*librealsense* /etc/apt/sources.list.d/archive_uri-https_librealsense*; do "
             "[ -f \"$f\" ] || continue; echo FILE:$f; sed -n '1,20p' \"$f\"; done 2>/dev/null || true; "

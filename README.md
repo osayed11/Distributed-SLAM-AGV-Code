@@ -556,13 +556,20 @@ If the topic is listed but both commands receive no samples, check that Motive
 is streaming and the rigid body is actively tracked. A discovered publisher is
 not evidence that the upstream node is emitting poses.
 
-The standard S1 command runs sensor gates, then a required 5-second unrecorded
+For repeatable fleet starts and pause/recovery, use
+[Warm Scenario Sessions](docs/WARM_SCENARIO_SESSIONS.md). It separates prepare,
+run, validate and stop, retains healthy drivers between bags, and requires an
+explicit fleet resume after feedback recovers. Deployment and physical watchdog
+qualification are required before using this new flow on robots.
+
+The single-robot S1 command runs sensor gates, then a required 5-second unrecorded
 motion precheck, then starts the recorder and runs the full circle. For a local
 inferred counter-clockwise circle, place the robot 0.8 m from the marked center
 and tangent with the center on its left. Put the center on its right and set
 `S1_DIRECTION=cw` for clockwise.
 
 ```bash
+python3 scripts/scenarios/sensor_session.py prepare agv103
 ROS_DOMAIN_ID=0 \
 MOCAP_TOPIC=/optitrack/rigid_bodies/orkar_agv103 \
 CMD_TOPIC=/agv103/cmd_vel \
@@ -663,10 +670,17 @@ python3 scripts/logging/drive_mocap_square_ros2.py \
   --pose-topic /optitrack/rigid_bodies/orkar_agv110 \
   --cmd-topic /agv110/cmd_vel \
   --side-length 1.0 \
-  --linear 0.18 \
-  --yes \
-  --verbose
+  --line-yaw-offset-deg OFFSET \
+  --turn-sign SIGN \
+  --bounds MIN_X MAX_X MIN_Y MAX_Y \
+  --boundary-margin 0.20 \
+  --preview-only
 ```
+
+Preview and approve every corner before removing `--preview-only`. For managed
+sensor recording, motion, and strict post-run validation, use
+`scripts/logging/record_mocap_square_session_ros2.sh`; the complete operator
+sequence is in `docs/NEXT_LAB_SQUARE_SESSION.md`.
 
 Circle scenario helper:
 
@@ -690,6 +704,7 @@ scripts/network/load_ros_transport_env.sh      one robot-local ROS transport env
 scripts/mocap/natnet_ros2_pose_publisher.py    supervised NatNet-to-PoseStamped source
 scripts/mocap/orkar_natnet_sdk_client.py       OptiTrack NatNet SDK 4.4 adapter
 scripts/logging/start_session.sh               managed bringup, gate, recording, manifest
+scripts/logging/record_mocap_square_session_ros2.sh guarded square recording and validation
 scripts/logging/validate_ros2_bag.py           ROS 2 .mcap/.db3 post-run validator
 scripts/diagnostics/dataset_ready_gate.sh      read-only pre-run dataset gate
 scripts/diagnostics/robot_doctor.py            evidence engine and failure classifier
@@ -703,6 +718,7 @@ scripts/diagnostics/diagnostic_pipeline_audit.py repo coverage audit
 configs/robot_doctor_dataset_gate.json         dataset gate values
 configs/rosbag2_sensor_qos.yaml                rosbag2 sensor QoS overrides
 configs/sqlite_resilient.yaml                  SQLite fallback storage profile
+docs/NEXT_LAB_SQUARE_SESSION.md                next-session guarded square runbook
 agv2_ws/src/agv_bringup/launch/bringup.launch.py ROS 2 bringup
 ```
 

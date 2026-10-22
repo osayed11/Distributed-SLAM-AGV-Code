@@ -3,6 +3,10 @@
 #include <cmath>
 #include <cstring>
 #include <stdexcept>
+#include <poll.h>
+#include <unistd.h>
+#include <cerrno>
+#include <fcntl.h>
 
 #include <tf2/LinearMath/Quaternion.h>
 #include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
@@ -22,6 +26,13 @@ MyAGV::MyAGV()
   this->declare_parameter<bool>("publish_imu", true);
   this->declare_parameter<std::string>("imu_frame_id", "imu_link");
   this->declare_parameter<bool>("debug_output", false);
+  this->declare_parameter<double>("command_timeout", 0.3);
+  this->declare_parameter<int>("serial_read_timeout_ms", 100);
+}
+
+MyAGV::~MyAGV()
+{
+  if (sp_.is_open()) { writeSpeed(0, 0, 0); }
 }
 
 // -------------------------------------------------------------------------
@@ -38,6 +49,12 @@ bool MyAGV::init()
   publish_imu_            = this->get_parameter("publish_imu").as_bool();
   imu_frame_id_           = this->get_parameter("imu_frame_id").as_string();
   debug_output_           = this->get_parameter("debug_output").as_bool();
+  command_timeout_        = this->get_parameter("command_timeout").as_double();
+  serial_read_timeout_ms_ = this->get_parameter("serial_read_timeout_ms").as_int();
+  if (!std::isfinite(command_timeout_) || command_timeout_ <= 0 || command_timeout_ > 1.0 ||
+      serial_read_timeout_ms_ < 1 || serial_read_timeout_ms_ > 100) {
+    throw std::invalid_argument("command_timeout must be (0,1]s and serial_read_timeout_ms [1,100]");
+  }
 
   // Open serial port via Boost.Asio
   try {
@@ -51,6 +68,10 @@ bool MyAGV::init()
         boost::asio::serial_port_base::parity::none));
     sp_.set_option(boost::asio::serial_port_base::flow_control(
         boost::asio::serial_port_base::flow_control::none));
+    const int flags = fcntl(sp_.native_handle(), F_GETFL);
+    if (flags < 0 || fcntl(sp_.native_handle(), F_SETFL, flags | O_NONBLOCK) < 0) {
+      throw std::runtime_error("Cannot make base serial I/O nonblocking");
+    }
   } catch (const boost::system::system_error & e) {
     RCLCPP_ERROR(this->get_logger(),
                  "Failed to open serial port %s: %s",
@@ -92,9 +113,7 @@ bool MyAGV::init()
 // -------------------------------------------------------------------------
 void MyAGV::cmdCallback(const geometry_msgs::msg::Twist::SharedPtr msg)
 {
-  linearX  = msg->linear.x;
-  linearY  = msg->linear.y;
-  angularZ = msg->angular.z;
+  command_.set(msg->linear.x, msg->linear.y, msg->angular.z);
 }
 
 // -------------------------------------------------------------------------
@@ -122,11 +141,38 @@ void MyAGV::writeSpeed(double movex, double movey, double rot)
   // six bytes as header + x/y/yaw/checksum and ignores the two trailing zeros.
   unsigned char buf[8] = {HEADER, HEADER, x_send, y_send, rot_send, checksum, 0, 0};
 
-  try {
-    boost::asio::write(sp_, boost::asio::buffer(buf, sizeof(buf)));
-  } catch (const boost::system::system_error & e) {
-    RCLCPP_WARN(this->get_logger(), "writeSpeed error: %s", e.what());
+  // Never let blocked serial output prevent checking the next command deadline.
+  const auto deadline = CommandWatchdog::Clock::now() + std::chrono::milliseconds(20);
+  size_t sent = 0;
+  while (sent < sizeof(buf) && CommandWatchdog::Clock::now() < deadline) {
+    pollfd fd{sp_.native_handle(), POLLOUT, 0};
+    if (poll(&fd, 1, 2) <= 0) { continue; }
+    const auto n = ::write(fd.fd, buf + sent, sizeof(buf) - sent);
+    if (n > 0) { sent += static_cast<size_t>(n); }
+    else if (n < 0 && errno != EINTR && errno != EAGAIN) { break; }
   }
+  if (sent != sizeof(buf)) {
+    RCLCPP_WARN(this->get_logger(), "Base serial write failed or timed out");
+  }
+}
+
+bool MyAGV::readBytes(unsigned char * data, size_t size,
+                     CommandWatchdog::Clock::time_point deadline)
+{
+  size_t received = 0;
+  while (received < size) {
+    const auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(
+        deadline - CommandWatchdog::Clock::now()).count();
+    if (remaining <= 0) { return false; }
+    pollfd fd{sp_.native_handle(), POLLIN, 0};
+    const int ready = poll(&fd, 1, static_cast<int>(remaining));
+    if (ready < 0 && errno == EINTR) { continue; }
+    if (ready <= 0 || (fd.revents & (POLLERR | POLLHUP | POLLNVAL))) { return false; }
+    const auto n = ::read(fd.fd, data + received, size - received);
+    if (n > 0) { received += static_cast<size_t>(n); }
+    else if (n == 0 || (errno != EINTR && errno != EAGAIN)) { return false; }
+  }
+  return true;
 }
 
 // -------------------------------------------------------------------------
@@ -135,6 +181,8 @@ void MyAGV::writeSpeed(double movex, double movey, double rot)
 // -------------------------------------------------------------------------
 bool MyAGV::readSpeed()
 {
+  const auto deadline = CommandWatchdog::Clock::now() +
+      std::chrono::milliseconds(serial_read_timeout_ms_);
   // --- Find frame header (two consecutive 0xfe bytes) ---
   unsigned char byte = 0;
   unsigned char prev = 0;
@@ -142,12 +190,7 @@ bool MyAGV::readSpeed()
   const int MAX_SCAN = 256;
 
   while (attempts < MAX_SCAN) {
-    try {
-      boost::asio::read(sp_, boost::asio::buffer(&byte, 1));
-    } catch (const boost::system::system_error & e) {
-      RCLCPP_WARN(this->get_logger(), "readSpeed header scan error: %s", e.what());
-      return false;
-    }
+    if (!readBytes(&byte, 1, deadline)) { return false; }
     if (prev == HEADER && byte == HEADER) {
       break;
     }
@@ -162,12 +205,7 @@ bool MyAGV::readSpeed()
 
   // --- Read 16 payload bytes (buf[0..15]) ---
   unsigned char buf[16];
-  try {
-    boost::asio::read(sp_, boost::asio::buffer(buf, 16));
-  } catch (const boost::system::system_error & e) {
-    RCLCPP_WARN(this->get_logger(), "readSpeed payload read error: %s", e.what());
-    return false;
-  }
+  if (!readBytes(buf, 16, deadline)) { return false; }
 
   // --- Validate checksum: sum of buf[0..14] mod 256 == buf[15] ---
   unsigned int sum = 0;
@@ -249,7 +287,8 @@ void MyAGV::execute()
 {
   // Send velocity command. The MCU protocol expects normalized m/s, m/s,
   // rad/s-style command values in [-1, 1], matching the original MCU protocol.
-  writeSpeed(linearX, linearY, angularZ);
+  const auto velocity = command_.get(command_timeout_);
+  writeSpeed(velocity[0], velocity[1], velocity[2]);
 
   // Read sensor packet
   if (!readSpeed()) {

@@ -34,11 +34,46 @@ LEG_TIMEOUT="${LEG_TIMEOUT:-25}"
 TURN_TIMEOUT="${TURN_TIMEOUT:-18}"
 POSE_TIMEOUT="${POSE_TIMEOUT:-0.60}"
 TURN_SIGN="${TURN_SIGN:-1}"
+TURN_DIRECTION="${TURN_DIRECTION:-}"
+MOCAP_BOUNDS="${MOCAP_BOUNDS:-}"
+MOCAP_BOUNDARY_MARGIN="${MOCAP_BOUNDARY_MARGIN:-0.20}"
+REQUIRE_MOCAP_BOUNDS="${REQUIRE_MOCAP_BOUNDS:-true}"
+GT_PREFLIGHT_SECONDS="${GT_PREFLIGHT_SECONDS:-5}"
 SESSION_READY_TIMEOUT="${SESSION_READY_TIMEOUT:-150}"
 BASE_SERVICE="${BASE_SERVICE:-agv-base-d${ROS_DOMAIN_ID}.service}"
 RESTART_BASE_SERVICE="${RESTART_BASE_SERVICE:-true}"
 
 cd "${ROOT}"
+
+TURN_DIRECTION_NORMALIZED="$(printf '%s' "${TURN_DIRECTION}" | tr '[:upper:]' '[:lower:]')"
+case "${TURN_DIRECTION_NORMALIZED}" in
+    "") ;;
+    ccw|counter-clockwise|counterclockwise|left) TURN_SIGN=1 ;;
+    cw|clockwise|right) TURN_SIGN=-1 ;;
+    *)
+        echo "ERROR: TURN_DIRECTION must be clockwise/right or counter-clockwise/left." >&2
+        exit 2
+        ;;
+esac
+
+if [ "${TURN_SIGN}" != "1" ] && [ "${TURN_SIGN}" != "-1" ]; then
+    echo "ERROR: TURN_SIGN must be 1 (left/CCW) or -1 (right/CW)." >&2
+    exit 2
+fi
+
+BOUND_ARGS=()
+if [ -n "${MOCAP_BOUNDS}" ]; then
+    read -r -a BOUND_VALUES <<< "${MOCAP_BOUNDS}"
+    if [ "${#BOUND_VALUES[@]}" -ne 4 ]; then
+        echo "ERROR: MOCAP_BOUNDS must contain: MIN_X MAX_X MIN_Y MAX_Y" >&2
+        exit 2
+    fi
+    BOUND_ARGS=(--bounds "${BOUND_VALUES[@]}" --boundary-margin "${MOCAP_BOUNDARY_MARGIN}")
+elif [ "${REQUIRE_MOCAP_BOUNDS}" = "true" ]; then
+    echo "ERROR: MOCAP_BOUNDS is required so the complete square can be checked before motion." >&2
+    echo "       Example: MOCAP_BOUNDS='0.0 9.0 0.0 7.0'" >&2
+    exit 2
+fi
 
 source_ros_setup() {
     set +u
@@ -83,6 +118,8 @@ echo "Scenario:    ${SCENARIO}"
 echo "Domain:      ${ROS_DOMAIN_ID}"
 echo "Mocap topic: ${MOCAP_TOPIC}"
 echo "Cmd topic:   ${CMD_TOPIC}"
+echo "Turn:        $([ "${TURN_SIGN}" = "1" ] && echo 'counter-clockwise / left' || echo 'clockwise / right')"
+echo "Bounds:      ${MOCAP_BOUNDS:-unchecked} (margin ${MOCAP_BOUNDARY_MARGIN}m)"
 echo "Session log: ${SESSION_LOG}"
 
 if user_service_exists "${BASE_SERVICE}"; then
@@ -93,6 +130,19 @@ fi
 
 echo "Checking mocap topic..."
 timeout 8 ros2 topic echo --once "${MOCAP_TOPIC}" >/dev/null
+
+echo "Checking the complete route and ${GT_PREFLIGHT_SECONDS}s of stationary GT before recording..."
+python3 scripts/logging/drive_mocap_square_ros2.py \
+    --pose-topic "${MOCAP_TOPIC}" \
+    --cmd-topic "${CMD_TOPIC}" \
+    --side-length "${SIDE_LENGTH}" \
+    --legs 4 \
+    --line-yaw-offset-deg "${LINE_YAW_OFFSET_DEG}" \
+    --turn-sign "${TURN_SIGN}" \
+    --pose-timeout "${POSE_TIMEOUT}" \
+    --dry-run \
+    --dry-run-seconds "${GT_PREFLIGHT_SECONDS}" \
+    "${BOUND_ARGS[@]}"
 
 echo "Starting full sensor logging pipeline..."
 bash scripts/logging/start_session.sh "${ROBOT_NAME}" "${SCENARIO}" > "${SESSION_LOG}" 2>&1 &
@@ -132,6 +182,7 @@ python3 scripts/logging/drive_mocap_square_ros2.py \
     --turn-timeout "${TURN_TIMEOUT}" \
     --pose-timeout "${POSE_TIMEOUT}" \
     --turn-sign "${TURN_SIGN}" \
+    "${BOUND_ARGS[@]}" \
     --yes \
     --verbose
 
@@ -155,6 +206,6 @@ CMD_TOPIC="${CMD_TOPIC}" \
 MOCAP_TOPIC="${MOCAP_TOPIC}" \
 REQUIRE_GT=true \
 REQUIRE_IMU=true \
-python3 scripts/logging/validate_ros2_bag.py "${BAG_PATH}" --require-resilient-storage || true
+python3 scripts/logging/validate_ros2_bag.py "${BAG_PATH}" --require-resilient-storage
 echo ""
 echo "Session log: ${SESSION_LOG}"

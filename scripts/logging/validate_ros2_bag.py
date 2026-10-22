@@ -102,16 +102,10 @@ def required_specs() -> List[TopicSpec]:
     color_info_topic = os.environ.get("COLOR_INFO_TOPIC", "/camera/color/camera_info")
     depth_topic = os.environ.get("DEPTH_TOPIC", "/camera/depth/image_rect_raw")
     depth_info_topic = os.environ.get("DEPTH_INFO_TOPIC", "/camera/depth/camera_info")
-    legacy_rgbd_min_hz = os.environ.get("RGBD_BAG_MIN_HZ")
-    if legacy_rgbd_min_hz is None:
-        # Both image streams are configured for 15 Hz. Use one fleet-wide hard
-        # floor at 80% of nominal; retain the exact measured rates in reports.
-        color_min_hz = env_float("COLOR_BAG_MIN_HZ", 12.0)
-        depth_min_hz = env_float("DEPTH_BAG_MIN_HZ", 12.0)
-    else:
-        shared_min_hz = env_float("RGBD_BAG_MIN_HZ", 10.0)
-        color_min_hz = env_float("COLOR_BAG_MIN_HZ", shared_min_hz)
-        depth_min_hz = env_float("DEPTH_BAG_MIN_HZ", shared_min_hz)
+    # Acquisition stays at 15 Hz; the agreed recorded-image minimum is 10 Hz.
+    shared_min_hz = env_float("RGBD_BAG_MIN_HZ", 10.0)
+    color_min_hz = env_float("COLOR_BAG_MIN_HZ", shared_min_hz)
+    depth_min_hz = env_float("DEPTH_BAG_MIN_HZ", shared_min_hz)
     rgbd_target_hz = env_float("RGBD_TARGET_HZ", 15.0)
     camera_info_min_hz = env_float("CAMERA_INFO_MIN_HZ", 10.0)
 

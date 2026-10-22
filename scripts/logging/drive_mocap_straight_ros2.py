@@ -11,6 +11,7 @@ import time
 
 import rclpy
 from rclpy.executors import ExternalShutdownException, SingleThreadedExecutor
+from rclpy.qos import qos_profile_sensor_data
 from rclpy.signals import SignalHandlerOptions
 from geometry_msgs.msg import PoseStamped, Twist
 
@@ -291,7 +292,7 @@ def main(argv):
 
     rclpy.init(signal_handler_options=SignalHandlerOptions.NO)
     _node = rclpy.create_node("drive_mocap_straight")
-    _node.create_subscription(PoseStamped, args.pose_topic, pose_cb, 5)
+    _node.create_subscription(PoseStamped, args.pose_topic, pose_cb, qos_profile_sensor_data)
     pub = _node.create_publisher(Twist, args.cmd_topic, 5)
 
     executor = SingleThreadedExecutor()

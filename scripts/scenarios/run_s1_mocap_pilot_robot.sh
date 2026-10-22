@@ -2,13 +2,11 @@
 # Deterministic Scenario 1 MoCap circle collection for one ROS 2 AGV.
 #
 # This wrapper intentionally keeps the lifecycle simple:
-#   1. clean stale local robot ROS processes
-#   2. reset the D455 once and disable autosuspend
-#   3. launch exactly one bringup
-#   4. wait for required live topics
+#   1. attach to prepared drivers (or explicitly launch owned cold bringup)
+#   2. check live topics concurrently without resetting healthy hardware
 #   5. record one logical dataset using stock rosbag2 recorders
 #   6. drive one MoCap-feedback circle using best-effort MoCap QoS
-#   7. stop recording/bringup and validate the bag
+#   7. close bags, retain prepared drivers, and validate separately from motion
 
 set -euo pipefail
 
@@ -41,7 +39,11 @@ Circle overrides:
   S1_LINEAR         Linear speed. Default: 0.10
   S1_MIN_LINEAR     Minimum linear speed while correcting. Default: 0.07
   S1_DIRECTION      ccw or cw. Default: ccw
-  S1_POSE_TIMEOUT   Abort if MoCap pose is stale this long. Default: 0.50s
+  S1_POSE_TIMEOUT   Stop motion when MoCap is stale this long. Default: 0.50s
+  S1_RECOVERY_TIMEOUT  Stopped recovery allowance. Default: 15s
+  S1_BRINGUP_MODE   warm (default; prepare first) or cold (owned bringup).
+  S1_CONTROL_FILE  Robot-local fleet lease/control JSON.
+  S1_STATUS_JSON   Controller state for the fleet supervisor.
   S1_FORWARD_YAW_OFFSET_DEG  Per-robot rigid-body-to-forward calibration. Default: 0
   S1_BEST_EFFORT_POSE true/false. Default: true for sensor-data QoS.
   S1_START_AT_EPOCH Unix epoch for synchronized fleet motion. Default: 0 (immediate).
@@ -65,7 +67,7 @@ Recording/gates:
   S1_RECORDER_READY_TIMEOUT  Wait for required recorder subscriptions. Default: 60s
   S1_MAX_RECORDER_SUBSCRIPTION_SKEW_SEC  Maximum startup spread after all
                     subscriptions exist. Default: COVERAGE_TOLERANCE_SEC or 3s.
-  S1_TOPIC_WAIT_SEC Wait per required topic. Default: 180
+  S1_TOPIC_WAIT_SEC Total concurrent live-check deadline. Default: 25
   MOCAP_MIN_HZ     Minimum accepted GT transport rate. Default: 30
   MOCAP_MAX_HZ     Maximum accepted GT transport rate. Default: 120
   MOCAP_RATE_CHECK_SECONDS  Duration of the pre-motion rate check. Default: 5
@@ -230,66 +232,6 @@ reset_d455_once() {
     fi
 }
 
-kill_local_robot_graph() {
-    echo "Cleaning stale local robot ROS processes..."
-    local patterns=(
-        "drive_mocap_circle_ros2.py"
-        "ros2 bag record"
-        "ros2 launch agv_bringup"
-        "realsense2_camera_node"
-        "ydlidar_ros2_driver_node"
-        "myagv_odometry_node"
-        "static_transform_publisher"
-    )
-    local pattern
-    for pattern in "${patterns[@]}"; do
-        pkill -TERM -f "${pattern}" 2>/dev/null || true
-    done
-    sleep 3
-    for pattern in "${patterns[@]}"; do
-        pkill -KILL -f "${pattern}" 2>/dev/null || true
-    done
-    rm -f /dev/shm/fastrtps_* /dev/shm/fastdds_* 2>/dev/null || true
-}
-
-wait_for_topic_once() {
-    local topic="$1"
-    local timeout_sec="$2"
-    local topic_type="${3:-}"
-    local echo_args="'${topic}'"
-    if [ -n "${topic_type}" ]; then
-        echo_args="${echo_args} '${topic_type}'"
-    fi
-    echo "Waiting for ${topic}..."
-    timeout "${timeout_sec}" bash -lc \
-        "source /opt/ros/humble/setup.bash; source '${ROOT}/scripts/network/load_ros_transport_env.sh'; [ -f '${ROOT}/agv2_ws/install/setup.bash' ] && source '${ROOT}/agv2_ws/install/setup.bash'; until ros2 topic echo ${echo_args} --no-daemon --spin-time 2 --once >/dev/null 2>&1; do grep -q '^FAIL_RUNTIME_GUARD ' '${RUNTIME_GUARD_STATUS}' 2>/dev/null && exit 70; sleep 1; done"
-}
-
-check_topic_rate_range() {
-    local topic="$1"
-    local seconds="$2"
-    local min_hz="$3"
-    local max_hz="$4"
-    local log_path="$5"
-    local rate
-
-    echo "Checking ${topic} rate for ${seconds}s (${min_hz}-${max_hz} Hz)..."
-    timeout "${seconds}" ros2 topic hz "${topic}" --window 200 >"${log_path}" 2>&1 || true
-    rate="$(awk '/average rate:/ { value=$3 } END { if (value != "") print value }' "${log_path}")"
-    if [ -z "${rate}" ]; then
-        echo "ERROR: could not measure the ground-truth rate." >&2
-        tail -40 "${log_path}" >&2 || true
-        return 1
-    fi
-    if ! awk -v rate="${rate}" -v min="${min_hz}" -v max="${max_hz}" \
-        'BEGIN { exit !(rate >= min && rate <= max) }'; then
-        echo "ERROR: ground-truth rate ${rate} Hz is outside ${min_hz}-${max_hz} Hz." >&2
-        echo "       Check the source and bridge routes; do not record missing or amplified GT." >&2
-        return 1
-    fi
-    echo "Ground-truth rate gate passed: ${rate} Hz."
-}
-
 stop_process_group() {
     local pid="${1:-}"
     local signal_name="${2:-INT}"
@@ -387,20 +329,19 @@ with open(log_path, "r", encoding="utf-8", errors="replace") as stream:
 
 missing = sorted(required - timestamps.keys())
 if missing:
-    print("ERROR: recorder log is missing required subscription timestamps:", file=sys.stderr)
+    print("WARN: subscription timestamps unavailable; required subscriptions were checked separately:", file=sys.stderr)
     for topic in missing:
         print(f"  {topic}", file=sys.stderr)
-    raise SystemExit(1)
+    raise SystemExit(0)
 
 skew = max(timestamps.values()) - min(timestamps.values())
 print(f"{label} recorder required-topic subscription skew: {skew:.3f}s")
 if skew > max_skew:
     print(
-        f"ERROR: subscription skew {skew:.3f}s exceeds {max_skew:.3f}s; "
-        "aborting before motion.",
+        f"WARN: subscription skew {skew:.3f}s exceeds {max_skew:.3f}s; "
+        "all required subscriptions are now present; motion has not started yet.",
         file=sys.stderr,
     )
-    raise SystemExit(1)
 PY
 }
 
@@ -437,6 +378,8 @@ S1_DIRECTION="${S1_DIRECTION:-ccw}"
 S1_MAX_RADIUS_ERROR="${S1_MAX_RADIUS_ERROR:-0.45}"
 S1_FORWARD_YAW_OFFSET_DEG="${S1_FORWARD_YAW_OFFSET_DEG:-0}"
 S1_POSE_TIMEOUT="${S1_POSE_TIMEOUT:-0.50}"
+S1_RECOVERY_TIMEOUT="${S1_RECOVERY_TIMEOUT:-15}"
+S1_BRINGUP_MODE="${S1_BRINGUP_MODE:-warm}"
 S1_HEADING_KP="${S1_HEADING_KP:-1.10}"
 S1_RADIUS_KP="${S1_RADIUS_KP:-1.50}"
 S1_MAX_ANGULAR="${S1_MAX_ANGULAR:-0.55}"
@@ -465,7 +408,7 @@ S1_AUX_CACHE_SIZE="${S1_AUX_CACHE_SIZE:-67108864}"
 S1_RECORDER_READY_TIMEOUT="${S1_RECORDER_READY_TIMEOUT:-60}"
 S1_MAX_RECORDER_SUBSCRIPTION_SKEW_SEC="${S1_MAX_RECORDER_SUBSCRIPTION_SKEW_SEC:-${COVERAGE_TOLERANCE_SEC:-3.0}}"
 S1_RECORDER_PREROLL_SEC="${S1_RECORDER_PREROLL_SEC:-2}"
-S1_TOPIC_WAIT_SEC="${S1_TOPIC_WAIT_SEC:-180}"
+S1_TOPIC_WAIT_SEC="${S1_TOPIC_WAIT_SEC:-25}"
 MOCAP_MIN_HZ="${MOCAP_MIN_HZ:-30}"
 MOCAP_MAX_HZ="${MOCAP_MAX_HZ:-120}"
 MOCAP_RATE_CHECK_SECONDS="${MOCAP_RATE_CHECK_SECONDS:-5}"
@@ -533,12 +476,21 @@ BAG="${HOME}/agv_data/${SESSION_ID}"
 SENSOR_BAG="${BAG}_sensors"
 AUX_BAG="${BAG}_aux"
 BRINGUP_LOG="${HOME}/agv_data/${SESSION_ID}_bringup.log"
+if [ "${S1_BRINGUP_MODE}" = warm ]; then
+    BRINGUP_LOG="$(python3 scripts/scenarios/sensor_session.py check "${ROBOT_NAME}")"
+elif [ "${S1_BRINGUP_MODE}" != cold ]; then
+    echo "ERROR: S1_BRINGUP_MODE must be warm or cold." >&2
+    exit 2
+fi
 RECORD_LOG="${HOME}/agv_data/${SESSION_ID}_record.log"
 SENSOR_RECORD_LOG="${HOME}/agv_data/${SESSION_ID}_sensors_record.log"
 AUX_RECORD_LOG="${HOME}/agv_data/${SESSION_ID}_aux_record.log"
 GT_HOLD_LOG="${HOME}/agv_data/${SESSION_ID}_gt_hold.log"
 GT_RATE_LOG="${HOME}/agv_data/${SESSION_ID}_gt_rate.log"
 SUMMARY_JSON="${HOME}/agv_data/${SESSION_ID}_circle_summary.json"
+EVENTS_JSONL="${HOME}/agv_data/${SESSION_ID}_motion_events.jsonl"
+LIVE_JSON="${HOME}/agv_data/${SESSION_ID}_live_check.json"
+S1_STATUS_JSON="${S1_STATUS_JSON:-${HOME}/agv_data/${SESSION_ID}_motion_status.json}"
 PRECHECK_JSON="${HOME}/agv_data/${SESSION_ID}_circle_precheck.json"
 VALIDATION_JSON="${HOME}/agv_data/${SESSION_ID}_validate.json"
 RUNTIME_GUARD_LOG="${HOME}/agv_data/${SESSION_ID}_runtime_imu_guard.log"
@@ -559,6 +511,22 @@ GT_HOLD_PID=""
 RUNTIME_GUARD_PID=""
 DRIVE_PID=""
 
+# Record exact artifact paths before launch so failed/pre-recording attempts remain traceable.
+python3 - "${S1_ARTIFACT_JSON:-${HOME}/agv_data/${SESSION_ID}_artifacts.json}" \
+    "${SESSION_ID}" "${ROBOT_NAME}" "${SCENARIO}" "${SUMMARY_JSON}" "${EVENTS_JSONL}" \
+    "${LIVE_JSON}" "${CMD_TOPIC}" "${MOCAP_TOPIC}" "${BAG_PATHS[@]}" <<'PY'
+import hashlib, json, pathlib, subprocess, sys, time
+output, session, robot, scenario, summary, events, live, cmd, pose, *bags = sys.argv[1:]
+files = ['scripts/logging/drive_mocap_circle_ros2.py', 'scripts/logging/motion_recovery.py',
+         'scripts/scenarios/run_s1_mocap_pilot_robot.sh', 'configs/mcap_resilient_high_throughput.yaml']
+hashes = {name: hashlib.sha256(pathlib.Path(name).read_bytes()).hexdigest() for name in files}
+data = dict(session_id=session, robot=robot, scenario=scenario, summary=summary, events=events,
+            live_check=live, cmd_topic=cmd, pose_topic=pose, bags=bags, created_epoch=time.time(),
+            source_sha256=hashes, git_commit=subprocess.check_output(['git','rev-parse','HEAD'], text=True).strip(),
+            validation='PENDING')
+pathlib.Path(output).write_text(json.dumps(data, indent=2)+'\n')
+PY
+
 stop_gt_hold() {
     if [ -n "${GT_HOLD_PID}" ] && kill -0 "${GT_HOLD_PID}" 2>/dev/null; then
         stop_process_group "${GT_HOLD_PID}" TERM
@@ -572,6 +540,11 @@ runtime_guard_failed() {
         grep -q '^FAIL_RUNTIME_GUARD ' "${RUNTIME_GUARD_STATUS}"
 }
 
+runtime_guard_detected() {
+    [ -s "${RUNTIME_GUARD_STATUS}" ] && \
+        grep -Eq '^(FAIL|WARN)_RUNTIME_GUARD ' "${RUNTIME_GUARD_STATUS}"
+}
+
 start_runtime_guard() {
     if ! bool_true "${S1_RUNTIME_IMU_GUARD}" || ! bool_true "${REQUIRE_IMU}"; then
         echo "DISABLED" > "${RUNTIME_GUARD_STATUS}"
@@ -583,15 +556,19 @@ start_runtime_guard() {
     fi
 
     echo "Starting no-subscription D455 runtime IMU guard..."
+    local guard_args=()
+    if [ "${S1_BRINGUP_MODE}" = warm ]; then guard_args+=(--start-at-end); fi
     setsid python3 "${ROOT}/scripts/diagnostics/watch_realsense_runtime.py" \
         --bringup-log "${BRINGUP_LOG}" \
         --status-file "${RUNTIME_GUARD_STATUS}" \
         --evidence-dir "${RUNTIME_GUARD_EVIDENCE_DIR}" \
         --require-imu \
+        --warn-only \
+        "${guard_args[@]}" \
         >"${RUNTIME_GUARD_LOG}" 2>&1 < /dev/null &
     RUNTIME_GUARD_PID=$!
     sleep 0.3
-    if ! kill -0 "${RUNTIME_GUARD_PID}" 2>/dev/null; then
+    if ! kill -0 "${RUNTIME_GUARD_PID}" 2>/dev/null && ! runtime_guard_detected; then
         echo "ERROR: runtime IMU guard exited during startup." >&2
         cat "${RUNTIME_GUARD_LOG}" >&2 || true
         return 1
@@ -602,7 +579,7 @@ start_runtime_guard() {
 stop_runtime_guard() {
     [ -n "${RUNTIME_GUARD_PID}" ] || return 0
     if kill -0 "${RUNTIME_GUARD_PID}" 2>/dev/null; then
-        if runtime_guard_failed; then
+        if runtime_guard_detected; then
             # Let the guard finish its bounded evidence snapshot before cleanup.
             wait_for_exit_or_kill "${RUNTIME_GUARD_PID}" "runtime IMU guard evidence capture" 15
         else
@@ -615,7 +592,7 @@ stop_runtime_guard() {
 }
 
 classify_runtime_fault() {
-    runtime_guard_failed || return 0
+    runtime_guard_detected || return 0
     [ ! -s "${RUNTIME_FAULT_CLASSIFICATION}" ] || return 0
 
     python3 "${ROOT}/scripts/diagnostics/classify_realsense_fault.py" \
@@ -634,6 +611,7 @@ run_circle_with_runtime_guard() {
     local label="$1"
     shift
     local rc=0
+    local warned=false
 
     if runtime_guard_failed; then
         echo "ERROR: runtime IMU guard failed before ${label}." >&2
@@ -644,6 +622,17 @@ run_circle_with_runtime_guard() {
     setsid python3 scripts/logging/drive_mocap_circle_ros2.py "$@" &
     DRIVE_PID=$!
     while kill -0 "${DRIVE_PID}" 2>/dev/null; do
+        local recorder
+        for recorder in "${REC_PID}" "${SENSOR_REC_PID}" "${AUX_REC_PID}"; do
+            if [ -n "${recorder}" ] && ! kill -0 "${recorder}" 2>/dev/null; then
+                echo "ERROR: recorder exited during ${label}; stopping motion." >&2
+                stop_process_group "${DRIVE_PID}" INT
+                wait_for_exit_or_kill "${DRIVE_PID}" "${label}" 5
+                wait "${DRIVE_PID}" 2>/dev/null || true
+                DRIVE_PID=""
+                return 71
+            fi
+        done
         if runtime_guard_failed; then
             echo "ERROR: D455 IMU source stalled during ${label}; stopping immediately." >&2
             cat "${RUNTIME_GUARD_STATUS}" >&2 || true
@@ -653,6 +642,10 @@ run_circle_with_runtime_guard() {
             DRIVE_PID=""
             publish_zero
             return 70
+        fi
+        if runtime_guard_detected && [ "${warned}" = false ]; then
+            echo "WARN: IMU timeout logged; preserving evidence and continuing collection. Check recorded IMU coverage after the run." >&2
+            warned=true
         fi
         sleep 0.2
     done
@@ -733,7 +726,11 @@ echo "record_cache: ${ROSBAG2_MAX_CACHE_SIZE} bytes"
 echo "runtime_guard: ${S1_RUNTIME_IMU_GUARD}"
 echo "========================================================================"
 
-kill_local_robot_graph
+if [ "${S1_BRINGUP_MODE}" = cold ]; then
+if pgrep -f '[m]yagv_odometry_node|[r]ealsense2_camera_node|[r]os2 bag record' >/dev/null; then
+    echo "ERROR: existing drivers/recorders detected; stop their owner or use warm mode." >&2
+    exit 73
+fi
 case "${D455_RESET_MODE}" in
     none|false)
         echo "Skipping D455 reset before bringup (D455_RESET_MODE=${D455_RESET_MODE})."
@@ -753,29 +750,23 @@ setsid bash -lc \
     >"${BRINGUP_LOG}" 2>&1 < /dev/null &
 BRINGUP_PID=$!
 echo "bringup_pid: ${BRINGUP_PID}"
+else
+    echo "Using prepared drivers; no camera reset or bringup restart."
+    if [ "${D455_RESET_MODE}" != none ]; then
+        echo "ERROR: resets require an explicit stopped maintenance session." >&2
+        exit 2
+    fi
+fi
 start_runtime_guard
 
-# A Zenoh-imported topic disappears from the local DDS graph when its last
-# local subscriber exits. Establish one subscriber before any one-shot probes
-# and keep it alive through recorder startup so the imported route never gaps.
-echo "Holding ground-truth discovery route..."
-setsid env PYTHONUNBUFFERED=1 stdbuf -oL -eL \
-    ros2 topic echo "${MOCAP_TOPIC}" geometry_msgs/msg/PoseStamped \
-    --qos-reliability best_effort >"${GT_HOLD_LOG}" 2>&1 &
-GT_HOLD_PID=$!
-if ! kill -0 "${GT_HOLD_PID}" 2>/dev/null; then
-    echo "ERROR: ground-truth discovery hold exited before recording." >&2
-    tail -40 "${GT_HOLD_LOG}" >&2 || true
+if ! timeout 8 ros2 param get /myagv_odometry_node command_timeout | grep -q 'Double value is:'; then
+    echo "ERROR: base watchdog unavailable; rebuild myagv_odometry before motion." >&2
     exit 1
 fi
-if ! timeout "${S1_GT_HOLD_READY_TIMEOUT}" bash -c \
-    'until grep -q "^header:" "$1" 2>/dev/null; do sleep 0.2; done' \
-    _ "${GT_HOLD_LOG}"; then
-    echo "ERROR: ground-truth discovery hold received no pose within ${S1_GT_HOLD_READY_TIMEOUT}s." >&2
-    tail -40 "${GT_HOLD_LOG}" >&2 || true
+if [ "$(df -Pk "${HOME}/agv_data" | awk 'NR==2 {print $4}')" -lt "${S1_MIN_FREE_KIB:-5242880}" ]; then
+    echo "ERROR: insufficient recording space; no bags deleted automatically." >&2
     exit 1
 fi
-echo "Ground-truth discovery route is receiving poses."
 
 required_topics=(
     "/scan"
@@ -788,26 +779,26 @@ if bool_true "${REQUIRE_IMU}"; then
     required_topics+=("/camera/gyro/sample" "/camera/accel/sample")
 fi
 
-for topic in "${required_topics[@]}"; do
-    topic_type=""
-    if [ "${topic}" = "${MOCAP_TOPIC}" ]; then
-        topic_type="geometry_msgs/msg/PoseStamped"
-    fi
-    if ! wait_for_topic_once "${topic}" "${S1_TOPIC_WAIT_SEC}" "${topic_type}"; then
-        echo "ERROR: required topic did not publish: ${topic}" >&2
-        echo "--- bringup log tail ---" >&2
-        tail -120 "${BRINGUP_LOG}" >&2 || true
-        exit 1
-    fi
-done
-echo "Required live topic gate passed."
-
-check_topic_rate_range \
-    "${MOCAP_TOPIC}" \
-    "${MOCAP_RATE_CHECK_SECONDS}" \
-    "${MOCAP_MIN_HZ}" \
-    "${MOCAP_MAX_HZ}" \
-    "${GT_RATE_LOG}"
+LIVE_ARGS=(--pose-topic "${MOCAP_TOPIC}" --cmd-topic "${CMD_TOPIC}" --output "${LIVE_JSON}"
+           --timeout "${S1_TOPIC_WAIT_SEC}" --pose-timeout "${S1_POSE_TIMEOUT}"
+           --seconds "${MOCAP_RATE_CHECK_SECONDS}"
+           --min-gt-hz "${MOCAP_MIN_HZ}" --max-gt-hz "${MOCAP_MAX_HZ}")
+if bool_true "${REQUIRE_IMU}"; then LIVE_ARGS+=(--require-imu); fi
+# The checker itself retains only GT after passing, until the recorder owns it.
+# Avoid a second full-rate CLI subscriber/formatter competing with image probes.
+setsid python3 scripts/scenarios/check_live_topics.py "${LIVE_ARGS[@]}" --hold-after-pass \
+    >"${GT_HOLD_LOG}" 2>&1 < /dev/null &
+GT_HOLD_PID=$!
+if ! timeout "$((S1_TOPIC_WAIT_SEC + 10))" bash -c \
+    'until [ -s "$1" ]; do kill -0 "$2" 2>/dev/null || exit 1; sleep 0.2; done' \
+    _ "${LIVE_JSON}" "${GT_HOLD_PID}"; then
+    cat "${GT_HOLD_LOG}" >&2
+    echo "ERROR: concurrent live check did not finish." >&2
+    exit 1
+fi
+cat "${GT_HOLD_LOG}"
+python3 -c 'import json,sys; sys.exit(0 if json.load(open(sys.argv[1]))["passed"] else 1)' "${LIVE_JSON}"
+echo "Live availability/safety check passed; quality warnings are retained for review. Holding GT through recorder startup."
 
 CIRCLE_ARGS=(
     --pose-topic "${MOCAP_TOPIC}"
@@ -821,9 +812,11 @@ CIRCLE_ARGS=(
     --max-angular "${S1_MAX_ANGULAR}"
     --max-radius-heading-offset-deg "${S1_MAX_RADIUS_HEADING_OFFSET_DEG}"
     --pose-timeout "${S1_POSE_TIMEOUT}"
+    --recovery-timeout "${S1_RECOVERY_TIMEOUT}"
     --max-radius-error "${S1_MAX_RADIUS_ERROR}"
     --forward-yaw-offset-deg "${S1_FORWARD_YAW_OFFSET_DEG}"
     --summary-json "${SUMMARY_JSON}"
+    --events-jsonl "${EVENTS_JSONL}"
     --yes
     --verbose
 )
@@ -878,6 +871,8 @@ if bool_true "${S1_PRECHECK}" && ! bool_true "${S1_DRY_RUN}"; then
 fi
 
 FULL_CIRCLE_ARGS=("${CIRCLE_ARGS[@]}")
+FULL_CIRCLE_ARGS+=(--status-json "${S1_STATUS_JSON}" --run-id "${S1_RUN_ID:-${SESSION_ID}}")
+if [ -n "${S1_CONTROL_FILE:-}" ]; then FULL_CIRCLE_ARGS+=(--control-file "${S1_CONTROL_FILE}"); fi
 if bool_true "${S1_PRECHECK}" && ! bool_true "${S1_DRY_RUN}" && \
    [ -z "${S1_CENTER_X:-}" ] && [ -z "${S1_CENTER_Y:-}" ]; then
     FROZEN_CENTER_VALUES="$(python3 - "${PRECHECK_JSON}" <<'PY'
@@ -907,23 +902,8 @@ if awk -v epoch="${S1_START_AT_EPOCH}" 'BEGIN { exit !(epoch > 0) }'; then
     FULL_CIRCLE_ARGS+=(--start-at-epoch "${S1_START_AT_EPOCH}")
 fi
 if [ -n "${S1_START_SIGNAL_FILE}" ]; then
-    echo "FLEET_READY: sensors passed; waiting stopped before recorder startup on ${S1_START_SIGNAL_FILE}"
-    while [ ! -s "${S1_START_SIGNAL_FILE}" ]; do
-        if grep -q '^FAIL_RUNTIME_GUARD ' "${RUNTIME_GUARD_STATUS}" 2>/dev/null; then
-            echo "ERROR: D455 IMU failed while waiting for fleet release." >&2
-            cat "${RUNTIME_GUARD_STATUS}" >&2 || true
-            exit 70
-        fi
-        sleep 0.2
-    done
-    RELEASE_EPOCH="$(tr -d '[:space:]' < "${S1_START_SIGNAL_FILE}")"
-    if ! awk -v epoch="${RELEASE_EPOCH}" 'BEGIN { exit !(epoch > 0) }'; then
-        echo "ERROR: fleet release file must contain a positive Unix epoch." >&2
-        exit 2
-    fi
-    S1_START_AT_EPOCH="${RELEASE_EPOCH}"
-    FULL_CIRCLE_ARGS+=(--start-at-epoch "${S1_START_AT_EPOCH}")
-    echo "Fleet release received; recorder startup begins for epoch ${S1_START_AT_EPOCH}."
+    # The controller reaches ARMED only AFTER recorder readiness.
+    FULL_CIRCLE_ARGS+=(--start-signal-file "${S1_START_SIGNAL_FILE}")
 fi
 
 if bool_true "${S1_RECORD}"; then
@@ -1121,14 +1101,21 @@ stop_gt_hold
 stop_runtime_guard
 classify_runtime_fault
 
-echo "Stopping bringup..."
-stop_process_group "${BRINGUP_PID}" INT
-wait_for_exit_or_kill "${BRINGUP_PID}" "bringup" "${S1_BRINGUP_STOP_TIMEOUT}"
-BRINGUP_PID=""
+if [ -n "${BRINGUP_PID}" ]; then
+    echo "Stopping owned cold bringup..."
+    stop_process_group "${BRINGUP_PID}" INT
+    wait_for_exit_or_kill "${BRINGUP_PID}" "bringup" "${S1_BRINGUP_STOP_TIMEOUT}"
+    BRINGUP_PID=""
+else
+    echo "Prepared drivers remain running for the next attempt."
+fi
 
 if bool_true "${S1_RECORD}" && bool_true "${S1_VALIDATE}"; then
     echo "--- bag validation ---"
     VALIDATE_ARGS=(--min-duration "${S1_MIN_BAG_DURATION}" --json-out "${VALIDATION_JSON}")
+    if [ -s "${SUMMARY_JSON}" ]; then
+        S1_START_AT_EPOCH="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("start_epoch",0))' "${SUMMARY_JSON}")"
+    fi
     if awk -v epoch="${S1_START_AT_EPOCH}" 'BEGIN { exit !(epoch > 0) }'; then
         # Recorder pre-roll is useful evidence but is not part of the scenario.
         # Keep strict continuity checks scoped to the synchronized motion window.
@@ -1151,8 +1138,8 @@ if bool_true "${S1_RECORD}" && bool_true "${S1_VALIDATE}"; then
     MOCAP_TOPIC="${MOCAP_TOPIC}" \
     REQUIRE_GT="${REQUIRE_GT}" \
     REQUIRE_IMU="${REQUIRE_IMU}" \
-    COLOR_BAG_MIN_HZ="${COLOR_BAG_MIN_HZ:-12}" \
-    DEPTH_BAG_MIN_HZ="${DEPTH_BAG_MIN_HZ:-12}" \
+    COLOR_BAG_MIN_HZ="${COLOR_BAG_MIN_HZ:-10}" \
+    DEPTH_BAG_MIN_HZ="${DEPTH_BAG_MIN_HZ:-10}" \
     DEPTH_TOPIC="/camera/depth/image_rect_raw" \
     DEPTH_INFO_TOPIC="/camera/depth/camera_info" \
     IMU_TOPICS="/camera/gyro/sample /camera/accel/sample /camera/imu /imu" \

@@ -11,6 +11,7 @@ import time
 
 import rclpy
 from rclpy.executors import ExternalShutdownException, SingleThreadedExecutor
+from rclpy.qos import qos_profile_sensor_data
 from rclpy.signals import SignalHandlerOptions
 from geometry_msgs.msg import PoseStamped, Twist
 
@@ -92,6 +93,55 @@ def check_pose_fresh(args):
     age = time.time() - last_pose_wall_time
     if age > args.pose_timeout:
         raise RuntimeError("mocap pose stale for %.3fs" % age)
+
+
+def planned_vertices(start_pose, initial_line_yaw, turn_step, side_length, legs):
+    """Return the expected start and end point of every square leg."""
+    x = start_pose[0]
+    y = start_pose[1]
+    vertices = [(x, y)]
+    for leg_index in range(legs):
+        line_yaw = initial_line_yaw + turn_step * leg_index
+        x += side_length * math.cos(line_yaw)
+        y += side_length * math.sin(line_yaw)
+        vertices.append((x, y))
+    return vertices
+
+
+def print_and_check_plan(args, vertices):
+    direction = "counter-clockwise / left" if args.turn_sign > 0.0 else "clockwise / right"
+    print("Planned route: %s turns" % direction)
+    for index, (x, y) in enumerate(vertices):
+        label = "start" if index == 0 else "corner %d" % index
+        print("  %-8s x=%+.3f y=%+.3f" % (label, x, y))
+
+    if args.bounds is None:
+        print("MoCap boundary: NOT CHECKED (supply --bounds MIN_X MAX_X MIN_Y MAX_Y)")
+        return
+
+    min_x, max_x, min_y, max_y = args.bounds
+    usable_min_x = min_x + args.boundary_margin
+    usable_max_x = max_x - args.boundary_margin
+    usable_min_y = min_y + args.boundary_margin
+    usable_max_y = max_y - args.boundary_margin
+    if usable_min_x >= usable_max_x or usable_min_y >= usable_max_y:
+        raise RuntimeError("MoCap bounds are empty after applying the boundary margin")
+
+    outside = []
+    for index, (x, y) in enumerate(vertices):
+        if not (usable_min_x <= x <= usable_max_x and usable_min_y <= y <= usable_max_y):
+            outside.append((index, x, y))
+    if outside:
+        details = ", ".join(
+            "%s=(%.3f,%.3f)" % ("start" if index == 0 else "corner%d" % index, x, y)
+            for index, x, y in outside
+        )
+        raise RuntimeError("planned route leaves the usable MoCap bounds: %s" % details)
+
+    print(
+        "MoCap boundary: PASS within x=[%.3f, %.3f], y=[%.3f, %.3f] (margin %.3fm)"
+        % (usable_min_x, usable_max_x, usable_min_y, usable_max_y, args.boundary_margin)
+    )
 
 
 def run_leg(pub, args, leg_index, line_yaw, target_rigid_yaw):
@@ -266,7 +316,7 @@ def run_turn(pub, args, turn_index, target_rigid_yaw):
 
 
 def run_square(pub, args):
-    if not args.dry_run and not args.yes:
+    if not args.dry_run and not args.preview_only and not args.yes:
         raise RuntimeError("Refusing to move without --yes. Use --dry-run for a non-moving check.")
 
     wait_for_pose(args.wait_timeout)
@@ -275,6 +325,13 @@ def run_square(pub, args):
     initial_line_yaw = start_pose[3] + line_yaw_offset
     initial_rigid_yaw = start_pose[3]
     turn_step = args.turn_sign * math.pi * 0.5
+    vertices = planned_vertices(
+        start_pose,
+        initial_line_yaw,
+        turn_step,
+        args.side_length,
+        args.legs,
+    )
 
     print(
         "Mocap square ROS2: topic=%s frame=%s start=(%.3f, %.3f, %.3f) "
@@ -292,6 +349,11 @@ def run_square(pub, args):
             args.dry_run,
         )
     )
+
+    print_and_check_plan(args, vertices)
+    if args.preview_only:
+        print("Square preview complete; no motion commanded.")
+        return 0
 
     for leg_index in range(args.legs):
         line_yaw = initial_line_yaw + turn_step * leg_index
@@ -346,6 +408,24 @@ def parse_args(argv):
     parser.add_argument("--report-period", type=float, default=0.5)
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--dry-run-seconds", type=float, default=3.0)
+    parser.add_argument(
+        "--preview-only",
+        action="store_true",
+        help="print and validate the planned corners, then exit without commanding motion",
+    )
+    parser.add_argument(
+        "--bounds",
+        type=float,
+        nargs=4,
+        metavar=("MIN_X", "MAX_X", "MIN_Y", "MAX_Y"),
+        help="axis-aligned reliable MoCap area in arena coordinates",
+    )
+    parser.add_argument(
+        "--boundary-margin",
+        type=float,
+        default=0.20,
+        help="inset applied to --bounds for robot footprint and tracking margin",
+    )
     parser.add_argument("--yes", action="store_true")
     parser.add_argument("--verbose", action="store_true")
     args = parser.parse_args(argv)
@@ -365,6 +445,11 @@ def parse_args(argv):
     args.turn_timeout = max(1.0, args.turn_timeout)
     args.pose_timeout = max(0.05, args.pose_timeout)
     args.rate = max(2.0, args.rate)
+    args.boundary_margin = max(0.0, args.boundary_margin)
+    if args.bounds is not None:
+        min_x, max_x, min_y, max_y = args.bounds
+        if min_x >= max_x or min_y >= max_y:
+            parser.error("--bounds must satisfy MIN_X < MAX_X and MIN_Y < MAX_Y")
     return args
 
 
@@ -377,7 +462,12 @@ def main(argv):
 
     rclpy.init(signal_handler_options=SignalHandlerOptions.NO)
     _node = rclpy.create_node("drive_mocap_square")
-    _node.create_subscription(PoseStamped, args.pose_topic, pose_cb, 5)
+    _node.create_subscription(
+        PoseStamped,
+        args.pose_topic,
+        pose_cb,
+        qos_profile_sensor_data,
+    )
     pub = _node.create_publisher(Twist, args.cmd_topic, 5)
 
     executor = SingleThreadedExecutor()
