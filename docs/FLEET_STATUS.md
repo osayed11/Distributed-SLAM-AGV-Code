@@ -13,12 +13,12 @@ whenever a robot is gated, driven, or reconfigured.
 | agv105 | **2026-10-14** | 192.168.50.226 | PASS | **PASS/WARN - 0 FAIL** | **Yes** - out/back passed; yaw offset **0** |
 | agv107 | **2026-10-14** | DHCP | PASS | **PASS/WARN - 0 FAIL** | **Yes** - out/back passed; yaw offset **+90** |
 | agv24  | **2026-10-12** | 192.168.50.158 | PASS (0 FAIL, 0 WARN) | **PASS/WARN — 0 FAIL** | **Yes** — needs operator sign-off + a real bag |
-| agv104 | **2026-10-12** | 192.168.50.192 | PASS (0 FAIL, 0 WARN) | **PASS/WARN — 0 FAIL** | **No** — min-speed floors block S1 |
+| agv104 | **2026-10-22** | 192.168.50.192 | PASS (61 OK, 0 FAIL, 0 WARN) at **4.58.4** | 2026-10-12: PASS/WARN — 0 FAIL; **not re-run 2026-10-22 (Motive not streaming `orkar_agv104`)** | **No** — min-speed floors block S1 |
 | agv103 | **2026-10-14** | 192.168.50.176 | PASS (0 FAIL, 0 WARN) | **PASS/WARN — 0 FAIL** | Calibrated: yaw **180**, `linear_scale` **1.027** (verified 1.012); needs sign-off + 4.58.4 upgrade |
-| agv106 | **2026-10-14** | 192.168.50.208 | PASS (0 FAIL, 0 WARN) | **PASS/WARN — 0 FAIL** | Calibrated: yaw **−7**, `linear_scale` **1.054** (verified 1.003); **odom yaw drifts to 19°/m**; WiFi GT gaps; needs sign-off + 4.58.4 upgrade |
+| agv106 | **2026-10-22** | 192.168.50.208 | PASS (61 OK, 0 FAIL, 0 WARN) at **4.58.4** | 2026-10-14: PASS/WARN — 0 FAIL; **not re-run 2026-10-22 (Motive not streaming `orkar_agv106`)** | Calibrated: yaw **−7**, `linear_scale` **1.054** (verified 1.003); **odom yaw drifts to 19°/m**; WiFi GT gaps; needs sign-off |
 | agv107 | August 2026 | 192.168.1.19 | PASS | not recorded | Yes — full S1 circle completed |
 | agv110 | **2026-10-14** | 192.168.50.132 | PASS (0 FAIL, 0 WARN) | **PASS/WARN — 0 FAIL** | Calibrated: yaw **0**, `linear_scale` **1.026** (verified 0.998); **odom yaw drifts to 23°/m**; WiFi assoc-rejects + GT gaps; needs sign-off + 4.58.4 upgrade |
-| agv101 | **2026-10-21** | 192.168.50.218 | not yet run (needs reboot + **D455 on USB 3**) | not yet run | **No** — stationary phase half done; first robot at the 4.58.4 pin with all four holds |
+| agv101 | **2026-10-22** | 192.168.50.218 | PASS (62 OK, 0 FAIL, 0 WARN) | **FAIL — only `odom_mocap_sanity` missing** (needs the 1 m drive) + 4 operator WARNs | **Not yet** — stationary phase complete at 4.58.4 / fw 5.17.0.10; motion phase (yaw offset, `linear_scale`) next |
 
 ---
 
@@ -558,13 +558,29 @@ and appeared a few minutes later — watch for that.
 - Zenoh bridge re-pointed `tcp/192.168.50.153:7447 -> tcp/192.168.50.98:7447`;
   service active; **GT `orkar_agv101` 75 Hz on the robot**, single publisher.
 
-**Checks so far:** selftest **OK** (152 tests, exit 0); pipeline audit **30 PASS /
-0 FAIL**. Sensor and dataset gates **not run** — blocked on the reboot the
-RealSense install requires and on the USB 2 port.
+**Checks 2026-10-21:** selftest **OK** (152 tests, exit 0); pipeline audit
+**30 PASS / 0 FAIL**.
 
-**Next:** operator moves D455 to USB 3 → reboot → sensor gate → dataset gate
-(needs the 1 m traced drive for `odom_mocap_sanity`) → motion phase (yaw offset,
-`linear_scale`, currently 1.0).
+**2026-10-22 (operator moved the D455 to USB 3 and restarted):**
+- D455 now `2-2` @ **5000 Mb/s**. First sensor gate: **1 FAIL** `d455_firmware`
+  (`5.13.0.55`, fleet `5.17.0.10`) + a `realsense_package_holds` WARN that was
+  a doctor bug (filter only matched bare `librealsense2`; fixed `d4f665b`).
+- **Firmware flashed to `5.17.0.10`** with Intel's signed image
+  `D4XX_FW_Image-5.17.0.10.bin` (from `librealsense.intel.com/Releases/RS4xx/FW/`,
+  sha256 `a7e10cf7…`, kept in `~/d455_fw/`). `rs-fw-update -b` (backup) hung
+  for 7 min and was abandoned; the plain `-f` flash took ~2.5 min. Rebooted.
+- Sensor gate: **PASS, 62 OK / 0 FAIL / 0 WARN** — 15.0 Hz colour/depth,
+  890/890 standalone frames, 0 timeouts, 0 UVC errors.
+- Dataset gate: **65 OK, 1 FAIL (`odom_mocap_sanity` evidence missing — needs
+  the 1 m drive), 4 operator WARNs.** `mocap_topic` 70 Hz, `zenoh_gt_transport`
+  OK, `recording_writeback` OK. (A first attempt failed `mocap_rate` at 122 Hz —
+  the Mac router was delivering every GT pose twice after a publisher restart;
+  router restarted, now 1.00× — see Fleet-wide gotchas.)
+
+**Next:** motion phase — three open-loop 1 m traced straights for yaw offset
+and `linear_scale` (currently 1.0), write
+`~/agv_data/agv101_odom_mocap_sanity.json`, re-run dataset gate; operator
+sign-offs; commissioning bag.
 
 ---
 
@@ -618,6 +634,16 @@ unmeasured as a correction; a yaw-rate sweep against GT (as done on agv104) per
 robot is the next calibration step.
 
 ## Fleet-wide gotchas
+
+- **GT duplication from the Mac Zenoh router (found 2026-10-22).** With
+  zenoh-bridge-ros2dds 1.9.0 as the router, every restart of the NatNet
+  publisher under a running router adds one more copy of every GT pose
+  delivered to the robots (3 `Route Publisher ... created` lines in the router
+  log = each `header.stamp` arriving 3×; robot-side `topic hz` showed 230 Hz).
+  The Mac DDS side stays 1×. Restart the **router after the publisher's final
+  start**, and check messages vs distinct stamps on a robot (ratio must be
+  1.00). The dataset gate's `mocap_rate` (>120 Hz FAIL) catches it; the sensor
+  gate does not. Bags recorded under this condition carry inflated GT counts.
 
 These bite repeatedly; full detail lives in the session memory notes.
 
