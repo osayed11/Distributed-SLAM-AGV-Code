@@ -245,6 +245,23 @@ DDS multicast. Robots stay `ROS_LOCALHOST_ONLY=1` on `rmw_fastrtps_cpp`; only
 
 ## Hard-won gotchas
 
+- **GT stalls of 0.3–0.6 s that abort prechecks/drives on some robots but not
+  others at the same instant → WiFi power-save on the Pi** (brcmfmac default is
+  ON). Check `iw dev wlan0 get power_save` (`apt-get install iw`; `/usr/sbin`
+  is not on the non-login PATH) and set it off; `orkar-wifi-powersave-off.service`
+  makes it persistent. Pings show 0 % loss but 120–190 ms bursts. Found
+  2026-10-22; fixed the fleet run on the next attempt (GT age 0.6 s → 0.03 s).
+- **"another S1 motion/recording session owns the lock" with no runner alive**
+  → the lock fd was inherited by bringup's `static_transform_publisher`
+  children of a killed run (`fuser /tmp/orkar_s1_motion.lock` names them).
+  The runner now closes fd 9 for bringup; older checkouts: kill the holders.
+- **Fleet circles: the centre is wherever the robots are, not the MoCap
+  origin.** Read all rigid-body poses, fit the line/rings, and pass the derived
+  `S1_CENTER_X/Y` and the *measured* radii; robots must already sit within
+  0.15 m of their ring and face its tangent for the chosen direction (the
+  default is ccw — robots lined up facing one way are usually cw for half of
+  them). Release with `S1_START_SIGNAL_FILE` only after every runner prints
+  `FLEET_READY`; write the same epoch (now + ~25 s) to each robot.
 - **IMU missing from a bag** (`/camera/gyro|accel/sample` count 0) despite live
   rates before recording → **first confirm the bag was compressed.** Older
   `start_session.sh` passed `--storage-config-file` only for sqlite3, so MCAP

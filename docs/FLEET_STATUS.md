@@ -13,14 +13,67 @@ whenever a robot is gated, driven, or reconfigured.
 | agv105 | **2026-10-22** | 192.168.50.226 | PASS (61 OK, 0 FAIL, 0 WARN) at 4.58.4 / fw 5.17.0.10 | 2026-10-14: PASS/WARN - 0 FAIL; **2026-10-22: FAIL only `odom_mocap_sanity` — no sanity JSON on the robot** (GT 72–78 Hz, Zenoh OK) | out/back passed 10-14; yaw offset **0**; needs the 1 m traced run to restore sanity evidence. 10-22: pulled to `335f2c7`, all ROS RealSense pkgs held, apt timers masked, Zenoh re-pointed `.125 -> .98` |
 | agv107 | **2026-10-14** | DHCP | PASS | **PASS/WARN - 0 FAIL** | **Yes** - out/back passed; yaw offset **+90** |
 | agv24  | **2026-10-12** | 192.168.50.158 | PASS (0 FAIL, 0 WARN) | **PASS/WARN — 0 FAIL** | **Yes** — needs operator sign-off + a real bag |
-| agv104 | **2026-10-22** | 192.168.50.192 | PASS (61 OK, 0 FAIL, 0 WARN) at **4.58.4** | **PASS/WARN — 0 FAIL** (65 OK; sanity 1.3%; GT 63–76 Hz) | **No** — min-speed floors block S1 |
-| agv103 | **2026-10-14** | 192.168.50.176 | PASS (0 FAIL, 0 WARN) | **PASS/WARN — 0 FAIL** | Calibrated: yaw **180**, `linear_scale` **1.027** (verified 1.012); needs sign-off + 4.58.4 upgrade |
+| agv104 | **2026-10-22** | 192.168.50.192 | PASS (61 OK, 0 FAIL, 0 WARN) at **4.58.4** | **PASS/WARN — 0 FAIL** (65 OK; sanity 1.3%; GT 63–76 Hz) | **No** — completed a 70 s fleet circle at 0.16 m/s but **wiggling**: base angular output is a constant ~0.75 rad/s for any ω command (bang-bang, MoCap-measured). MCU firmware fix needed |
+| agv103 | **2026-10-22** | 192.168.50.176 | 2026-10-14 PASS; **still 4.58.3 (not upgraded)** | 2026-10-14 PASS/WARN — 0 FAIL | Calibrated: yaw **180**, `linear_scale` **1.027**. 10-22: pulled to `f350b51`, WiFi power-save off + unit, apt timers masked; standing in for agv104 on the 1.7 m ring |
 | agv106 | **2026-10-22** | 192.168.50.208 | PASS (61 OK, 0 FAIL, 0 WARN) at **4.58.4** | **PASS/WARN — 0 FAIL** (65 OK; sanity 5.1%; GT 77 Hz) | Calibrated: yaw **−7**, `linear_scale` **1.054** (verified 1.003); **odom yaw drifts to 19°/m**; WiFi GT gaps; needs sign-off |
 | agv107 | August 2026 | 192.168.1.19 | PASS | not recorded | Yes — full S1 circle completed |
 | agv110 | **2026-10-14** | 192.168.50.132 | PASS (0 FAIL, 0 WARN) | **PASS/WARN — 0 FAIL** | Calibrated: yaw **0**, `linear_scale` **1.026** (verified 0.998); **odom yaw drifts to 23°/m**; WiFi assoc-rejects + GT gaps; needs sign-off + 4.58.4 upgrade |
 | agv101 | **2026-10-22** | 192.168.50.218 | PASS (62 OK, 0 FAIL, 0 WARN) | **FAIL — only `odom_mocap_sanity` missing** (needs the 1 m drive) + 4 operator WARNs | **Not yet** — stationary phase complete at 4.58.4 / fw 5.17.0.10; motion phase (yaw offset, `linear_scale`) next |
 
 ---
+
+## Fleet run 2026-10-22 — S1 concentric circles, four robots, one start epoch
+
+**agv105 + agv106 on r = 1.0 m, agv101 + agv104 on r = 1.7 m**, all clockwise
+about a centre derived from the robots themselves (they were lined up on one
+diameter; centre = midpoint of the outer pair = MoCap `(-0.655, 0.002)`), 70 s,
+0.10 m/s (agv104 0.16 m/s to clear its speed floor). Released via
+`S1_START_SIGNAL_FILE` with a shared epoch; robot clocks agreed within 1 s.
+
+| Robot | precheck | laps | max radius err | validator | sensors bag |
+|---|---|---|---|---|---|
+| agv105 | PASS (GT age 0.033 s) | 1.11 | 0.060 m | **PASS 52 / WARN 3 / FAIL 0** | 1.1 GB |
+| agv106 | PASS (GT age 0.03 s) | 1.07 | 0.097 m | **PASS 51 / WARN 4 / FAIL 0** | 1.1 GB |
+| agv104 | PASS with `S1_PRECHECK_MAX_RADIUS_ERROR=0.20` (0.151 m) | 1.06 | 0.137 m | **PASS 51 / WARN 4 / FAIL 0** | 1.1 GB |
+| agv101 | PASS (GT age 0.033 s), **yaw offset 0 confirmed** | 0.67 | 0.133 m | **PASS 51 / WARN 4 / FAIL 0** | 1.2 GB |
+
+Recorded rates on all four: colour 13.7–14.1 Hz, GT 76.3 Hz, gyro 199–200 Hz,
+`/odom` 12.7 Hz, `/scan` 17.3–17.9 Hz; GT pose age ≤ 0.04 s for the whole run.
+WARNs are the usual unrecorded `/diagnostics`, `/tag_detections`,
+`/aruco/target_pose`, plus one or two image gaps of 0.27–0.33 s on agv101/106.
+Bags: `~/agv_data/agv<N>_s1_concentric_20261022_*_{sensors,aux}` with
+`_circle_summary.json` and `_validate.json`. agv104 at 0.16 m/s gained ~140° on
+agv101 over the run (same ring, started 180° apart) — fine for 70 s, not for
+longer runs; give agv104 its own ring or match speeds.
+
+**agv104 "wiggled" through its circle while the other three were smooth (same
+controller, same gains — seven other robots run it cleanly).** Bag analysis:
+commanded ω changed sign 97 times in 70 s (105: 0), actual yaw-rate sd 0.49 rad/s
+(105: 0.04), 1.4 s limit cycle, heading error ±25°. An in-place ω sweep against
+MoCap afterwards gave the mechanism: **the base rotates at a constant
+0.74–0.79 rad/s for any commanded angular from 0.05 to 0.55 rad/s** (odom twist
+agrees, 0.69–0.71) — magnitude ignored, sign honoured, pure bang-bang. The
+driver sends the rot byte unscaled (`writeSpeed`), so no gain or command scale
+above the MCU can fix it; it is the base firmware (same family as its 0.145 m/s
+linear floor). **agv104 removed from the lineup; agv103 takes its ring.** Needs
+an MCU firmware fix/reflash before any S1 use.
+
+**What it took to get there (all fleet-relevant):**
+1. **WiFi power-save was ON on every robot** and caused 0.4–0.6 s GT stalls that
+   failed prechecks (agv101/105 while agv104 was clean at the same instant).
+   `iw dev wlan0 set power_save off` → next prechecks 0.033 s. Persisted as
+   `orkar-wifi-powersave-off.service` on 101/104/105/106; **still needed on
+   agv24, agv103, agv110, agv100, agv102, agv107.**
+2. The robots must face their **cw tangent**; a first launch with the ccw
+   default spun them ~120° and dragged them off-radius.
+3. agv106 and agv101 each once came up **without IMU** (`/camera/gyro/sample`
+   never published, HID timeout) — a reboot fixed both. agv106 once failed the
+   GT rate check right after a reboot (clock still 2024 at bridge start).
+4. A killed runner leaves the **motion lock held** by orphaned
+   `static_transform_publisher` children (fd 9 inherited) — fixed in the runner
+   after this session's run.
+5. The NatNet publisher **died when Motive was restarted** (NatNet version
+   handshake returned `None`); relaunch publisher, then router.
 
 ## Scenario quartet - last checked 2026-10-14
 
