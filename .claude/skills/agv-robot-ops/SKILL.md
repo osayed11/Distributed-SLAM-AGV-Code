@@ -209,14 +209,23 @@ DDS multicast. Robots stay `ROS_LOCALHOST_ONLY=1` on `rmw_fastrtps_cpp`; only
    `Discovered ROS Node` lines. Confirm `Route Publisher ... created` in the
    router log. Its REST plugin binds `127.0.0.1:8000`; if something else holds
    that port the router panics on start — run from a config copy with a free
-   `http_port`.
+   `http_port`. **The order matters for a second reason:** on bridge 1.9.0 a
+   `Route Publisher ... removed` keeps forwarding, so every time the NatNet
+   publisher is restarted under a running router each pose reaches the robots
+   one more time (3 `created` lines in the log = every sample delivered 3×).
+   Restart the router after the publisher's *final* start, and whenever you
+   restart the publisher later (e.g. to add a rigid body).
 2. Robot: `bash scripts/network/configure_zenoh.sh robot <LAPTOP_IP> 7447` then
    `source scripts/network/load_ros_transport_env.sh`. (Pre-staging the pinned
    bridge binary at `/usr/local/bin/zenoh-bridge-ros2dds` while on reliable
    internet lets this step skip the download.)
 3. **Prove GT samples actually arrive** (a discovered topic ≠ a publishing one):
    `ros2 topic echo /optitrack/rigid_bodies/orkar_agv<N> --once` and
-   `ros2 topic hz ...` (must be inside the configured 20–120 Hz band).
+   `ros2 topic hz ...` (must be inside the configured 20–120 Hz band). A rate
+   well above Motive's frame rate (~75–80 Hz here) means duplicated routes, not
+   a faster MoCap: count messages vs distinct `header.stamp` over 10 s on the
+   robot — the ratio must be 1.00. The dataset gate's `mocap_rate` check fails
+   above 120 Hz for this reason; the sensor gate does not look at GT.
 4. Run the gated S1 circle (needs a measured per-robot
    `S1_FORWARD_YAW_OFFSET_DEG` — never inferred from robot ID). To measure it:
    one open-loop 1 m straight (`drive_mocap_straight_ros2.py --heading-kp 0
