@@ -23,6 +23,20 @@ Separate GT delivery gaps occurred elsewhere. This does not establish the failin
 physical component or prove a permanent fix. The stationary diagnostic deliberately
 published no velocity commands, so its missing `cmd_vel` audit finding is expected.
 
+After AGV100 was power-cycled, Doctor preflight passed 61 checks with no warnings
+or failures (`agv100_20261022_135953`). Its initial preflight exposed a diagnostic
+startup race: the topic snapshot preceded camera initialization. Doctor now waits
+for all expected data topics, not only the base/LiDAR topics, before probing rates.
+This is a diagnostic fix, not an established fix for the earlier IMU dropout.
+The subsequent 180-second stationary S1 dry-run recording
+(`agv100_stationary_doctor_retest_20261022_140435`) retained gyro/accel throughout
+at 199.7/100.6 Hz, colour/depth at 12.5/13.1 Hz and GT at 74.9 Hz. Maximum IMU
+receipt gaps were 0.159/0.160 seconds; there was no missing tail or HID timeout.
+The strict audit was still not clean: LiDAR had one 0.355-second gap, odometry
+and TF each had one coincident 0.325-second gap, and the stationary evaluation
+window intentionally contained no velocity commands. Preserve these findings;
+one recovered recording does not prove a permanent fix or motion readiness.
+
 Keep raw bags and per-sensor findings. A failed continuity criterion is not an
 automatic judgement that every modality or interval is unusable. Select and
 document usable benchmark intervals consistently, preserve dropout annotations,

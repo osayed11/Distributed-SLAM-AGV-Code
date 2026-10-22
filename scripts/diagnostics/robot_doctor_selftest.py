@@ -1704,6 +1704,53 @@ class RobotDoctorConfigTests(unittest.TestCase):
             self.assertIn("/camera/color/image_raw", matches[0].summary)
             self.assertIn("/camera/depth/image_rect_raw", matches[0].summary)
 
+    def test_preflight_bringup_waits_for_delayed_camera_topics(self) -> None:
+        from unittest.mock import patch
+
+        with tempfile.TemporaryDirectory() as tmp:
+            args = build_parser().parse_args(
+                ["agvtest", "--profile", "preflight", "--output-root", tmp, "--bringup-wait", "10"]
+            )
+            doctor = Doctor(args)
+            log_path = doctor.log_dir / "delayed_topics.log"
+            core = "/scan\n/odom\n/tf\n"
+            complete = core + "\n".join(
+                topic for topic in doctor.live_topic_specs() if topic.startswith("/camera/")
+            )
+            samples = iter([core, complete])
+
+            def fake_ros_cmd(*_args, **_kwargs):
+                log_path.write_text(next(samples))
+                return CommandResult("topic_list", "fake", 0, 0.0, False, str(log_path))
+
+            doctor.ros_cmd = fake_ros_cmd
+            with patch("robot_doctor.time.sleep") as sleep:
+                doctor.wait_for_bringup_topics()
+            sleep.assert_called_once_with(2.0)
+            self.assertEqual(doctor.results[-1].status, "PASS")
+            self.assertIn("/camera/gyro/sample", doctor.results[-1].summary)
+            self.assertIn("/camera/color/image_raw", doctor.results[-1].summary)
+
+    def test_preflight_bringup_without_camera_only_waits_for_base_topics(self) -> None:
+        from unittest.mock import patch
+
+        with tempfile.TemporaryDirectory() as tmp:
+            args = build_parser().parse_args(
+                ["agvtest", "--profile", "preflight", "--no-expect-camera",
+                 "--output-root", tmp, "--bringup-wait", "10"]
+            )
+            doctor = Doctor(args)
+            log_path = doctor.log_dir / "base_topics.log"
+            log_path.write_text("/scan\n/odom\n/tf\n")
+            doctor.ros_cmd = lambda *_args, **_kwargs: CommandResult(
+                "topic_list", "fake", 0, 0.0, False, str(log_path)
+            )
+            with patch("robot_doctor.time.sleep") as sleep:
+                doctor.wait_for_bringup_topics()
+            sleep.assert_not_called()
+            self.assertEqual(doctor.results[-1].status, "PASS")
+            self.assertNotIn("/camera/", doctor.results[-1].summary)
+
     def test_dataset_bringup_context_flags_missing_existing_graph(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             args = build_parser().parse_args(["agvtest", "--profile", "dataset", "--output-root", tmp])

@@ -604,14 +604,13 @@ class Doctor:
 
     def wait_for_bringup_topics(self) -> None:
         deadline = time.time() + max(0, int(self.args.bringup_wait))
-        if self.args.profile == "dataset":
-            required = [
-                topic
-                for topic, spec in self.live_topic_specs().items()
-                if spec.get("min_hz", 0.0) > 0
-            ]
-        else:
-            required = ["/scan", "/odom", "/tf"]
+        # Preflight also checks the camera, which may start after the base/LiDAR.
+        # Wait for every expected data stream before taking the graph snapshot.
+        required = [
+            topic
+            for topic, spec in self.live_topic_specs().items()
+            if spec.get("min_hz", 0.0) > 0
+        ]
         required.extend(topic for topic in self.args.required_topic if topic not in required)
         required = list(dict.fromkeys(required))
         last_seen: Dict[str, str] = {}
