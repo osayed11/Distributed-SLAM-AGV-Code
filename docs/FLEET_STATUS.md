@@ -70,9 +70,16 @@ linear floor). **agv104 removed from the lineup; agv103 takes its ring.** Needs
 an MCU firmware fix/reflash before any S1 use. Ruled out on the Pi side the
 same day: the driver source is identical to HEAD (last change 2026-06-28) and a
 **clean rebuild** of `myagv_odometry` reproduced the identical sweep
-(0.69–0.71 rad/s for every command). The only remaining variables are the base
-MCU firmware/board and the MCU's internal sensors; a Pi-swap between agv104 and
-a good base is the decisive test.
+(0.69–0.71 rad/s for every command). With the base IMU topic enabled
+(`publish_imu: true`, reverted afterwards) the **MCU's own gyro reports
++0.76 / −0.80 / +0.80 rad/s for commands of +0.20 / −0.20 / +0.05** — the MCU
+measures the turn correctly and still drives a fixed rate, so this is not a
+dead-sensor saturation; the firmware maps any non-zero rotation byte to one
+speed. The other bases (agv106 measured: +0.20 → 0.25–0.27 rad/s) scale
+proportionally. Decisive next step: swap agv104's Pi onto a good base (or a good
+Pi onto agv104's base) — if the behaviour follows the base, reflash its MCU with
+the firmware the good bases carry (the protocol as used here carries no version
+field, so the version can only be established from the board/tooling).
 
 **What it took to get there (all fleet-relevant):**
 1. **WiFi power-save was ON on every robot** and caused 0.4–0.6 s GT stalls that
