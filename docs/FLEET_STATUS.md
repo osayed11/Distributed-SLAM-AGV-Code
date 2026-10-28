@@ -704,6 +704,39 @@ needed to pick up a re-created asset).
 **Also noted:** Riyaadh's 10-28 `prepare` left agv104's GT bridge pointed at
 `tcp/192.168.50.125:7447`; it is on `.98` for these tests.
 
+## agv108 — circle radius collapse diagnosed 2026-10-28
+
+(agv108 is the former agv110 hardware, `192.168.50.132`, new rigid body
+`orkar_agv108` id 43.) Fleet run `2663083c…` (cw, r=0.8, offset 180) shrank
+0.99 → 0.60 m in 13 s with GT live and heading error only −5…−12°.
+
+**Measured 2026-10-28 (open-loop, MoCap-logged, using the warm bringup):**
+- Forward axis: travel bearing − rigid yaw = **+179 / +180°** on two straights.
+  `forward_yaw_offset_deg = 180` is correct. No crab when ω = 0.
+- **In-place rotation translates the tracked point:** ω = +0.30 → GT yaw-rate
+  +0.24 rad/s **and +0.065 m/s to the left**; ω = −0.30 → −0.21 rad/s and
+  −0.048 m/s to the right (12 cm chord in 3 s). v_lat/ω ≈ **0.28 m** → the
+  rigid-body pivot sits ~0.28 m *ahead* of the robot's actual centre of
+  rotation. Under a cw turn the pivot therefore swings inward at ω·0.28:
+  0.09 rad/s × 13 s × 0.28 m ≈ 0.33 m — the observed radius loss. The circle
+  controller sees this as position error it cannot steer out; gains and limits
+  are not the problem.
+- Moving + turning (v 0.08, ω ±0.30): yaw-rate only ±0.07–0.08 rad/s
+  (≈¼ of command) with ±0.02–0.03 m/s lateral — same lever-arm effect.
+- Odometry: `/odom` vx 0.076 vs GT 0.091 m/s on the straight (`linear_scale`
+  1.026 under-reads ~16 %; needs ~1.2). Odom ω ≈ GT in these runs.
+
+**Fix:** in Motive, move `orkar_agv108`'s pivot to the robot's centre of
+rotation (or re-create the asset with the pivot there), then re-run the 0.8 m
+precheck. Alternatively give the circle driver a pivot lever arm. Nothing was
+changed on the robot except its GT bridge, which is temporarily on
+`tcp/192.168.50.98:7447` (was `.125`).
+
+**Fleet-wide note from the same bag:** [`myAGV.cpp`](../agv2_ws/src/myagv_odometry/src/myAGV.cpp)
+integrates `delta_th = 2.0 * vtheta * dt`, so odometry *pose* yaw advances at
+twice the published *twist* — on this run −318° integrated vs −68° real. This
+is the likely source of the "odom yaw drift" logged on 106/110 on 10-14.
+
 ## NOTE — fleet pin moved to 4.58.4 / 2.58.4 (commit `8847489`, 2026-10-14)
 
 Every gate verdict recorded on this page for 2026-10-12..14 was run against the
