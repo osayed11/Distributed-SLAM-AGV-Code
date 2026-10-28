@@ -46,6 +46,30 @@ def fault_status(fault: str, warn_only: bool) -> str:
     return f"{'WARN' if warn_only else 'FAIL'}_RUNTIME_GUARD {fault}"
 
 
+def rearm_motion_module(node: str, timeout: float = 12.0) -> bool:
+    """Re-arm the D455 motion module in place by toggling its enable parameters.
+
+    Measured on 2026-10-28 (AGV103/106): when the camera stops producing HID
+    IMU reports, disabling and re-enabling gyro/accel restores the stream in
+    about 3 s without restarting the node or the service. Returns True if all
+    four parameter writes were accepted.
+    """
+    ok = True
+    for value in ("false", "true"):
+        for name in ("enable_gyro", "enable_accel"):
+            try:
+                completed = subprocess.run(
+                    ["ros2", "param", "set", node, name, value],
+                    stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, timeout=timeout, check=False,
+                )
+                ok = ok and completed.returncode == 0 and "Set parameter successful" in completed.stdout
+            except (subprocess.TimeoutExpired, OSError):
+                ok = False
+        if value == "false":
+            time.sleep(1.0)
+    return ok
+
+
 def capture_command(path: Path, command: str, timeout: float = 6.0) -> None:
     with path.open("w", encoding="utf-8") as stream:
         stream.write(f"$ {command}\n")
@@ -122,11 +146,17 @@ def watch(
     poll_seconds: float,
     start_at_end: bool = False,
     warn_only: bool = False,
+    rearm_node: str = "",
+    max_rearms: int = 5,
+    rearm_cooldown: float = 8.0,
 ) -> int:
     status_file.parent.mkdir(parents=True, exist_ok=True)
     start_epoch = time.time()
     write_status(status_file, "RUNNING")
     stopping = False
+    rearms = 0
+    last_rearm = 0.0
+    events_file = evidence_dir.parent / (evidence_dir.name + "_rearms.jsonl")
 
     def request_stop(_signum: int, _frame: object) -> None:
         nonlocal stopping
@@ -152,6 +182,31 @@ def watch(
             fault = classify_line(line, require_imu=require_imu)
             if not fault:
                 continue
+            if rearm_node and fault == "REALSENSE_HID_IMU_TIMEOUT":
+                now = time.time()
+                if now - last_rearm < rearm_cooldown:
+                    continue  # timeouts repeat every ~5 s until the module is re-armed
+                if rearms < max_rearms:
+                    if rearms == 0:
+                        capture_evidence(evidence_dir, bringup_log, start_epoch, fault, line)
+                    rearms += 1
+                    accepted = rearm_motion_module(rearm_node)
+                    last_rearm = time.time()
+                    write_status(status_file, f"REARMED_RUNTIME_GUARD {fault}", [
+                        f"rearms: {rearms}/{max_rearms}",
+                        f"last_rearm_epoch: {last_rearm:.3f}",
+                        "gyro/accel gap recorded; verify continuity in the bag",
+                        f"evidence_dir: {evidence_dir}",
+                    ])
+                    events_file.parent.mkdir(parents=True, exist_ok=True)
+                    with events_file.open("a", encoding="utf-8") as events:
+                        events.write(
+                            '{"epoch": %.3f, "rearm": %d, "accepted": %s, "trigger": %s}\n'
+                            % (last_rearm, rearms, "true" if accepted else "false", repr(line.rstrip()).replace("'", '"'))
+                        )
+                    print(f"REARMED_RUNTIME_GUARD {rearms}/{max_rearms} accepted={accepted}", flush=True)
+                    continue
+                fault = f"{fault} (re-arm budget {max_rearms} exhausted)"
 
             details = [
                 "HID timeout observed; verify gyro/accel continuity in the bag",
@@ -178,6 +233,12 @@ def main() -> int:
     parser.add_argument("--poll-seconds", type=float, default=0.2)
     parser.add_argument('--start-at-end', action='store_true', help='Monitor new events in a persistent bringup log')
     parser.add_argument('--warn-only', action='store_true', help='Preserve fault evidence without aborting collection')
+    parser.add_argument('--rearm-node', default='',
+                        help='Camera node name (e.g. /camera): on a HID IMU timeout toggle enable_gyro/enable_accel '
+                             'to re-arm the motion module in place instead of stopping; evidence of the first stall '
+                             'is still captured and every re-arm is logged')
+    parser.add_argument('--max-rearms', type=int, default=5, help='Re-arms allowed per run before the fault is fatal/warned')
+    parser.add_argument('--rearm-cooldown', type=float, default=8.0, help='Seconds to ignore repeat timeout lines after a re-arm')
     args = parser.parse_args()
 
     if args.poll_seconds <= 0:
@@ -190,6 +251,9 @@ def main() -> int:
         poll_seconds=args.poll_seconds,
         start_at_end=args.start_at_end,
         warn_only=args.warn_only,
+        rearm_node=args.rearm_node,
+        max_rearms=args.max_rearms,
+        rearm_cooldown=args.rearm_cooldown,
     )
 
 

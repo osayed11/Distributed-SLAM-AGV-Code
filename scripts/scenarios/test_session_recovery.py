@@ -67,6 +67,52 @@ class CollectionPolicyTests(unittest.TestCase):
                 capture.assert_called_once()
 
 
+class RuntimeGuardRearmTests(unittest.TestCase):
+    HID = "iio_hid_sensor: Frames didn't arrived within the predefined interval\n"
+
+    def test_rearm_keeps_watching_then_reports_when_budget_is_exhausted(self):
+        import watch_realsense_runtime as guard
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory); log = root / 'bringup.log'; status = root / 'status.txt'
+            # Three stalls with the guard's cooldown elapsed between them; budget allows two re-arms.
+            log.write_text(self.HID)
+            calls = []
+            fake_clock = [1000.0]
+            def fake_rearm(node, timeout=12.0):
+                calls.append(node); fake_clock[0] += 30; return True
+            with patch.object(guard, 'rearm_motion_module', side_effect=fake_rearm), \
+                 patch.object(guard, 'capture_evidence') as capture, \
+                 patch.object(guard.time, 'time', side_effect=lambda: fake_clock[0]), \
+                 patch.object(guard.time, 'sleep', side_effect=lambda s: (fake_clock.__setitem__(0, fake_clock[0] + 10),
+                              log.write_text(log.read_text() + self.HID))), \
+                 patch('watch_realsense_runtime.signal.signal'):
+                # Stop the loop once the fault has been reported (watch returns).
+                rc = guard.watch(log, status, root / 'evidence', True, 0.01, warn_only=True,
+                                 rearm_node='/camera', max_rearms=2, rearm_cooldown=8.0)
+            self.assertEqual(rc, 0)
+            self.assertEqual(calls, ['/camera', '/camera'])
+            # evidence at the first stall, and again with the final (budget-exhausted) report
+            self.assertEqual(capture.call_count, 2)
+            text = status.read_text()
+            self.assertTrue(text.startswith('WARN_RUNTIME_GUARD'), text)
+            self.assertIn('re-arm budget 2 exhausted', text)
+            events = (root / 'evidence_rearms.jsonl').read_text().splitlines()
+            self.assertEqual(len(events), 2)
+            self.assertIn('"rearm": 2', events[1])
+
+    def test_without_rearm_node_behaviour_is_unchanged(self):
+        import watch_realsense_runtime as guard
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory); log = root / 'bringup.log'; status = root / 'status.txt'
+            log.write_text(self.HID)
+            with patch.object(guard, 'rearm_motion_module') as rearm, patch.object(guard, 'capture_evidence'), \
+                 patch('watch_realsense_runtime.signal.signal'):
+                rc = guard.watch(log, status, root / 'evidence', True, 0.01, warn_only=False)
+            self.assertEqual(rc, 2)
+            rearm.assert_not_called()
+            self.assertTrue(status.read_text().startswith('FAIL_RUNTIME_GUARD'))
+
+
 class SessionTests(unittest.TestCase):
     def test_service_refuses_logout_ipc_cleanup(self):
         with patch('sensor_session.subprocess.run') as run:
