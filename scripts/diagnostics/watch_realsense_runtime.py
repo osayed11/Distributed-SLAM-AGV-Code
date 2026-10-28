@@ -64,33 +64,80 @@ def rearm_motion_module(node: str, timeout: float = 12.0) -> bool:
         return _rearm_with_cli(node, timeout)
 
 
-def _rearm_with_rclpy(node: str, timeout: float) -> bool:
-    import rclpy
-    from rcl_interfaces.msg import Parameter, ParameterValue, ParameterType
-    from rcl_interfaces.srv import SetParameters
+class RosGuardHelper:
+    """One rclpy context for the guard: a gyro/accel silence monitor plus a
+    SetParameters client for the re-arm. Created lazily and only when
+    --rearm-node is used; the plain guard still makes no ROS subscriptions."""
 
-    def params(value: bool):
-        return [Parameter(name=name, value=ParameterValue(type=ParameterType.PARAMETER_BOOL, bool_value=value))
-                for name in ("enable_gyro", "enable_accel")]
+    def __init__(self, node: str):
+        import threading
+        import rclpy
+        from rcl_interfaces.srv import SetParameters
+        from rclpy.qos import qos_profile_sensor_data
+        from sensor_msgs.msg import Imu
 
-    rclpy.init(args=None)
-    try:
-        client_node = rclpy.create_node("realsense_runtime_guard_rearm")
-        client = client_node.create_client(SetParameters, node.rstrip("/") + "/set_parameters")
-        if not client.wait_for_service(timeout_sec=timeout):
+        self.rclpy = rclpy
+        self.node_name = node.rstrip("/")
+        rclpy.init(args=None)
+        self.node = rclpy.create_node("realsense_runtime_guard")
+        self.client = self.node.create_client(SetParameters, self.node_name + "/set_parameters")
+        self.last_sample = 0.0
+        self.samples_seen = False
+        for topic in (self.node_name + "/gyro/sample", self.node_name + "/accel/sample"):
+            self.node.create_subscription(Imu, topic, self._on_sample, qos_profile_sensor_data)
+        self._lock = threading.Lock()
+        self._thread = threading.Thread(target=self._spin, daemon=True)
+        self._thread.start()
+
+    def _on_sample(self, _msg) -> None:
+        self.last_sample = time.time()
+        self.samples_seen = True
+
+    def _spin(self) -> None:
+        while self.rclpy.ok():
+            with self._lock:
+                self.rclpy.spin_once(self.node, timeout_sec=0.05)
+            time.sleep(0.005)
+
+    def silent_for(self) -> float:
+        return time.time() - self.last_sample if self.samples_seen else 0.0
+
+    def rearm(self, timeout: float) -> bool:
+        from rcl_interfaces.msg import Parameter, ParameterType, ParameterValue
+        from rcl_interfaces.srv import SetParameters
+
+        def params(value: bool):
+            return [Parameter(name=name, value=ParameterValue(type=ParameterType.PARAMETER_BOOL, bool_value=value))
+                    for name in ("enable_gyro", "enable_accel")]
+
+        if not self.client.wait_for_service(timeout_sec=timeout):
             raise RuntimeError("set_parameters service unavailable")
         accepted = True
         for value in (False, True):
-            future = client.call_async(SetParameters.Request(parameters=params(value)))
-            rclpy.spin_until_future_complete(client_node, future, timeout_sec=timeout)
-            result = future.result()
+            future = self.client.call_async(SetParameters.Request(parameters=params(value)))
+            deadline = time.time() + timeout
+            while not future.done() and time.time() < deadline:
+                time.sleep(0.02)
+            result = future.result() if future.done() else None
             accepted = accepted and result is not None and all(r.successful for r in result.results)
             if value is False:
                 time.sleep(1.0)
-        client_node.destroy_node()
         return accepted
+
+    def close(self) -> None:
+        try:
+            self.node.destroy_node()
+            self.rclpy.shutdown()
+        except Exception:
+            pass
+
+
+def _rearm_with_rclpy(node: str, timeout: float) -> bool:
+    helper = RosGuardHelper(node)
+    try:
+        return helper.rearm(timeout)
     finally:
-        rclpy.shutdown()
+        helper.close()
 
 
 def _rearm_with_cli(node: str, timeout: float) -> bool:
@@ -189,6 +236,8 @@ def watch(
     rearm_node: str = "",
     max_rearms: int = 5,
     rearm_cooldown: float = 8.0,
+    silence_seconds: float = 1.0,
+    helper=None,
 ) -> int:
     status_file.parent.mkdir(parents=True, exist_ok=True)
     start_epoch = time.time()
@@ -197,6 +246,34 @@ def watch(
     rearms = 0
     last_rearm = 0.0
     events_file = evidence_dir.parent / (evidence_dir.name + "_rearms.jsonl")
+    if rearm_node and helper is None and silence_seconds > 0:
+        try:
+            helper = RosGuardHelper(rearm_node)  # 1 s detection instead of librealsense's ~5 s timeout
+        except Exception as exc:  # no rclpy here: log-line detection + CLI re-arm still work
+            print(f"silence monitor unavailable ({exc}); using log-line detection", flush=True)
+            helper = None
+
+    def do_rearm(trigger: str):
+        nonlocal rearms, last_rearm
+        rearms += 1
+        rearm_started = time.time()
+        try:
+            accepted = helper.rearm(12.0) if helper is not None else rearm_motion_module(rearm_node)
+        except Exception:
+            accepted = rearm_motion_module(rearm_node)
+        last_rearm = time.time()
+        write_status(status_file, f"REARMED_RUNTIME_GUARD REALSENSE_HID_IMU_TIMEOUT", [
+            f"rearms: {rearms}/{max_rearms}",
+            f"last_rearm_epoch: {last_rearm:.3f}",
+            "gyro/accel gap recorded; verify continuity in the bag",
+            f"evidence_dir: {evidence_dir}",
+        ])
+        events_file.parent.mkdir(parents=True, exist_ok=True)
+        with events_file.open("a", encoding="utf-8") as events:
+            events.write(json.dumps({"epoch": round(last_rearm, 3), "rearm": rearms, "accepted": accepted,
+                                     "rearm_seconds": round(last_rearm - rearm_started, 2),
+                                     "trigger": trigger}) + "\n")
+        print(f"REARMED_RUNTIME_GUARD {rearms}/{max_rearms} accepted={accepted} ({last_rearm - rearm_started:.1f}s)", flush=True)
 
     def request_stop(_signum: int, _frame: object) -> None:
         nonlocal stopping
@@ -217,6 +294,21 @@ def watch(
         while not stopping:
             line = stream.readline()
             if not line:
+                if (helper is not None and rearm_node and helper.silent_for() > silence_seconds
+                        and time.time() - last_rearm >= rearm_cooldown):
+                    if rearms < max_rearms:
+                        if rearms == 0:
+                            capture_evidence(evidence_dir, bringup_log, start_epoch, "REALSENSE_HID_IMU_TIMEOUT",
+                                             f"gyro/accel silent for {helper.silent_for():.1f}s")
+                        do_rearm(f"topic silence {helper.silent_for():.1f}s")
+                        continue
+                    details = ["gyro/accel silent and re-arm budget exhausted", f"evidence_dir: {evidence_dir}"]
+                    status = fault_status("REALSENSE_HID_IMU_TIMEOUT (re-arm budget %d exhausted)" % max_rearms, warn_only)
+                    write_status(status_file, status, details)
+                    print(status, flush=True)
+                    if helper is not None:
+                        helper.close()
+                    return 0 if warn_only else 2
                 time.sleep(poll_seconds)
                 continue
             fault = classify_line(line, require_imu=require_imu)
@@ -229,22 +321,7 @@ def watch(
                 if rearms < max_rearms:
                     if rearms == 0:
                         capture_evidence(evidence_dir, bringup_log, start_epoch, fault, line)
-                    rearms += 1
-                    rearm_started = time.time()
-                    accepted = rearm_motion_module(rearm_node)
-                    last_rearm = time.time()
-                    write_status(status_file, f"REARMED_RUNTIME_GUARD {fault}", [
-                        f"rearms: {rearms}/{max_rearms}",
-                        f"last_rearm_epoch: {last_rearm:.3f}",
-                        "gyro/accel gap recorded; verify continuity in the bag",
-                        f"evidence_dir: {evidence_dir}",
-                    ])
-                    events_file.parent.mkdir(parents=True, exist_ok=True)
-                    with events_file.open("a", encoding="utf-8") as events:
-                        events.write(json.dumps({"epoch": round(last_rearm, 3), "rearm": rearms, "accepted": accepted,
-                                                 "rearm_seconds": round(last_rearm - rearm_started, 2),
-                                                 "trigger": line.rstrip()}) + "\n")
-                    print(f"REARMED_RUNTIME_GUARD {rearms}/{max_rearms} accepted={accepted}", flush=True)
+                    do_rearm(line.rstrip())
                     continue
                 fault = f"{fault} (re-arm budget {max_rearms} exhausted)"
 
@@ -260,6 +337,8 @@ def watch(
             capture_evidence(evidence_dir, bringup_log, start_epoch, fault, line)
             return 0 if warn_only else 2
 
+    if helper is not None:
+        helper.close()
     write_status(status_file, "STOPPED_CLEANLY")
     return 0
 
@@ -279,6 +358,8 @@ def main() -> int:
                              'is still captured and every re-arm is logged')
     parser.add_argument('--max-rearms', type=int, default=5, help='Re-arms allowed per run before the fault is fatal/warned')
     parser.add_argument('--rearm-cooldown', type=float, default=8.0, help='Seconds to ignore repeat timeout lines after a re-arm')
+    parser.add_argument('--silence-seconds', type=float, default=1.0,
+                        help='With --rearm-node: re-arm when gyro+accel samples stop for this long (0 = log lines only)')
     args = parser.parse_args()
 
     if args.poll_seconds <= 0:
@@ -294,6 +375,7 @@ def main() -> int:
         rearm_node=args.rearm_node,
         max_rearms=args.max_rearms,
         rearm_cooldown=args.rearm_cooldown,
+        silence_seconds=args.silence_seconds,
     )
 
 
