@@ -186,6 +186,14 @@ presses the button, not what is recorded.
 
 ## 3. Validate And Finish
 
+Each robot now audits its own run as soon as its recorders have stopped: the
+worker runs the bag validator (index-based, about a second) and the circle
+summary check, writes `validation.json` / `validation.log` next to the bags,
+and reports the verdict in its FINISHED status, so the coordinator prints a
+per-robot verdict table when the session ends. The manual action below remains
+for re-auditing a run with different limits or after copying bags.
+
+
 The laptop prints a run ID and keeps a manifest/event timeline under
 `data/fleet_sessions/<run_id>/`. Robots keep configuration, artifact paths,
 logs and results under `~/agv_data/fleet_<run_id>/`; MCAP shards remain in

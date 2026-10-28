@@ -192,9 +192,21 @@ def worker():
                 print(json.dumps(status), flush=True)
                 last_report = now
         rc = process.wait()
-        atomic_json(evidence/'result.json', dict(exit_code=rc, validation='PENDING', ended_epoch=time.time()))
-        print(json.dumps(dict(robot=robot['name'], state='FINISHED', exit_code=rc,
-                              evidence=str(evidence))), flush=True)
+        # Recorders and motion are over and the index-based validator takes ~1 s,
+        # so audit here instead of waiting for a separate --action validate round.
+        # Its stdout must not reach the coordinator's JSON status channel.
+        verdict, detail = 'NOT_RUN', 'no recorded artifacts'
+        if (evidence/'artifacts.json').exists():
+            try:
+                verdict = 'PASS' if validate_worker(run_id, log_path=evidence/'validation.log') == 0 \
+                    else 'REJECTED_OR_INTERRUPTED'
+                detail = str(evidence/'validation.log')
+            except Exception as exc:  # validation must never mask the run's own outcome
+                verdict, detail = 'VALIDATION_ERROR', str(exc)[:200]
+        atomic_json(evidence/'result.json', dict(exit_code=rc, validation=verdict, validation_detail=detail,
+                                                  ended_epoch=time.time()))
+        print(json.dumps(dict(robot=robot['name'], state='FINISHED', exit_code=rc, validation=verdict,
+                              validation_detail=detail, evidence=str(evidence))), flush=True)
         return rc
     finally:
         if process.poll() is None:
@@ -259,8 +271,14 @@ def ssh_command(args, robot, remote_args):
                      ' '.join(shlex.quote(v) for v in remote_args)]
 
 
-def validate_worker(run_id):
-    """Defer expensive decoding/storage scans until motion and recording are over."""
+def validate_worker(run_id, log_path=None):
+    """Audit a finished run's bags and motion summary.
+
+    Called automatically by the worker once the wrapper exits, and available as
+    `--action validate --run-id` to re-audit later. With log_path the
+    validators' output goes to that file so the worker's stdout stays a clean
+    JSON status channel.
+    """
     if not re.fullmatch(r'[a-f0-9]{32}', run_id):
         raise ValueError('Invalid run id')
     directory = Path.home()/'agv_data'/('fleet_' + run_id)
@@ -282,14 +300,22 @@ def validate_worker(run_id):
                '--strict', '--require-gt', '--require-imu', '--require-resilient-storage',
                '--window-start-epoch', str(summary['start_epoch']), '--window-duration', str(summary['elapsed_sec']),
                '--min-duration', str(manifest['config']['duration']), '--json-out', str(directory/'bag_validation.json')]
-    bag_rc = subprocess.run(command, env=env).returncode
-    motion_rc = subprocess.run([sys.executable, str(ROOT/'scripts/scenarios/validate_s1_circle_summary.py'),
-                                artifacts['summary'], '--max-radius-error',
-                                str(manifest['config'].get('max_radius_error', 0.20)),
-                                '--max-pose-age', '0.5']).returncode
+    log = open(log_path, 'w') if log_path else None
+    try:
+        output = dict(stdout=log, stderr=subprocess.STDOUT) if log else {}
+        bag_rc = subprocess.run(command, env=env, **output).returncode
+        motion_rc = subprocess.run([sys.executable, str(ROOT/'scripts/scenarios/validate_s1_circle_summary.py'),
+                                    artifacts['summary'], '--max-radius-error',
+                                    str(manifest['config'].get('max_radius_error', 0.20)),
+                                    '--max-pose-age', '0.5'], **output).returncode
+    finally:
+        if log:
+            log.close()
     verdict = 'PASS' if bag_rc == 0 and motion_rc == 0 else 'REJECTED_OR_INTERRUPTED'
-    atomic_json(directory/'validation.json', dict(verdict=verdict, bag_exit_code=bag_rc, motion_exit_code=motion_rc))
-    print(verdict, directory)
+    atomic_json(directory/'validation.json', dict(verdict=verdict, bag_exit_code=bag_rc, motion_exit_code=motion_rc,
+                                                  log=str(log_path) if log_path else None))
+    if not log_path:
+        print(verdict, directory)
     return 0 if verdict == 'PASS' else 1
 
 
@@ -440,8 +466,12 @@ def main():
             except subprocess.TimeoutExpired:
                 proc.terminate()
                 proc.wait(timeout=5)
-        atomic_json(output/'result.json', dict(states=statuses, mode=fleet.mode, validation='PENDING'))
-    print('Evidence:', output, '\nBags remain on robots. Strict validation is still required.')
+        verdicts = {name: s.get('validation', 'PENDING') for name, s in statuses.items()}
+        atomic_json(output/'result.json', dict(states=statuses, mode=fleet.mode, validation=verdicts))
+    print('Evidence:', output)
+    for name, s in statuses.items():
+        print('  %-8s %-22s %s' % (name, verdicts.get(name, 'PENDING'), s.get('validation_detail', '')), flush=True)
+    print('Bags remain on robots; per-robot validator output is in each evidence directory.')
     return 1 if fleet.mode == 'abort' or any(p.returncode for p in children.values()) else 0
 
 
