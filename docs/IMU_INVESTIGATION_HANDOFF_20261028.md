@@ -206,3 +206,39 @@ sample` resumed at 199–200 / 100–102 Hz with no new timeout lines in the nex
 which again points at the camera's motion-sensor report pipeline stopping
 rather than anything on the host. This is a seconds-long gap instead of a
 60–90 s service restart; it does not explain why the pipeline stops.
+
+### Repeated recordings with the in-place re-arm (28 October 2026, 19:55–20:12 UTC)
+
+Same two robots, same stationary set-up, the soak harness stopped and the
+pipeline's two recorders run four times back-to-back (180 s each) while the
+runtime guard watched the camera log with `--rearm-node /camera` (the opt-in
+added as `S1_RUNTIME_IMU_REARM`, commit `6300ba0`). Each bag was then audited
+with `validate_ros2_bag.py --require-imu`.
+
+| run | AGV103 | AGV106 |
+|---|---|---|
+| 1 | PASS 43 / FAIL 0 — gyro 199.8 Hz, max gap 0.020 s | PASS 45 / FAIL 0 — 200.2 Hz, 0.031 s |
+| 2 | PASS 44 / FAIL 0 — 199.7 Hz, 0.025 s | PASS 45 / FAIL 0 — 200.2 Hz, 0.019 s |
+| 3 | PASS 45 / FAIL 0 — 199.7 Hz, 0.020 s | PASS 45 / FAIL 0 — 200.3 Hz, 0.021 s |
+| 4 | PASS 45 / FAIL 0 — 199.7 Hz, 0.054 s | PASS 45 / FAIL 0 — 200.2 Hz, 0.027 s |
+
+WARNs are the stationary set's expected ones (no `cmd_vel`, no GT, optional
+topics absent, one 0.27–0.33 s image gap on AGV103 in run 1). During the
+sequence AGV106's camera stalled once (20:02:43, between runs 2 and 3); the
+guard re-armed it automatically (`accepted: true`) and run 3 recorded with
+full IMU coverage. AGV103 did not stall again after its 19:54 re-arm. Evidence:
+`~/agv_data/diagnostics/imu_rearm_recordings_20261028_1955*_agv10{3,6}/`.
+
+**Status of the handoff's questions.** Root cause: device-side, i.e. the D455
+stops producing IMU HID reports while its control path, UVC and the USB link
+stay alive; recording, host load, SDK and kernel versions are excluded.
+Which camera-internal factor (firmware, IMU chip, 5 V supply) cannot be
+separated without the hardware tests the operator has declined for now
+(USB voltage/current, one-variable camera/Pi/cable swaps). Mitigation: the
+in-place re-arm restores the stream in ~3 s; detection latency is ~5 s
+(librealsense's own timeout) plus the parameter writes, so a fired re-arm
+leaves a gap of roughly 10–20 s in gyro/accel that the validator will show.
+Eight consecutive full recordings, one of them following an automatic re-arm,
+are the repeat evidence the handoff asked for; enabling the re-arm by default
+in the fleet configuration remains a team decision. Not changed: firmware,
+cables, power, profiles, quality criteria.

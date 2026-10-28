@@ -12,6 +12,7 @@ sample availability and gaps must be determined from the recorded data.
 from __future__ import annotations
 
 import argparse
+import json
 import re
 import signal
 import subprocess
@@ -200,10 +201,8 @@ def watch(
                     ])
                     events_file.parent.mkdir(parents=True, exist_ok=True)
                     with events_file.open("a", encoding="utf-8") as events:
-                        events.write(
-                            '{"epoch": %.3f, "rearm": %d, "accepted": %s, "trigger": %s}\n'
-                            % (last_rearm, rearms, "true" if accepted else "false", repr(line.rstrip()).replace("'", '"'))
-                        )
+                        events.write(json.dumps({"epoch": round(last_rearm, 3), "rearm": rearms,
+                                                 "accepted": accepted, "trigger": line.rstrip()}) + "\n")
                     print(f"REARMED_RUNTIME_GUARD {rearms}/{max_rearms} accepted={accepted}", flush=True)
                     continue
                 fault = f"{fault} (re-arm budget {max_rearms} exhausted)"
