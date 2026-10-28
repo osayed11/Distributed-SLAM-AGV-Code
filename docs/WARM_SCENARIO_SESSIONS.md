@@ -89,6 +89,26 @@ commands in 0.01 m/s steps. These overrides are saved in run manifests and do
 not provide closed-loop speed or inter-robot spacing control. Recheck spacing
 during motion; equal commands do not guarantee equal physical speeds.
 
+Instead of measuring positions and typing centre/radii by hand, plan from where
+the robots stand. With the MoCap router running on this laptop (it serves the
+poses the robots use), a base config needs only each robot's name, host, pose
+topic and calibrated `forward_yaw_offset_deg` plus the run defaults:
+
+```bash
+python3 scripts/scenarios/fleet_plan.py --config configs/my_fleet_base.json \
+    --output configs/my_s1.json --direction cw --rings 1.0,1.7
+```
+
+It reads one pose per robot from the router's REST endpoint (no ROS on the
+laptop), fits the shared centre to the requested rings (or uses `--center x,y`,
+or the midpoint of the outermost pair when robots are lined up on a diameter),
+sets every radius from the measured distance, and checks that each robot faces
+its tangent for the chosen direction, that rings are ≥ 0.6 m apart and that
+robots sharing a ring are ≥ 1 m apart. It refuses with the robot's name and the
+fix ("turn it left", "0.18 m off its 1.0 m ring") instead of letting the
+precheck fail a minute later; `--force` writes anyway. The measured placement
+is kept under `plan` in the written config.
+
 From the laptop:
 
 ```bash
