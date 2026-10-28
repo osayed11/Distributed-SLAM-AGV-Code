@@ -691,6 +691,55 @@ class ValidateRos2BagTests(unittest.TestCase):
             failures = [item for item in report["results"] if item["level"] == "FAIL"]
             self.assertFalse(any(item["check"] == "storage_resilience" for item in failures))
 
+    def test_ros2_validator_mcap_index_path_matches_full_read(self) -> None:
+        try:
+            from mcap.reader import make_reader
+            from mcap.writer import IndexType, Writer
+        except Exception:  # pragma: no cover - mcap is installed on the robots, not every laptop
+            self.skipTest("python mcap library not installed")
+        sys.path.insert(0, str(ROOT / "scripts/logging"))
+        from validate_ros2_bag import inspect_mcap_bag  # noqa: E402
+
+        def write_bag(path: Path, index_types) -> None:
+            with path.open("wb") as stream:
+                writer = Writer(stream, chunk_size=256, index_types=index_types)
+                writer.start("ros2")
+                schema = writer.register_schema("nav_msgs/msg/Odometry", "ros2msg", b"")
+                odom = writer.register_channel("/odom", "cdr", schema)
+                scan = writer.register_channel("/scan", "cdr", schema)
+                for i in range(60):
+                    writer.add_message(odom, i * 80_000_000, b"x" * 40, i * 80_000_000)
+                    if i % 2 == 0:
+                        writer.add_message(scan, i * 80_000_000 + 5_000_000, b"y" * 40, i * 80_000_000)
+                # One 1.58 s hole in /odom (last regular sample at 4.72 s, next at
+                # 6.30 s) so a gap must survive both code paths.
+                writer.add_message(odom, 60 * 80_000_000 + 1_500_000_000, b"x" * 40, 0)
+                writer.finish()
+
+        with tempfile.TemporaryDirectory() as tmp:
+            indexed = Path(tmp) / "indexed.mcap"
+            unindexed = Path(tmp) / "unindexed.mcap"
+            write_bag(indexed, IndexType.ALL)
+            write_bag(unindexed, IndexType.NONE)
+            with indexed.open("rb") as stream:
+                summary = make_reader(stream).get_summary()
+            self.assertIsNotNone(summary)
+            self.assertGreater(len(summary.chunk_indexes), 1, "test bag must span several chunks")
+            with unindexed.open("rb") as stream:
+                self.assertTrue(make_reader(stream).get_summary() is None
+                                or not make_reader(stream).get_summary().chunk_indexes)
+            fast = inspect_mcap_bag([indexed])
+            slow = inspect_mcap_bag([unindexed])
+            self.assertEqual(set(fast), {"/odom", "/scan"})
+            for topic in fast:
+                self.assertEqual(fast[topic].count, slow[topic].count)
+                self.assertEqual(fast[topic].first_ns, slow[topic].first_ns)
+                self.assertEqual(fast[topic].last_ns, slow[topic].last_ns)
+                self.assertEqual(fast[topic].msg_type, "nav_msgs/msg/Odometry")
+            self.assertEqual(fast["/odom"].count, 61)
+            self.assertAlmostEqual(fast["/odom"].max_gap_sec, 1.58, places=6)
+            self.assertEqual(fast["/odom"].max_gap_sec, slow["/odom"].max_gap_sec)
+
     def test_ros2_validator_classifies_mcap_read_failure(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             bag = Path(tmp) / "empty.mcap"

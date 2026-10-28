@@ -359,6 +359,37 @@ def inspect_ros2_bag(db_paths: Sequence[Path]) -> Dict[str, TopicStats]:
     }
 
 
+def _mcap_log_times_from_indexes(stream, summary) -> Dict[int, List[int]]:
+    """Collect per-channel log times from the chunk/message indexes only.
+
+    The checks here need timestamps, not payloads. A finalised MCAP carries a
+    summary with one message index per (chunk, channel) listing every log
+    time, so the whole bag can be characterised without decompressing a single
+    Zstd chunk: ~0.2 s for a 400 MB bag on the Pi instead of ~15 s.
+    """
+    import struct
+
+    times_by_channel: Dict[int, List[int]] = {}
+    for chunk_index in summary.chunk_indexes:
+        for channel_id, offset in chunk_index.message_index_offsets.items():
+            stream.seek(offset)
+            header = stream.read(9)
+            if len(header) != 9 or header[0] != 0x07:  # OP_MESSAGE_INDEX
+                raise ValueError(f"malformed message index at offset {offset}")
+            (length,) = struct.unpack("<Q", header[1:])
+            data = stream.read(length)
+            if len(data) != length:
+                raise ValueError(f"truncated message index at offset {offset}")
+            (index_channel,) = struct.unpack_from("<H", data, 0)
+            (records_length,) = struct.unpack_from("<I", data, 2)
+            count = records_length // 16
+            if index_channel != channel_id or 6 + records_length > len(data):
+                raise ValueError(f"inconsistent message index at offset {offset}")
+            log_times = struct.unpack_from("<" + "QQ" * count, data, 6)[0::2]
+            times_by_channel.setdefault(channel_id, []).extend(log_times)
+    return times_by_channel
+
+
 def inspect_mcap_bag(mcap_paths: Sequence[Path]) -> Dict[str, TopicStats]:
     try:
         from mcap.reader import make_reader  # type: ignore
@@ -369,6 +400,22 @@ def inspect_mcap_bag(mcap_paths: Sequence[Path]) -> Dict[str, TopicStats]:
     type_by_topic: Dict[str, str] = {}
     for mcap_path in mcap_paths:
         with mcap_path.open("rb") as stream:
+            reader = make_reader(stream)
+            summary = reader.get_summary()
+            if summary is not None and summary.chunk_indexes and summary.channels:
+                # Fast path: finalised bag, timestamps straight from the indexes.
+                stream.seek(0)
+                for channel_id, log_times in _mcap_log_times_from_indexes(stream, summary).items():
+                    channel = summary.channels.get(channel_id)
+                    if channel is None:
+                        raise ValueError(f"message index for unknown channel {channel_id}")
+                    schema = summary.schemas.get(channel.schema_id)
+                    type_by_topic.setdefault(channel.topic, getattr(schema, "name", "") if schema else "")
+                    timestamps_by_topic.setdefault(channel.topic, []).extend(int(value) for value in log_times)
+                continue
+            # No summary (recorder killed before finalisation) or an unchunked
+            # file: fall back to the full sequential read.
+            stream.seek(0)
             reader = make_reader(stream)
             for schema, channel, message in reader.iter_messages():
                 topic = channel.topic
