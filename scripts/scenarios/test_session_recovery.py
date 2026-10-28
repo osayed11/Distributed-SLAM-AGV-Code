@@ -201,6 +201,41 @@ class FleetTests(unittest.TestCase):
         f = FleetState(); f.started = True; f.mode = 'run'
         self.assertEqual(f.update([dict(state='FINISHED', exit_code=71), dict(state='RUNNING')], 2)['mode'], 'abort')
 
+    def test_auto_resume_releases_only_after_all_ready_continuously(self):
+        f = FleetState(auto_resume_sec=2); f.started = True; f.mode = 'run'
+        ready = [dict(state='PAUSED', recovery_ready=True), dict(state='PAUSED', recovery_ready=True)]
+        partial = [dict(state='PAUSED', recovery_ready=True), dict(state='PAUSED', recovery_ready=False)]
+        self.assertEqual(f.update(ready, 10)['mode'], 'hold')
+        self.assertEqual(f.update(ready, 11.5)['mode'], 'hold')
+        # A robot dropping out of readiness restarts the timer.
+        self.assertEqual(f.update(partial, 11.8)['mode'], 'hold')
+        self.assertEqual(f.update(ready, 12)['mode'], 'hold')
+        self.assertEqual(f.update(ready, 13.5)['mode'], 'hold')
+        result = f.update(ready, 14.1)
+        self.assertEqual((result['mode'], result['resume_generation']), ('run', 1))
+        # Default construction keeps the operator-only release.
+        g = FleetState(); g.started = True; g.mode = 'run'
+        g.update(ready, 0)
+        self.assertEqual(g.update(ready, 1000)['mode'], 'hold')
+        self.assertEqual(g.update(ready, 1001, True)['mode'], 'run')
+
+    def test_recovery_budget_knobs_are_validated_and_forwarded(self):
+        robot = dict(name='agv1', host='agv1.local', pose_topic='/gt/agv1/pose',
+                     radius=1, center_x=0, center_y=0, direction='cw', forward_yaw_offset_deg=0)
+        config = validate_config(dict(duration=180, linear=0.08, robots=[robot], recovery_timeout=45,
+                                      max_pauses=20, max_pause_seconds=120, recovery_stable_sec=2,
+                                      auto_resume_sec=3, link_abort_sec=15))
+        env = run_environment(config, robot, Path('/tmp/test-run'))
+        self.assertEqual((env['S1_RECOVERY_TIMEOUT'], env['S1_MAX_PAUSES'], env['S1_MAX_PAUSE_SECONDS'],
+                          env['S1_RECOVERY_STABLE_SEC']), ('45', '20', '120', '2'))
+        defaults = run_environment(validate_config(dict(duration=180, linear=0.08, robots=[robot])),
+                                   robot, Path('/tmp/test-run'))
+        self.assertEqual((defaults['S1_MAX_PAUSES'], defaults['S1_MAX_PAUSE_SECONDS']), ('3', '30'))
+        for bad in ({'max_pauses': -1}, {'auto_resume_sec': -0.1}, {'link_abort_sec': 2},
+                    {'max_pause_seconds': 0}, {'recovery_stable_sec': float('nan')}):
+            with self.subTest(bad=bad), self.assertRaises(ValueError):
+                validate_config(dict(duration=180, linear=0.08, robots=[robot], **bad))
+
 
 if __name__ == '__main__':
     unittest.main()

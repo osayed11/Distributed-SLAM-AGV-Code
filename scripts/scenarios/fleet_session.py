@@ -40,10 +40,18 @@ def validate_config(data):
         value = data[key]
         if isinstance(value, bool) or not isinstance(value, (float, int)) or not math.isfinite(value) or value <= 0:
             raise ValueError(key + ' must be positive and finite')
-    for key, default in (('startup_timeout', 90), ('recovery_timeout', 30), ('max_radius_error', 0.2)):
+    for key, default in (('startup_timeout', 90), ('recovery_timeout', 30), ('max_radius_error', 0.2),
+                         ('max_pause_seconds', 30), ('recovery_stable_sec', 1.0), ('link_abort_sec', 15)):
         value = data.get(key, default)
         if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or value <= 0:
             raise ValueError(key + ' must be positive and finite')
+    # Non-negative knobs: 0 pauses means any fault aborts; 0 auto-resume means operator release only.
+    for key, default in (('max_pauses', 3), ('auto_resume_sec', 0)):
+        value = data.get(key, default)
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or value < 0:
+            raise ValueError(key + ' must be non-negative and finite')
+    if data.get('link_abort_sec', 15) < 3:
+        raise ValueError('link_abort_sec must allow at least the 3 s worker status timeout')
     if data['linear'] > 0.2 or data['duration'] > 1800:
         raise ValueError('Qualification runner limited to 0.2 m/s and 1800 s')
     for robot in robots:
@@ -78,6 +86,9 @@ def run_environment(config, robot, directory):
                 S1_FORWARD_YAW_OFFSET_DEG=str(robot['forward_yaw_offset_deg']),
                 S1_MAX_RADIUS_ERROR=str(config.get('max_radius_error', 0.20)),
                 S1_RECOVERY_TIMEOUT=str(config.get('recovery_timeout', 30)),
+                S1_RECOVERY_STABLE_SEC=str(config.get('recovery_stable_sec', 1.0)),
+                S1_MAX_PAUSES=str(int(config.get('max_pauses', 3))),
+                S1_MAX_PAUSE_SECONDS=str(config.get('max_pause_seconds', 30)),
                 MOCAP_TOPIC=robot['pose_topic'], CMD_TOPIC=f"/{robot['name']}/cmd_vel",
                 REQUIRE_IMU='true', REQUIRE_GT='true')
 
@@ -160,7 +171,10 @@ def worker():
                         os.replace(directory/'start.tmp', directory/'start')
             except queue.Empty:
                 pass
-            if now - last_received > 2:
+            # Coordinator silence: the controller already pauses when its lease
+            # (coordinator_timeout) expires, so hold through short link stalls and
+            # abort only once the configured link budget is gone.
+            if now - last_received > float(config.get('link_abort_sec', 15)):
                 abort()
             if abort_started is not None and now - abort_started > 160:
                 # Last resort only after wrapper's recorder-finalisation deadlines.
@@ -198,11 +212,15 @@ def worker():
 
 class FleetState:
     """Latch faults: recovered messages alone cannot silently restart the fleet."""
-    def __init__(self):
+    def __init__(self, auto_resume_sec=0.0):
         self.mode = 'hold'
         self.started = False
         self.generation = 0
         self.start_epoch = None
+        # > 0: release automatically once every robot has been recovery-ready
+        # for this long (a new fault resets it). 0: operator release only.
+        self.auto_resume_sec = float(auto_resume_sec)
+        self.all_ready_since = None
 
     def update(self, statuses, now, release=False):
         states = [s['state'] for s in statuses]
@@ -218,9 +236,19 @@ class FleetState:
                                      x.get('resume_generation_seen', 0) >= self.generation for x in statuses):
                 if self.mode != 'hold':
                     self.mode = 'hold'
-                if release and all(x['state'] == 'PAUSED' and x.get('recovery_ready') for x in statuses):
+                all_ready = all(x['state'] == 'PAUSED' and x.get('recovery_ready') for x in statuses)
+                if not all_ready:
+                    self.all_ready_since = None
+                elif self.all_ready_since is None:
+                    self.all_ready_since = now
+                if self.auto_resume_sec > 0 and all_ready and now - self.all_ready_since >= self.auto_resume_sec:
+                    release = True
+                if release and all_ready:
                     self.generation += 1
                     self.mode = 'run'
+                    self.all_ready_since = None
+            else:
+                self.all_ready_since = None
         return dict(mode=self.mode, resume_generation=self.generation, start_epoch=self.start_epoch)
 
 
@@ -311,7 +339,8 @@ def main():
     received = {r['name']: time.monotonic() for r in config['robots']}
     messages = queue.Queue()
     keys = queue.Queue()
-    fleet = FleetState()
+    fleet = FleetState(config.get('auto_resume_sec', 0))
+    link_abort_sec = float(config.get('link_abort_sec', 15))
     started = time.monotonic()
     def read_worker(name, proc):
         for line in proc.stdout:
@@ -324,7 +353,8 @@ def main():
         for line in sys.stdin:
             keys.put(line.strip().lower())
     threading.Thread(target=read_keys, daemon=True).start()
-    print('r + Enter: resume after all robots are recovery-ready. q + Enter / Ctrl+C: stop.')
+    print('r + Enter: resume after all robots are recovery-ready%s. q + Enter / Ctrl+C: stop.'
+          % (' (automatic after %.0f s)' % fleet.auto_resume_sec if fleet.auto_resume_sec > 0 else ''))
     last_states = {}
     try:
         for robot in config['robots']:
@@ -358,10 +388,18 @@ def main():
                     if key == 'r': release = True
                 if now - started > float(config.get('startup_timeout', 90)) and not fleet.started:
                     fleet.mode = 'abort'
+                effective = []
                 for name, status in statuses.items():
-                    if now - received[name] > 3 and status['state'] != 'FINISHED':
+                    silent = now - received[name]
+                    if status['state'] != 'FINISHED' and silent > link_abort_sec:
                         fleet.mode = 'abort'
-                command = fleet.update(list(statuses.values()), time.time(), release)
+                    elif status['state'] not in ('FINISHED', 'ABORTED') and silent > 3:
+                        # A quiet worker is a robot we cannot see: hold the fleet,
+                        # but give the link link_abort_sec to come back.
+                        status = dict(status, state='PAUSED', reason='worker_link_stalled',
+                                      recovery_ready=False, resume_generation_seen=fleet.generation)
+                    effective.append(status)
+                command = fleet.update(effective, time.time(), release)
                 command['run_id'] = run_id
                 for name, proc in children.items():
                     if proc.poll() is None:

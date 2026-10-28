@@ -40,7 +40,10 @@ Circle overrides:
   S1_MIN_LINEAR     Minimum linear speed while correcting. Default: 0.07
   S1_DIRECTION      ccw or cw. Default: ccw
   S1_POSE_TIMEOUT   Stop motion when MoCap is stale this long. Default: 0.50s
-  S1_RECOVERY_TIMEOUT  Stopped recovery allowance. Default: 15s
+  S1_RECOVERY_TIMEOUT  Longest single stopped recovery before abort. Default: 15s
+  S1_RECOVERY_STABLE_SEC  Fault-free time before a pause is resumable. Default: 1.0
+  S1_MAX_PAUSES     Pauses allowed per run (0 = any fault aborts). Default: 3
+  S1_MAX_PAUSE_SECONDS  Cumulative stopped time allowed per run. Default: 30
   S1_BRINGUP_MODE   warm (default; prepare first) or cold (owned bringup).
   S1_CONTROL_FILE  Robot-local fleet lease/control JSON.
   S1_STATUS_JSON   Controller state for the fleet supervisor.
@@ -379,6 +382,9 @@ S1_MAX_RADIUS_ERROR="${S1_MAX_RADIUS_ERROR:-0.45}"
 S1_FORWARD_YAW_OFFSET_DEG="${S1_FORWARD_YAW_OFFSET_DEG:-0}"
 S1_POSE_TIMEOUT="${S1_POSE_TIMEOUT:-0.50}"
 S1_RECOVERY_TIMEOUT="${S1_RECOVERY_TIMEOUT:-15}"
+S1_RECOVERY_STABLE_SEC="${S1_RECOVERY_STABLE_SEC:-1.0}"
+S1_MAX_PAUSES="${S1_MAX_PAUSES:-3}"
+S1_MAX_PAUSE_SECONDS="${S1_MAX_PAUSE_SECONDS:-30}"
 S1_BRINGUP_MODE="${S1_BRINGUP_MODE:-warm}"
 S1_HEADING_KP="${S1_HEADING_KP:-1.10}"
 S1_RADIUS_KP="${S1_RADIUS_KP:-1.50}"
@@ -813,6 +819,9 @@ CIRCLE_ARGS=(
     --max-radius-heading-offset-deg "${S1_MAX_RADIUS_HEADING_OFFSET_DEG}"
     --pose-timeout "${S1_POSE_TIMEOUT}"
     --recovery-timeout "${S1_RECOVERY_TIMEOUT}"
+    --recovery-stable-sec "${S1_RECOVERY_STABLE_SEC}"
+    --max-pauses "${S1_MAX_PAUSES}"
+    --max-pause-seconds "${S1_MAX_PAUSE_SECONDS}"
     --max-radius-error "${S1_MAX_RADIUS_ERROR}"
     --forward-yaw-offset-deg "${S1_FORWARD_YAW_OFFSET_DEG}"
     --summary-json "${SUMMARY_JSON}"

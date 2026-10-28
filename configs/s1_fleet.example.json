@@ -1,8 +1,13 @@
 {
   "duration": 180,
   "linear": 0.08,
-  "max_radius_error": 0.20,
-  "recovery_timeout": 30,
+  "max_radius_error": 0.2,
+  "recovery_timeout": 45,
+  "max_pauses": 20,
+  "max_pause_seconds": 120,
+  "recovery_stable_sec": 1.5,
+  "auto_resume_sec": 3,
+  "link_abort_sec": 15,
   "startup_timeout": 90,
   "robots": [
     {

@@ -160,6 +160,30 @@ check clearances, and run the same command for a NEW run ID and new bags.
 No files are automatically deleted. Target warm startup is under one minute;
 this is a target to measure live, not a measured guarantee.
 
+### Recovery budget and automatic resume
+
+A pose fault (stale, implausible jump, lost coordinator lease) stops the robot
+and holds the whole fleet; nothing restarts while any robot still reports a
+fault. How long the fleet may stay stopped, and who releases it, come from the
+run configuration:
+
+| key | default | meaning |
+|---|---|---|
+| `recovery_timeout` | 30 | longest single stop (s) before that robot aborts |
+| `max_pauses` | 3 | stops allowed per robot per run (0 = any fault aborts) |
+| `max_pause_seconds` | 30 | cumulative stopped time per robot per run |
+| `recovery_stable_sec` | 1.0 | fault-free time before a robot counts as recovery-ready |
+| `auto_resume_sec` | 0 | > 0: the coordinator releases by itself once *every* robot has been recovery-ready for this long; a new fault on any robot resets the timer. 0: only `r + Enter` releases |
+| `link_abort_sec` | 15 | coordinator↔robot link silence tolerated before abort; shorter stalls hold the fleet (the robot already stops when its 2 s lease expires) |
+
+The defaults reproduce the original conservative behaviour. The example
+configuration uses the lab values (45 / 20 / 120 / 1.5 / 3 / 15), which let
+the 0.5–3 s ground-truth gaps seen on this Wi-Fi pause-and-continue instead of
+ending the session. Every pause is still recorded in `motion.json`, the events
+log and the circle summary (`pause_count`, `paused_sec`, `interrupted`), and the
+bag validator's windowed checks will show the gaps; auto-resume changes who
+presses the button, not what is recorded.
+
 ## 3. Validate And Finish
 
 The laptop prints a run ID and keeps a manifest/event timeline under
