@@ -704,37 +704,43 @@ needed to pick up a re-created asset).
 **Also noted:** Riyaadh's 10-28 `prepare` left agv104's GT bridge pointed at
 `tcp/192.168.50.125:7447`; it is on `.98` for these tests.
 
-## agv108 — circle radius collapse diagnosed 2026-10-28
+## agv108 — circle radius collapse diagnosed 2026-10-28: mecanum wheel mapping
 
 (agv108 is the former agv110 hardware, `192.168.50.132`, new rigid body
 `orkar_agv108` id 43.) Fleet run `2663083c…` (cw, r=0.8, offset 180) shrank
 0.99 → 0.60 m in 13 s with GT live and heading error only −5…−12°.
 
-**Measured 2026-10-28 (open-loop, MoCap-logged, using the warm bringup):**
-- Forward axis: travel bearing − rigid yaw = **+179 / +180°** on two straights.
-  `forward_yaw_offset_deg = 180` is correct. No crab when ω = 0.
-- **In-place rotation translates the tracked point:** ω = +0.30 → GT yaw-rate
-  +0.24 rad/s **and +0.065 m/s to the left**; ω = −0.30 → −0.21 rad/s and
-  −0.048 m/s to the right (12 cm chord in 3 s). v_lat/ω ≈ **0.28 m** → the
-  rigid-body pivot sits ~0.28 m *ahead* of the robot's actual centre of
-  rotation. Under a cw turn the pivot therefore swings inward at ω·0.28:
-  0.09 rad/s × 13 s × 0.28 m ≈ 0.33 m — the observed radius loss. The circle
-  controller sees this as position error it cannot steer out; gains and limits
-  are not the problem.
-- Moving + turning (v 0.08, ω ±0.30): yaw-rate only ±0.07–0.08 rad/s
-  (≈¼ of command) with ±0.02–0.03 m/s lateral — same lever-arm effect.
-- Odometry: `/odom` vx 0.076 vs GT 0.091 m/s on the straight (`linear_scale`
-  1.026 under-reads ~16 %; needs ~1.2). Odom ω ≈ GT in these runs.
+**Measured 2026-10-28 (open-loop, MoCap-logged, via the warm bringup):**
 
-**Fix:** in Motive, move `orkar_agv108`'s pivot to the robot's centre of
-rotation (or re-create the asset with the pivot there), then re-run the 0.8 m
-precheck. Alternatively give the circle driver a pivot lever arm. Nothing was
-changed on the robot except its GT bridge, which is temporarily on
-`tcp/192.168.50.98:7447` (was `.125`).
+| command | MoCap result |
+|---|---|
+| forward / reverse 0.08 | 0.080 / −0.081 m/s along the forward axis, no yaw, no lateral — **offset 180 correct** |
+| spin ω=+0.30 / +0.60 / −0.60 | yaw-rate +0.21 / +0.35 / −0.36 rad/s **plus 0.056 / 0.108 / −0.082 m/s sideways** (lever 0.23–0.31 m, constant with speed) |
+| **strafe vy=±0.08** | **lateral only 0.012 m/s — but yaw-rate ±0.45 rad/s** (odom believes vy 0.04, ω 0) |
+
+Strafe produces rotation and rotation produces strafe, while forward/reverse
+is perfect and the lever arm does not change with speed: that is the signature
+of the **rear (or one) wheel pair being mirrored in the mecanum mix** — a
+mecanum wheel fitted on the wrong corner (roller orientation) or the two rear
+motor connectors swapped. The robot then turns about a point near the rear
+axle, so in a cw circle the plate swings inward at ω × ~0.28 m ≈ 0.028 m/s
+→ 0.36 m in 13 s, the observed loss. Gains, limits and the yaw offset are not
+the problem; **the asset pivot is at the marker centroid on every robot**
+(checked), so this is not a Motive artefact. agv104, same plate, strafes
+(weakly) without yawing and spins with a ~0.09 m lever.
+
+**Fix is physical:** check agv108's four mecanum wheels form the correct X
+roller pattern and that the rear motor cables are on the right drivers; then
+repeat the spin/strafe test above (a correct base shows strafe without yaw and
+spin without translation). Keep it out of fleet circles until then.
+
+Also: `/odom` vx 0.063–0.076 vs GT 0.080–0.091 (`linear_scale` 1.026
+under-reads ~15 %). Its GT bridge is temporarily on `tcp/192.168.50.98:7447`
+(was `.125`).
 
 **Fleet-wide note from the same bag:** [`myAGV.cpp`](../agv2_ws/src/myagv_odometry/src/myAGV.cpp)
 integrates `delta_th = 2.0 * vtheta * dt`, so odometry *pose* yaw advances at
-twice the published *twist* — on this run −318° integrated vs −68° real. This
+twice the published *twist* — −318° integrated vs −68° real on this run. This
 is the likely source of the "odom yaw drift" logged on 106/110 on 10-14.
 
 ## NOTE — fleet pin moved to 4.58.4 / 2.58.4 (commit `8847489`, 2026-10-14)
