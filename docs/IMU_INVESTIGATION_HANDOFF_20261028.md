@@ -172,3 +172,37 @@ module (`enable_gyro`/`enable_accel`) — should be tried once the side is known
 Riyaadh's phase A evidence (`imu_ab_20261028_185557/A_streaming`) covers only
 19 s before interruption and contains no stall; it neither supports nor
 refutes a recording effect.
+
+## Controlled Stationary Comparison, 28 October 2026 19:34–… UTC (AGV106, AGV103)
+
+Operator provided AGV106 (ROS SDK 2.58.4, kernel 5.15.0-1061) and AGV103
+(2.58.3, 5.15.0-1105), both freshly booted, stationary, no motion commanded.
+Harness: `~/agv_data/diagnostics/imu_soak_20261028_193429_agv10{6,3}/` — same
+cold bringup as the pipeline, a per-second topic-count observer, a 1 Hz
+PSI/temperature/throttle/**HID-report-rate** log, and the pipeline's two
+recorders (same topics, MCAP profile, QoS overrides, cache sizes) in the
+recording leg. Order reversed between robots (106: streaming→recording,
+103: recording→streaming).
+
+| robot | leg | time to stall | host at stall | HID reports/s at stall | kernel log |
+|---|---|---|---|---|---|
+| AGV106 | **streaming only** | **≈15 s** after `RealSense Node Is Up` (19:35:54) | PSI cpu 3, io 0.03, 42 °C, throttle 0x0 | 301 → 233 → **0** | nothing |
+| AGV103 | **full recording** | **134 s** (19:36:47), bag at 879 MB and still writing | PSI cpu 17, io 0.5, 49 °C, throttle 0x0 | 300 → 35 → 72 → **0** | nothing |
+
+Both legs stall; recording is neither necessary nor protective. In the failed
+state the camera still answers HID control requests (feature GET of the IIO
+sampling frequency returns in 46 ms), UVC keeps delivering colour/depth at
+rate, and the HID interrupt endpoint (`0x86`, 250 µs interval) simply carries
+no reports. So: **the D455 stops producing IMU input reports while the USB
+link, the UVC pipes and its control path stay alive.** Not host load, not
+recording I/O, not SDK version, not kernel version, not throttling.
+
+**Recovery without a service restart (tested on both, logged as an
+intervention in `soak.log` / `intervention.json`):** `ros2 param set /camera
+enable_gyro false`, `enable_accel false`, 2 s, then both `true`. HID reports
+were back at ~300/s within **3 s** on both robots and `/camera/gyro|accel/
+sample` resumed at 199–200 / 100–102 Hz with no new timeout lines in the next
+40 s. The motion module is re-armed by HID power/report-state writes alone,
+which again points at the camera's motion-sensor report pipeline stopping
+rather than anything on the host. This is a seconds-long gap instead of a
+60–90 s service restart; it does not explain why the pipeline stops.
