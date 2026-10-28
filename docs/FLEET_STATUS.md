@@ -13,7 +13,7 @@ whenever a robot is gated, driven, or reconfigured.
 | agv105 | **2026-10-22** | 192.168.50.226 | PASS (61 OK, 0 FAIL, 0 WARN) at 4.58.4 / fw 5.17.0.10 | 2026-10-14: PASS/WARN - 0 FAIL; **2026-10-22: FAIL only `odom_mocap_sanity` — no sanity JSON on the robot** (GT 72–78 Hz, Zenoh OK) | out/back passed 10-14; yaw offset **0**; needs the 1 m traced run to restore sanity evidence. 10-22: pulled to `335f2c7`, all ROS RealSense pkgs held, apt timers masked, Zenoh re-pointed `.125 -> .98` |
 | agv107 | **2026-10-14** | DHCP | PASS | **PASS/WARN - 0 FAIL** | **Yes** - out/back passed; yaw offset **+90** |
 | agv24  | **2026-10-12** | 192.168.50.158 | PASS (0 FAIL, 0 WARN) | **PASS/WARN — 0 FAIL** | **Yes** — needs operator sign-off + a real bag |
-| agv104 | **2026-10-22** | 192.168.50.192 | PASS (61 OK, 0 FAIL, 0 WARN) at **4.58.4** | **PASS/WARN — 0 FAIL** (65 OK; sanity 1.3%; GT 63–76 Hz) | **No** — completed a 70 s fleet circle at 0.16 m/s but **wiggling**: base angular output is a constant ~0.75 rad/s for any ω command (bang-bang, MoCap-measured). MCU firmware fix needed |
+| agv104 | **2026-10-28** | 192.168.50.192 | PASS (61 OK, 0 FAIL, 0 WARN) at **4.58.4** | 2026-10-22 PASS/WARN — 0 FAIL | **Base MCU firmware replaced 2026-10-28 with agv106's image → proportional steering restored.** 0.5 m cw MoCap circle: 2.03 laps/45 s, max radius err 5.9 cm, heading sd 3.8°, **0 command sign flips** (was 97). Needs: odom angular check, re-gate, full S1 ring run |
 | agv103 | **2026-10-22** | 192.168.50.176 | 2026-10-14 PASS; **still 4.58.3 (not upgraded)** | 2026-10-14 PASS/WARN — 0 FAIL | Calibrated: yaw **180**, `linear_scale` **1.027**. 10-22: pulled to `f350b51`, WiFi power-save off + unit, apt timers masked; standing in for agv104 on the 1.7 m ring |
 | agv106 | **2026-10-22** | 192.168.50.208 | PASS (61 OK, 0 FAIL, 0 WARN) at **4.58.4** | **PASS/WARN — 0 FAIL** (65 OK; sanity 5.1%; GT 77 Hz) | Calibrated: yaw **−7**, `linear_scale` **1.054** (verified 1.003); **odom yaw drifts to 19°/m**; WiFi GT gaps; needs sign-off |
 | agv107 | August 2026 | 192.168.1.19 | PASS | not recorded | Yes — full S1 circle completed |
@@ -659,6 +659,49 @@ and `linear_scale` (currently 1.0), write
 sign-offs; commissioning bag.
 
 ---
+
+## agv104 — base firmware replaced 2026-10-28
+
+**Root cause of the 10-22 "wiggle" and the August speed floors: agv104's base
+ESP32 (ESP32-PICO-D4, behind the CH340 on `/dev/ttyACM0`) was running a
+different application image from the rest of the fleet.** Read-only `esptool`
+dumps (4 MB each; esptool 4.8.1 via `pip --user`, the apt 2.8 lacks the stub
+loader) of agv104 and agv106 showed identical bootloader, partition table,
+NVS and EEPROM, but different `app0`: 284,624 B (md5 `59f038d3…`) on 104 vs
+222,956 B (md5 `06dd363c…`) on 106 — 205k of 223k bytes differ, i.e. a
+different sketch (same Arduino-ESP32 core, IDF v3.3.5). 106's image prints a
+`current speed …` text line between its 0xfe-framed packets; 104's did not.
+
+**Fix (operator-approved):** wrote agv106's raw `app0` partition (0x10000,
+0x140000 B, `--flash_mode/freq/size keep`) to agv104; verified; hard reset.
+A first attempt with a trimmed app image boot-looped (the image carries an
+appended SHA-256 — 3 bytes short → bootloader rejects it, ROM banner every
+~0.1 s); writing the whole partition fixed it. **Rollback:** `~/mcu_fw/
+agv104_esp32_flash_20261028.bin` (full) and `agv104_app0_orig.bin` on the
+robot, copies in the session scratchpad.
+
+**Verification against MoCap (same day):**
+- In-place ω sweep: 0.05 → 0.24, 0.55 → 0.47, −0.10 → −0.40, −0.20 → −0.50
+  rad/s (was a constant 0.74–0.79 for every command). Residual in-place floor
+  ≈0.25 rad/s is the fleet firmware's behaviour (agv106 showed the same).
+- Axis signs: forward/backward/rotate all correct, yaw offset 0 confirmed;
+  v=0.10 with ω=∓0.20 curves right/left as commanded, ω=0 runs straight.
+- **0.5 m cw circle, 45 s:** 2.03 laps, radius error sd 1.7 cm / max 5.9 cm,
+  heading error −13° ± 3.8°, **zero ω sign flips** (10-22 at r=1.7: 97 flips,
+  heading ± 25°, 1.4 s limit cycle). Linear floor gone (0.05 → 0.065 m/s).
+- Open: the base's **odometry** under motion looks poor (odom yaw −27° on a
+  GT −13° arc; −8.8° on a straight) — `linear_scale 1.191` was fitted to the
+  old firmware and must be re-measured; angular needs a look before S1 bags.
+
+**Motive side-quest:** `orkar_agv104` went `tracking_valid=False` for most of
+the session — one of its four balls (Motive "Marker #1", the one 5 cm from the
+centre ball) produced no dot in 1,149 frames while the other three matched the
+asset to 2 mm; after the operator handled the robot it came back 4/4. Treat
+that ball as suspect. The asset id changed 42 → 24 today (publisher restart
+needed to pick up a re-created asset).
+
+**Also noted:** Riyaadh's 10-28 `prepare` left agv104's GT bridge pointed at
+`tcp/192.168.50.125:7447`; it is on `.98` for these tests.
 
 ## NOTE — fleet pin moved to 4.58.4 / 2.58.4 (commit `8847489`, 2026-10-14)
 
