@@ -524,8 +524,18 @@ bash scripts/network/configure_zenoh.sh router-run
 
 Keep both processes running during collection. If the pose-source process is
 manually restarted, restart the router afterwards so it discovers exactly one
-current publisher route per topic. Internal NatNet reconnects do not require a
-router restart.
+current publisher route per topic (a route the router has "removed" keeps
+forwarding, so each publisher restart under a running router adds another copy
+of every pose). Internal NatNet reconnects do not require a router restart, and
+neither does re-creating or re-enabling a rigid body in Motive: the pose source
+re-requests the model definitions every `--modeldef-refresh-sec` (default 5 s)
+and follows a renamed/re-created asset to its new id.
+
+To make the pair boring, install both as services on the MoCap-side laptop:
+`configs/systemd/orkar-natnet-pose-source.service` (reads
+`/etc/orkar/natnet_pose_source.env`) and
+`configs/systemd/orkar-zenoh-mocap-router.service`, which is bound to the pose
+source so it starts after it and restarts with it.
 
 On each robot, point the client at the laptop's lab Wi-Fi address:
 

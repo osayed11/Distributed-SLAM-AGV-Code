@@ -138,6 +138,12 @@ class NatNetPosePublisher(Node):
         now = time.monotonic()
         if not self.name_by_id and now - self.last_modeldef_request >= 2.0:
             self.request_modeldef()
+        elif (self.args.modeldef_refresh_sec > 0
+              and now - self.last_modeldef_request >= self.args.modeldef_refresh_sec):
+            # Assets re-created or re-enabled in Motive get new ids; without a
+            # refresh this process kept publishing nothing for them until it
+            # was restarted (and restarting it forces a router restart too).
+            self.request_modeldef()
         if now - self.connected_at >= self.args.frame_timeout:
             if not self.last_frame_at or now - self.last_frame_at > self.args.frame_timeout:
                 raise RuntimeError(
@@ -149,11 +155,15 @@ class NatNetPosePublisher(Node):
                 )
 
     def on_descriptions(self, desc):
-        self.name_by_id = {
+        received = {
             int(rb.id_num): str(rb.name)
             for rb in desc.rigid_bodies
             if rb.name is not None
         }
+        if self.name_by_id:
+            self.merge_descriptions(received)
+        else:
+            self.name_by_id = received
         if self.printed_defs:
             return
 
@@ -170,6 +180,42 @@ class NatNetPosePublisher(Node):
                     "Requested rigid body '%s' is not in model definitions." % target.name
                 )
         self.printed_defs = True
+
+    def merge_descriptions(self, received):
+        """Apply a refreshed model-definition response conservatively.
+
+        Target bodies follow their name: a re-created asset moves to its new id
+        and the stale id is dropped. A target that is simply absent from one
+        response keeps its previous id, because some Motive/NatNet versions
+        truncate repeated responses while pose frames stay valid; losing the
+        mapping then would silently stop publishing a tracked robot.
+        """
+        old_id_by_name = {name: rb_id for rb_id, name in self.name_by_id.items()}
+        new_id_by_name = {name: rb_id for rb_id, name in received.items()}
+        merged = dict(received)
+        for target in self.targets:
+            old_id = old_id_by_name.get(target.name)
+            new_id = new_id_by_name.get(target.name)
+            if new_id is None and old_id is not None:
+                merged[old_id] = target.name  # keep publishing through a short response
+            elif old_id is not None and new_id is not None and old_id != new_id:
+                self.get_logger().warning(
+                    "Rigid body '%s' changed id %d -> %d (re-created in Motive); following the new asset"
+                    % (target.name, old_id, new_id)
+                )
+            elif old_id is None and new_id is not None:
+                self.get_logger().info(
+                    "Rigid body '%s' is now in the model definitions (id %d)" % (target.name, new_id)
+                )
+        # One name must map to exactly one id.
+        seen = set()
+        for rb_id in sorted(merged, key=lambda i: (merged[i] in new_id_by_name and new_id_by_name[merged[i]] != i)):
+            name = merged[rb_id]
+            if name in seen:
+                merged.pop(rb_id)
+            else:
+                seen.add(name)
+        self.name_by_id = merged
 
     def on_frame(self, frame):
         if not rclpy.ok():
@@ -252,6 +298,9 @@ def parse_args(argv=None):
                         help="Delay before reconnecting after a NatNet outage; 0 disables recovery")
     parser.add_argument("--poll-period", type=float, default=0.01,
                         help="NatNet socket poll period in seconds")
+    parser.add_argument("--modeldef-refresh-sec", type=float, default=5.0,
+                        help="Re-request Motive model definitions this often so re-created or "
+                             "re-enabled assets are followed without a restart; 0 disables")
     args = parser.parse_args(argv)
     if args.rigid_body:
         if args.name or args.topic:
@@ -275,6 +324,8 @@ def parse_args(argv=None):
         parser.error("--poll-period must be positive")
     if args.reconnect_delay < 0:
         parser.error("--reconnect-delay must be non-negative")
+    if args.modeldef_refresh_sec < 0:
+        parser.error("--modeldef-refresh-sec must be non-negative")
     return args
 
 

@@ -1,0 +1,30 @@
+[Unit]
+Description=ORKAR Zenoh MoCap router (exports /optitrack/rigid_bodies/orkar_agv* to the robots)
+# The router builds one publisher route per discovered DDS writer and keeps
+# forwarding through a removed route, so it must start after the NatNet pose
+# source and restart whenever that source restarts (BindsTo + PartOf).
+After=network-online.target orkar-natnet-pose-source.service
+Wants=network-online.target
+BindsTo=orkar-natnet-pose-source.service
+PartOf=orkar-natnet-pose-source.service
+StartLimitIntervalSec=60
+StartLimitBurst=10
+
+[Service]
+Type=simple
+User=ubuntu
+Environment=HOME=/home/ubuntu
+Environment=ROS_DISTRO=humble
+Environment=ROS_LOCALHOST_ONLY=1
+WorkingDirectory=/home/ubuntu/slam_project
+# configure_zenoh.sh router-run installs the pinned bridge if missing and execs it with
+# --ros-localhost-only and configs/zenoh/mocap_router.json5 (REST on 127.0.0.1:18000).
+ExecStartPre=/bin/sleep 3
+ExecStart=/usr/bin/bash /home/ubuntu/slam_project/scripts/network/configure_zenoh.sh router-run
+Restart=on-failure
+RestartSec=2
+KillSignal=SIGINT
+TimeoutStopSec=10
+
+[Install]
+WantedBy=multi-user.target

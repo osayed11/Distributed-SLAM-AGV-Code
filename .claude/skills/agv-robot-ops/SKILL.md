@@ -214,7 +214,12 @@ DDS multicast. Robots stay `ROS_LOCALHOST_ONLY=1` on `rmw_fastrtps_cpp`; only
    publisher is restarted under a running router each pose reaches the robots
    one more time (3 `created` lines in the log = every sample delivered 3×).
    Restart the router after the publisher's *final* start, and whenever you
-   restart the publisher later (e.g. to add a rigid body).
+   restart the publisher later (e.g. to add a rigid body). Re-creating or
+   re-enabling an asset in Motive no longer needs a publisher restart — the
+   publisher re-requests model definitions every 5 s (`--modeldef-refresh-sec`)
+   and logs `changed id A -> B` when it follows a re-created body. With the
+   laptop units installed (`orkar-natnet-pose-source` + `orkar-zenoh-mocap-router`,
+   the latter `BindsTo`/`PartOf` the former) the ordering is automatic.
 2. Robot: `bash scripts/network/configure_zenoh.sh robot <LAPTOP_IP> 7447` then
    `source scripts/network/load_ros_transport_env.sh`. (Pre-staging the pinned
    bridge binary at `/usr/local/bin/zenoh-bridge-ros2dds` while on reliable
