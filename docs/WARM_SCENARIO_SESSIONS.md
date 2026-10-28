@@ -142,13 +142,24 @@ Initial steering/axis qualification must already have passed separately.
 | --- | --- | --- |
 | MoCap stale, pose implausible, heading/radius outside corridor | Stop; fleet holds | Continue while waiting for bounded recovery |
 | Stable feedback returns | Remain stopped | Continue recording |
+| `auto_resume_gt: true`, GT-only pause, all robots stable and clearance safe for another second | Resume automatically together | Same bags continue; log `AUTO_RESUME` |
 | Operator types `r` then Enter, all robots recovery-ready | Resume same fixed paths | Record the interruption; no centre reset |
 | Recovery deadline/budget exhausted | Abort attempt | Finalise bags; retain healthy sensor services |
 | Sensor rate below quality target or IMU timeout log message | Continue if motion feedback is safe | Keep recording; preserve warning and evidence for post-run review |
 | Recorder dies | Abort attempt | Preserve evidence and finalise remaining bags |
-| `q` then Enter, Ctrl+C, or coordinator/SSH failure | Abort/expire robot-local lease | Bounded cleanup; independent base command timeout |
+| Brief coordinator/SSH silence | Stop when robot-local lease expires; fleet holds | Recording continues within the link budget; operator release required |
+| `q` then Enter, Ctrl+C, or link budget exhausted | Abort | Bounded cleanup; independent base command timeout |
 
 Recovery requires one continuous second of fresh, plausible poses by default.
+For supervised collection, set `"auto_resume_gt": true` in the fleet JSON to
+avoid an operator prompt after a transient GT gap. This is opt-in and recorded
+in the run manifest. The coordinator requires all robot-local recovery checks
+plus one continuous second of fresh fleet poses and a clear separation guard.
+An unsafe pose jump, heading/radius fault, close approach, lost lease, or unknown
+fault blocks automatic recovery for that pause even if later messages recover.
+Those cases still require investigation and explicit `r`, or finalise when the
+existing recovery budget expires. All robots must have the updated controller;
+missing recovery-eligibility fields cannot authorize automatic motion.
 Repeated/future/stale source timestamps and frame changes are rejected. Motion
 timers and leases use monotonic time; source clock checks require synchronized
 robot/laptop clocks. The default pose timeout is NOT relaxed for recovery.
@@ -193,7 +204,7 @@ run configuration:
 | `max_pauses` | 3 | stops allowed per robot per run (0 = any fault aborts) |
 | `max_pause_seconds` | 30 | cumulative stopped time per robot per run |
 | `recovery_stable_sec` | 1.0 | fault-free time before a robot counts as recovery-ready |
-| `auto_resume_sec` | 0 | > 0: the coordinator releases by itself once *every* robot has been recovery-ready for this long; a new fault on any robot resets the timer. 0: only `r + Enter` releases |
+| `auto_resume_sec` | 0 | > 0: enables GT-only automatic recovery after this many seconds of fresh fleet poses and safe clearance. Non-GT or missing safety evidence requires operator release. With 0, `auto_resume_gt: true` still enables its default one-second clear window. |
 | `link_abort_sec` | 15 | coordinator↔robot link silence tolerated before abort; shorter stalls hold the fleet (the robot already stops when its 2 s lease expires) |
 
 The defaults reproduce the original conservative behaviour. The example
@@ -207,17 +218,31 @@ presses the button, not what is recorded.
 ## 3. Validate And Finish
 
 Each robot now audits its own run as soon as its recorders have stopped: the
-worker runs the bag validator (index-based, about a second) and the circle
+worker runs the bag validator in `--timing-only` mode (index-based when available) and the circle
 summary check, writes `validation.json` / `validation.log` next to the bags,
 and reports the verdict in its FINISHED status, so the coordinator prints a
 per-robot verdict table when the session ends. The manual action below remains
-for re-auditing a run with different limits or after copying bags.
+for re-auditing a run with different limits or after copying bags. `TIMING_PASS`
+means timing and motion checks passed, not that image payloads were verified.
+The manual validation action reads payloads and verifies available MCAP CRCs;
+image content and calibration still require separate checks. Index-only checks
+must not be used to certify freedom from payload corruption.
+
+The placement helper `fleet_plan.py` is for a single shared centre. Plan each
+circle group separately; it rejects a multi-centre input instead of silently
+collapsing the groups. When `phase_omega` is set, newly planned radii update
+linear speeds consistently and must remain within the 0.2 m/s limit.
 
 
 The laptop prints a run ID and keeps a manifest/event timeline under
 `data/fleet_sessions/<run_id>/`. Robots keep configuration, artifact paths,
 logs and results under `~/agv_data/fleet_<run_id>/`; MCAP shards remain in
 `~/agv_data/`. Control/heartbeat files use `/run/user/<uid>` (tmpfs), not the SD card.
+The wrapper/controller session log also stays in tmpfs during a fleet run, so
+verbose motion output does not synchronously write to the recording SD card.
+`runtime_log.json` records its live path; finalisation copies it to `session.log`
+in the persistent evidence directory. A power loss before finalisation can lose
+that temporary log; MCAP files and the laptop event timeline remain separate.
 
 Run the existing strict bag validator and motion validator after recording:
 

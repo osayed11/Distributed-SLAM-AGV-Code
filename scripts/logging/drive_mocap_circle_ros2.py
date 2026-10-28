@@ -48,11 +48,9 @@ def request_resume(signum=None, frame=None):
 
 
 def request_stop(signum=None, frame=None):
-    del frame
+    del signum, frame
     global stop_requested
     stop_requested = True
-    if signum is not None:
-        print("\nStop requested; sending zero velocity.", flush=True)
 
 
 def yaw_from_quat(q) -> float:
@@ -69,10 +67,20 @@ def clamp(value: float, low: float, high: float) -> float:
     return max(low, min(high, value))
 
 
-def circle_velocity(args, radius_error: float, heading_error: float) -> Tuple[float, float]:
-    linear = args.linear
-    if abs(radius_error) > args.slow_radius_error:
+def phase_speed(radius, omega, elapsed, delay, progress, gain, limit):
+    """Track unwrapped clockwise/anticlockwise progress, never command reverse."""
+    if elapsed < delay:
+        return 0.0, -progress
+    error = omega * (elapsed - delay) - progress
+    return clamp(radius * (omega + gain * error), 0.0, limit), error
+
+
+def circle_velocity(args, radius_error: float, heading_error: float, linear_override=None) -> Tuple[float, float]:
+    linear = args.linear if linear_override is None else linear_override
+    if linear_override is None and abs(radius_error) > args.slow_radius_error:
         linear = max(args.min_linear, args.linear * args.slow_linear_scale)
+    if linear_override == 0:
+        return 0.0, 0.0
     # Preserve the requested curvature when the radial-error guard slows motion.
     feedforward = clamp(args.turn_sign * linear / args.radius, -args.max_angular, args.max_angular)
     angular = clamp(feedforward + args.heading_kp * heading_error, -args.max_angular, args.max_angular)
@@ -204,14 +212,16 @@ def report_state(args, state, reason='', **values):
     data = dict(run_id=args.run_id, state=state, reason=reason,
                 monotonic=time.monotonic(), epoch=time.time(), **values)
     last = getattr(args, '_last_status', (None, 0.0))
-    if args.status_json and (state != last[0] or data['monotonic'] - last[1] >= 0.2):
+    if args.status_json and (state != last[0] or data['monotonic'] - last[1] >= 0.1):
         atomic_json(args.status_json, data)
         args._last_status = (state, data['monotonic'])
     return data
 
 
-def record_event(args, state, reason):
-    data = report_state(args, state, reason)
+def record_event(args, state, reason, publish_status=True):
+    data = (report_state(args, state, reason) if publish_status else
+            dict(run_id=args.run_id, state=state, reason=reason,
+                 monotonic=time.monotonic(), epoch=time.time()))
     print('MOTION_STATE ' + json.dumps(data), flush=True)
     if args.events_jsonl:
         with open(args.events_jsonl, 'a', encoding='utf-8') as handle:
@@ -269,7 +279,7 @@ def drive(node: MocapCircleNode, args) -> CircleSummary:
 
     node.publish_zero(0.5)
     check_start_pose(node, args, center_x, center_y, forward_offset)
-    report_state(args, 'ARMED')
+    report_state(args, 'ARMED', x=node.pose.x, y=node.pose.y, pose_stamp=node.pose.stamp_sec)
 
     if args.start_signal_file:
         print(
@@ -278,10 +288,10 @@ def drive(node: MocapCircleNode, args) -> CircleSummary:
             flush=True,
         )
         while rclpy.ok() and not stop_requested:
-            command, fault = read_control(args.control_file, args.run_id, time.monotonic(), args.coordinator_timeout)
+            command, fault = read_control(args.control_file, args.run_id, args.coordinator_timeout)
             if fault or command['mode'] == 'abort':
                 raise RuntimeError(fault or 'coordinator_abort')
-            report_state(args, 'ARMED')
+            report_state(args, 'ARMED', x=node.pose.x, y=node.pose.y, pose_stamp=node.pose.stamp_sec)
             try:
                 with open(args.start_signal_file, "r", encoding="utf-8") as handle:
                     release_text = handle.read().strip()
@@ -314,11 +324,11 @@ def drive(node: MocapCircleNode, args) -> CircleSummary:
             flush=True,
         )
         while rclpy.ok() and not stop_requested and time.time() < args.start_at_epoch:
-            command, fault = read_control(args.control_file, args.run_id, time.monotonic(), args.coordinator_timeout)
+            command, fault = read_control(args.control_file, args.run_id, args.coordinator_timeout)
             if fault or command['mode'] != 'run':
                 raise RuntimeError(fault or 'start_permission_withdrawn')
             node.pub.publish(Twist())
-            report_state(args, 'ARMED')
+            report_state(args, 'ARMED', x=node.pose.x, y=node.pose.y, pose_stamp=node.pose.stamp_sec)
             remaining = args.start_at_epoch - time.time()
             rclpy.spin_once(node, timeout_sec=min(0.05, max(0.0, remaining)))
         if stop_requested or not rclpy.ok():
@@ -338,6 +348,8 @@ def drive(node: MocapCircleNode, args) -> CircleSummary:
     initial_tangent_yaw = last_theta + args.turn_sign * math.pi * 0.5
     initial_heading_error = angle_delta(initial_tangent_yaw, first.yaw + forward_offset)
     progress = 0.0
+    phase_progress = 0.0
+    phase_last_theta = last_theta
     max_abs_radius_error = 0.0
     max_abs_heading_error = 0.0
     final_radius_error = 0.0
@@ -365,7 +377,7 @@ def drive(node: MocapCircleNode, args) -> CircleSummary:
         if recovery.state == 'RUNNING':
             active_sec += now - previous_tick
         previous_tick = now
-        command, lease_fault = read_control(args.control_file, args.run_id, now, args.coordinator_timeout)
+        command, lease_fault = read_control(args.control_file, args.run_id, args.coordinator_timeout)
         if command['mode'] == 'abort':
             abort_reason = 'coordinator_abort'
             break
@@ -396,6 +408,23 @@ def drive(node: MocapCircleNode, args) -> CircleSummary:
             break
 
         theta = math.atan2(radial_y, radial_x)
+        phase_progress += args.turn_sign * angle_delta(theta, phase_last_theta)
+        phase_last_theta = theta
+        linear_override = None
+        phase_error = 0.0
+        phase_waiting = False
+        if args.phase_omega > 0:
+            phase_time = command.get('trajectory_time')
+            if (not isinstance(phase_time, (int, float)) or isinstance(phase_time, bool)
+                    or not math.isfinite(phase_time) or phase_time < 0):
+                fault = fault or 'invalid_shared_trajectory_time'
+                linear_override = 0.0
+            else:
+                linear_override, phase_error = phase_speed(args.radius, args.phase_omega,
+                    phase_time, args.motion_delay, phase_progress, args.phase_kp, args.phase_max_linear)
+                phase_waiting = phase_time < args.motion_delay
+                if phase_time > args.motion_delay + 5 and abs(phase_error) > args.max_phase_error:
+                    fault = fault or 'phase_tracking_error_exceeds_limit'
         radius_error = current_radius - args.radius
         final_radius_error = radius_error
         if abs(radius_error) > args.max_radius_error:
@@ -421,12 +450,16 @@ def drive(node: MocapCircleNode, args) -> CircleSummary:
             # Braking takes priority over filesystem/status reporting.
             node.pub.publish(Twist())
         if state != previous_state:
-            record_event(args, state, recovery.reason)
+            # Publish one complete status below, never a partial PAUSED snapshot.
+            record_event(args, state, recovery.reason, publish_status=False)
         just_resumed = state == 'RUNNING' and previous_state == 'PAUSED'
         previous_state = state
         report_state(args, state, recovery.reason, recovery_ready=recovery.ready(now),
+                     auto_resume_safe=recovery.auto_resume_safe,
                      active_sec=active_sec, radius_error_m=radius_error,
                      heading_error_deg=math.degrees(heading_error), pause_count=recovery.pause_count,
+                     x=sample.x, y=sample.y, pose_stamp=sample.stamp_sec,
+                     phase_error_rad=phase_error,
                      resume_generation_seen=int(command['resume_generation']))
         if state == 'ABORTED':
             abort_reason = recovery.reason
@@ -445,13 +478,15 @@ def drive(node: MocapCircleNode, args) -> CircleSummary:
         if progress > last_progress + args.progress_epsilon:
             last_progress = progress
             last_progress_time = now
+        elif phase_waiting:
+            last_progress_time = now
         elif not args.dry_run and active_sec > args.progress_grace and now - last_progress_time > args.stuck_timeout:
             abort_reason = "no circle progress for %.1fs" % args.stuck_timeout
             break
         max_abs_radius_error = max(max_abs_radius_error, abs(radius_error))
         max_abs_heading_error = max(max_abs_heading_error, abs(heading_error))
 
-        msg.linear.x, msg.angular.z = circle_velocity(args, radius_error, heading_error)
+        msg.linear.x, msg.angular.z = circle_velocity(args, radius_error, heading_error, linear_override)
         if not args.dry_run:
             node.pub.publish(msg)
 
@@ -547,6 +582,11 @@ def parse_args(argv):
     parser.add_argument("--center-y", type=float, default=None, help="Marked floor center y in MoCap frame")
     parser.add_argument("--linear", type=float, default=0.10)
     parser.add_argument("--min-linear", type=float, default=0.07)
+    parser.add_argument('--phase-omega', type=float, default=0.0)
+    parser.add_argument('--motion-delay', type=float, default=0.0)
+    parser.add_argument('--phase-kp', type=float, default=0.8)
+    parser.add_argument('--phase-max-linear', type=float, default=0.20)
+    parser.add_argument('--max-phase-error', type=float, default=0.15)
     parser.add_argument("--max-angular", type=float, default=0.55)
     parser.add_argument("--heading-kp", type=float, default=0.95)
     parser.add_argument("--radius-kp", type=float, default=1.20)
@@ -607,6 +647,11 @@ def normalise_args(args):
     for key, value in vars(args).items():
         if isinstance(value, float) and not math.isfinite(value):
             raise ValueError('%s must be finite' % key)
+    if (args.phase_omega < 0 or args.motion_delay < 0 or args.phase_kp <= 0
+            or not 0 < args.phase_max_linear <= 0.2 or args.max_phase_error <= 0):
+        raise ValueError('Invalid phase control parameters')
+    if args.phase_omega > 0 and not args.control_file:
+        raise ValueError('Phase control requires a fleet control file')
     for key in ('recovery_timeout', 'recovery_stable_sec', 'max_pause_seconds',
                 'max_heading_error_deg', 'max_start_heading_error_deg', 'max_pose_speed', 'max_pose_yaw_rate',
                 'max_source_age', 'max_future_stamp', 'coordinator_timeout', 'start_late_tolerance'):

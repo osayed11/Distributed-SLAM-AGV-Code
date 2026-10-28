@@ -719,8 +719,10 @@ class ValidateRos2BagTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             indexed = Path(tmp) / "indexed.mcap"
             unindexed = Path(tmp) / "unindexed.mcap"
+            chunk_only = Path(tmp) / "chunk_only.mcap"
             write_bag(indexed, IndexType.ALL)
             write_bag(unindexed, IndexType.NONE)
+            write_bag(chunk_only, IndexType.CHUNK)
             with indexed.open("rb") as stream:
                 summary = make_reader(stream).get_summary()
             self.assertIsNotNone(summary)
@@ -730,6 +732,8 @@ class ValidateRos2BagTests(unittest.TestCase):
                                 or not make_reader(stream).get_summary().chunk_indexes)
             fast = inspect_mcap_bag([indexed])
             slow = inspect_mcap_bag([unindexed])
+            self.assertEqual(inspect_mcap_bag([chunk_only])["/odom"].count, 61)
+            self.assertEqual(inspect_mcap_bag([indexed], verify_payloads=True)["/odom"].count, 61)
             self.assertEqual(set(fast), {"/odom", "/scan"})
             for topic in fast:
                 self.assertEqual(fast[topic].count, slow[topic].count)
@@ -739,6 +743,31 @@ class ValidateRos2BagTests(unittest.TestCase):
             self.assertEqual(fast["/odom"].count, 61)
             self.assertAlmostEqual(fast["/odom"].max_gap_sec, 1.58, places=6)
             self.assertEqual(fast["/odom"].max_gap_sec, slow["/odom"].max_gap_sec)
+
+    def test_mcap_timing_only_does_not_certify_payload_integrity(self) -> None:
+        try:
+            from mcap.writer import Writer, CompressionType
+        except ImportError:
+            self.skipTest("python mcap library not installed")
+        sys.path.insert(0, str(ROOT / "scripts/logging"))
+        from validate_ros2_bag import inspect_mcap_bag
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / 'corrupt.mcap'
+            marker = b'unique-payload-corruption-marker'
+            with path.open('wb') as stream:
+                writer = Writer(stream, compression=CompressionType.NONE, enable_crcs=True)
+                writer.start('ros2')
+                schema = writer.register_schema('sensor_msgs/msg/Imu', 'ros2msg', b'')
+                channel = writer.register_channel('/camera/gyro/sample', 'cdr', schema)
+                writer.add_message(channel, 100, marker, 100)
+                writer.finish()
+            data = bytearray(path.read_bytes())
+            offset = data.index(marker)
+            data[offset] ^= 1
+            path.write_bytes(data)
+            self.assertEqual(inspect_mcap_bag([path])['/camera/gyro/sample'].count, 1)
+            with self.assertRaises(Exception):
+                inspect_mcap_bag([path], verify_payloads=True)
 
     def test_ros2_validator_classifies_mcap_read_failure(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

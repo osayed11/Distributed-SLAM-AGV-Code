@@ -27,6 +27,11 @@ def make_stub(targets, name_by_id):
 
 @unittest.skipIf(NatNetPosePublisher is None, 'publisher module not importable here')
 class MergeDescriptionsTests(unittest.TestCase):
+    def test_reused_id_does_not_publish_another_body_as_the_missing_target(self):
+        stub = self.merge(['orkar_agv104'], {42: 'orkar_agv104'}, {42: 'different_body'})
+        self.assertEqual(stub.name_by_id, {42: 'different_body'})
+        self.assertTrue(stub.messages)
+
     def merge(self, targets, before, received):
         stub = make_stub(targets, before)
         NatNetPosePublisher.merge_descriptions(stub, received)

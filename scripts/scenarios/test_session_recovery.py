@@ -78,6 +78,21 @@ class SessionTests(unittest.TestCase):
 
 
 class RecoveryTests(unittest.TestCase):
+    def test_gt_only_pause_is_eligible_but_never_releases_itself(self):
+        m = MotionRecovery()
+        m.tick(0, 'mocap pose stale for 0.591s')
+        m.tick(1)
+        self.assertTrue(m.auto_resume_safe)
+        self.assertEqual(m.tick(3), 'PAUSED')
+
+    def test_unsafe_fault_remains_ineligible_after_gt_recovers(self):
+        m = MotionRecovery()
+        m.tick(0, 'implausible_pose_jump')
+        m.tick(.1, 'mocap pose stale for 0.591s')
+        m.tick(1)
+        self.assertTrue(m.ready(2))
+        self.assertFalse(m.auto_resume_safe)
+
     def test_dropout_stops_and_never_auto_resumes(self):
         m = MotionRecovery()
         self.assertEqual(m.tick(0), 'RUNNING')
@@ -134,14 +149,93 @@ class RecoveryTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             p = Path(directory)/'control.json'
             atomic_json(p, dict(run_id='abc', mode='run', resume_generation=0, received_monotonic=5))
-            self.assertEqual(read_control(p, 'abc', 5.5, 1)[1], '')
-            self.assertNotEqual(read_control(p, 'abc', 6, 1)[1], '')
-            self.assertNotEqual(read_control(p, 'xyz', 5.5, 1)[1], '')
+            with patch('motion_recovery.time.monotonic', return_value=5.5):
+                self.assertEqual(read_control(p, 'abc', 1)[1], '')
+                self.assertNotEqual(read_control(p, 'xyz', 1)[1], '')
+            with patch('motion_recovery.time.monotonic', return_value=6):
+                self.assertNotEqual(read_control(p, 'abc', 1)[1], '')
+            with patch('motion_recovery.time.monotonic', return_value=4.9):
+                self.assertNotEqual(read_control(p, 'abc', 1)[1], '')
             p.write_text('{')
-            self.assertEqual(read_control(p, 'abc', 5.5, 1)[0]['mode'], 'hold')
+            self.assertEqual(read_control(p, 'abc', 1)[0]['mode'], 'hold')
+
+    def test_heartbeat_refreshed_during_read_is_not_rejected_as_future(self):
+        clock = [5.0]
+        def refreshed_file(*args, **kwargs):
+            clock[0] = 5.02
+            return json.dumps(dict(run_id='abc', mode='hold', resume_generation=0,
+                                   received_monotonic=5.01))
+        with patch.object(Path, 'read_text', side_effect=refreshed_file), \
+                patch('motion_recovery.time.monotonic', side_effect=lambda: clock[0]):
+            command, fault = read_control('/unused/control.json', 'abc', 1)
+        self.assertEqual(fault, '')
+        self.assertEqual(command['mode'], 'hold')
 
 
 class FleetTests(unittest.TestCase):
+    @staticmethod
+    def recovered(now, generation=0):
+        return [dict(state='PAUSED', recovery_ready=True, auto_resume_safe=True,
+                     reason=reason, pose_stamp=now, resume_generation_seen=generation)
+                for reason in ('mocap pose stale for 0.591s', 'fleet_pause')]
+
+    def test_gt_auto_resume_requires_stability_and_preserves_phase_time(self):
+        f = FleetState(auto_resume_gt=True)
+        f.started = True; f.mode = 'run'; f.start_epoch = 0; f.last_time = 1
+        self.assertEqual(f.update(self.recovered(2), 2)['mode'], 'hold')
+        phase = f.trajectory_time
+        self.assertEqual(f.update(self.recovered(2.5), 2.5)['mode'], 'hold')
+        result = f.update(self.recovered(3), 3)
+        self.assertEqual(result['mode'], 'run')
+        self.assertTrue(result['auto_resumed'])
+        self.assertEqual(result['resume_generation'], 1)
+        self.assertEqual(result['trajectory_time'], phase)
+        # Stale acknowledgement of the old generation must not trigger another release.
+        self.assertEqual(f.update(self.recovered(3.1), 3.1)['resume_generation'], 1)
+
+    def test_auto_resume_waits_for_every_robot_and_fresh_pose(self):
+        for modification in ({'recovery_ready': False}, {'pose_stamp': 0},
+                             {'pose_stamp': float('nan')}, {'state': 'RUNNING'},
+                             {'resume_generation_seen': 9}):
+            f = FleetState(auto_resume_gt=True); f.started = True
+            for now in (1, 2, 3):
+                statuses = self.recovered(now)
+                statuses[1].update(modification)
+                self.assertEqual(f.update(statuses, now)['mode'], 'hold')
+
+    def test_auto_resume_latches_non_gt_fault_until_explicit_release(self):
+        for external in ('predicted_close_approach: agv1 agv2',
+                         'separation_pose_jump: agv1', 'separation_frame_mismatch'):
+            f = FleetState(auto_resume_gt=True); f.started = True
+            f.update(self.recovered(1), 1, external_fault=external)
+            for now in (2, 4):
+                self.assertEqual(f.update(self.recovered(now), now)['mode'], 'hold')
+            self.assertEqual(f.update(self.recovered(5), 5, release=True)['mode'], 'run')
+
+    def test_unsafe_or_old_controller_cannot_auto_resume(self):
+        for flag in (False, None):
+            f = FleetState(auto_resume_gt=True); f.started = True
+            bad = self.recovered(1)
+            bad[0]['auto_resume_safe'] = flag
+            f.update(bad, 1)
+            self.assertEqual(f.update(self.recovered(4), 4)['mode'], 'hold')
+
+    def test_reappearing_gt_gap_restarts_clear_window(self):
+        f = FleetState(auto_resume_gt=True); f.started = True
+        f.update(self.recovered(1), 1)
+        f.update(self.recovered(1.9), 1.9, external_fault='separation_pose_stale: agv1')
+        self.assertEqual(f.update(self.recovered(2), 2)['mode'], 'hold')
+        self.assertEqual(f.update(self.recovered(2.9), 2.9)['mode'], 'hold')
+        self.assertEqual(f.update(self.recovered(3), 3)['mode'], 'run')
+
+    def test_gt_auto_resume_is_opt_in_and_abort_stays_latched(self):
+        f = FleetState(); f.started = True
+        f.update(self.recovered(1), 1)
+        self.assertEqual(f.update(self.recovered(3), 3)['mode'], 'hold')
+        f = FleetState(auto_resume_gt=True); f.started = True
+        f.update([dict(state='ABORTED')], 1)
+        self.assertEqual(f.update(self.recovered(3), 3)['mode'], 'abort')
+
     def test_per_robot_speed_override_and_default(self):
         robot = dict(name='agv1', host='agv1.local', pose_topic='/gt/agv1/pose',
                      radius=1, center_x=0, center_y=0, direction='cw', forward_yaw_offset_deg=0)
@@ -203,14 +297,24 @@ class FleetTests(unittest.TestCase):
 
     def test_auto_resume_releases_only_after_all_ready_continuously(self):
         f = FleetState(auto_resume_sec=2); f.started = True; f.mode = 'run'
-        ready = [dict(state='PAUSED', recovery_ready=True), dict(state='PAUSED', recovery_ready=True)]
+        ready = [dict(state='PAUSED', recovery_ready=True, auto_resume_safe=True,
+                      reason='mocap pose stale for 0.6s', pose_stamp=10),
+                 dict(state='PAUSED', recovery_ready=True, auto_resume_safe=True,
+                      reason='fleet_pause', pose_stamp=10)]
         partial = [dict(state='PAUSED', recovery_ready=True), dict(state='PAUSED', recovery_ready=False)]
         self.assertEqual(f.update(ready, 10)['mode'], 'hold')
+        for s in ready: s['pose_stamp'] = 11.5
         self.assertEqual(f.update(ready, 11.5)['mode'], 'hold')
         # A robot dropping out of readiness restarts the timer.
         self.assertEqual(f.update(partial, 11.8)['mode'], 'hold')
+        # Partial status lacks safety evidence and must latch automatic recovery off.
+        self.assertTrue(f.auto_blocked)
+        f = FleetState(auto_resume_sec=2); f.started = True; f.mode = 'run'
+        for s in ready: s['pose_stamp'] = 12
         self.assertEqual(f.update(ready, 12)['mode'], 'hold')
+        for s in ready: s['pose_stamp'] = 13.5
         self.assertEqual(f.update(ready, 13.5)['mode'], 'hold')
+        for s in ready: s['pose_stamp'] = 14.1
         result = f.update(ready, 14.1)
         self.assertEqual((result['mode'], result['resume_generation']), ('run', 1))
         # Default construction keeps the operator-only release.

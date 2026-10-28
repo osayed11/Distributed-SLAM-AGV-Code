@@ -2,12 +2,15 @@
 """Coordinate existing S1 wrappers over persistent SSH, with robot-local leases.
 
 No motion on startup. Every recorder/controller must be ARMED before a common
-release. A fault holds the whole fleet; only an explicit resume can release it.
+release. Faults hold the fleet; optional transient-GT recovery requires all robots
+to report stable reacquisition and the separation guard to be clear.
 """
 
 import argparse
 import concurrent.futures
+from collections import deque
 import getpass
+import itertools
 import json
 import math
 import os
@@ -16,6 +19,7 @@ import queue
 import re
 import shlex
 import signal
+import shutil
 import socket
 import subprocess
 import sys
@@ -25,10 +29,12 @@ import uuid
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / 'scripts/logging'))
-from motion_recovery import atomic_json
+from motion_recovery import atomic_json, is_transient_gt_fault
 
 
 def validate_config(data):
+    if not isinstance(data.get('auto_resume_gt', False), bool):
+        raise ValueError('auto_resume_gt must be a boolean')
     robots = data['robots']
     if not robots or len({r['name'] for r in robots}) != len(robots):
         raise ValueError('Specify a nonempty fleet with unique robot names')
@@ -52,8 +58,17 @@ def validate_config(data):
             raise ValueError(key + ' must be non-negative and finite')
     if data.get('link_abort_sec', 15) < 3:
         raise ValueError('link_abort_sec must allow at least the 3 s worker status timeout')
+    if not isinstance(data.get('max_pauses', 3), int):
+        raise ValueError('max_pauses must be an integer')
     if data['linear'] > 0.2 or data['duration'] > 1800:
         raise ValueError('Qualification runner limited to 0.2 m/s and 1800 s')
+    omega = data.get('phase_omega', 0)
+    separation = data.get('min_separation', 0)
+    for value in (omega, separation):
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or value < 0:
+            raise ValueError('Invalid phase speed or separation')
+    if omega and separation < 0.55:
+        raise ValueError('Coordinated phase mode requires a separation guard of at least 0.55 m')
     for robot in robots:
         if not re.fullmatch(r'agv[0-9]+', robot['name']):
             raise ValueError('Invalid robot name')
@@ -71,6 +86,20 @@ def validate_config(data):
         linear = robot.get('linear', data['linear'])
         if isinstance(linear, bool) or not isinstance(linear, (int, float)) or not math.isfinite(linear) or not 0 < linear <= 0.2:
             raise ValueError('robot linear must be positive, finite and at most 0.2 m/s')
+        delay = robot.get('motion_delay', 0)
+        if isinstance(delay, bool) or not isinstance(delay, (int,float)) or not math.isfinite(delay) or not 0 <= delay < data['duration']:
+            raise ValueError('Invalid motion delay')
+        if omega and not math.isclose(linear, omega * robot['radius'], rel_tol=1e-6):
+            raise ValueError('Coordinated speeds must equal phase_omega * radius')
+    names = {r['name'] for r in robots}
+    topics = {r['pose_topic'] for r in robots}
+    for observer in data.get('observers', []):
+        if not re.fullmatch(r'agv[0-9]+', observer['name']) or observer['name'] in names:
+            raise ValueError('Observer names must be valid and distinct from moving robots')
+        if not re.fullmatch(r'/[A-Za-z0-9_/]+', observer['pose_topic']) or observer['pose_topic'] in topics:
+            raise ValueError('Observer pose topics must be valid and unique')
+        names.add(observer['name'])
+        topics.add(observer['pose_topic'])
     return data
 
 
@@ -84,6 +113,8 @@ def run_environment(config, robot, directory):
                 S1_RADIUS=str(robot['radius']), S1_CENTER_X=str(robot['center_x']),
                 S1_CENTER_Y=str(robot['center_y']), S1_DIRECTION=robot['direction'],
                 S1_FORWARD_YAW_OFFSET_DEG=str(robot['forward_yaw_offset_deg']),
+                S1_PHASE_OMEGA=str(config.get('phase_omega', 0)),
+                S1_MOTION_DELAY=str(robot.get('motion_delay', 0)),
                 S1_MAX_RADIUS_ERROR=str(config.get('max_radius_error', 0.20)),
                 S1_RECOVERY_TIMEOUT=str(config.get('recovery_timeout', 30)),
                 S1_RECOVERY_STABLE_SEC=str(config.get('recovery_stable_sec', 1.0)),
@@ -121,7 +152,10 @@ def worker():
     # Remove inherited S1 overrides: the manifest is the complete run configuration.
     env = {k:v for k,v in os.environ.items() if not k.startswith(('S1_', 'MOCAP_', 'CMD_TOPIC'))}
     env.update(environment)
-    log = (evidence/'session.log').open('w')
+    # Keep controller stdout off the recording SD card until motion has stopped.
+    runtime_log = directory/'session.log'
+    log = runtime_log.open('w')
+    atomic_json(evidence/'runtime_log.json', dict(path=str(runtime_log)))
     process = subprocess.Popen(['bash', str(ROOT/'scripts/scenarios/run_s1_mocap_pilot_robot.sh'),
                                 robot['name'], 'fleet_' + run_id], cwd=ROOT, env=env,
                                stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
@@ -160,7 +194,7 @@ def worker():
                     if message['mode'] not in ('hold', 'run', 'abort'):
                         raise ValueError('Invalid mode')
                     control.update(mode=message['mode'], resume_generation=int(message['resume_generation']),
-                                   received_monotonic=now)
+                                   received_monotonic=now, trajectory_time=message.get('trajectory_time'))
                     atomic_json(directory/'control.json', control)
                     if message['mode'] == 'abort':
                         abort()
@@ -179,7 +213,7 @@ def worker():
             if abort_started is not None and now - abort_started > 160:
                 # Last resort only after wrapper's recorder-finalisation deadlines.
                 os.killpg(process.pid, signal.SIGKILL)
-            if now - last_report >= 0.25:
+            if now - last_report >= 0.1:
                 status = dict(state='PREPARING')
                 try:
                     status = json.loads((directory/'motion.json').read_text())
@@ -198,7 +232,7 @@ def worker():
         verdict, detail = 'NOT_RUN', 'no recorded artifacts'
         if (evidence/'artifacts.json').exists():
             try:
-                verdict = 'PASS' if validate_worker(run_id, log_path=evidence/'validation.log') == 0 \
+                verdict = 'TIMING_PASS' if validate_worker(run_id, log_path=evidence/'validation.log', timing_only=True) == 0 \
                     else 'REJECTED_OR_INTERRUPTED'
                 detail = str(evidence/'validation.log')
             except Exception as exc:  # validation must never mask the run's own outcome
@@ -217,30 +251,188 @@ def worker():
                 os.killpg(process.pid, signal.SIGKILL)
                 process.wait()
         log.close()
+        shutil.copyfile(runtime_log, evidence/'session.log')
         for filename in ('motion.json',):
             if (directory/filename).exists():
                 (evidence/filename).write_bytes((directory/filename).read_bytes())
 
 
+class LocalPoseSource:
+    """Read laptop-local ROS poses without a robot/SSH round trip."""
+    def __init__(self, robots, observers=()):
+        import rclpy
+        from rclpy.context import Context
+        from rclpy.executors import SingleThreadedExecutor
+        from geometry_msgs.msg import PoseStamped
+        from rclpy.qos import qos_profile_sensor_data
+        self.ros = rclpy
+        self.context = Context()
+        rclpy.init(context=self.context)
+        self.node = rclpy.create_node('orkar_fleet_separation', context=self.context)
+        self.executor = SingleThreadedExecutor(context=self.context)
+        self.executor.add_node(self.node)
+        self.lock = threading.Lock()
+        self.poses = {}
+        self.observers = [r['name'] for r in observers]
+        self.stop = threading.Event()
+        self.subscriptions = [self.node.create_subscription(
+            PoseStamped, r['pose_topic'],
+            lambda msg, name=r['name']: self.receive(name, msg), qos_profile_sensor_data)
+            for r in list(robots) + list(observers)]
+        self.thread = threading.Thread(target=self.spin, daemon=True)
+        self.thread.start()
+
+    def receive(self, name, msg):
+        if not msg.header.frame_id:
+            return
+        pose = dict(x=msg.pose.position.x, y=msg.pose.position.y,
+                    pose_stamp=msg.header.stamp.sec + msg.header.stamp.nanosec * 1e-9,
+                    pose_frame=msg.header.frame_id)
+        with self.lock:
+            self.poses[name] = pose
+
+    def spin(self):
+        while not self.stop.is_set() and self.context.ok():
+            self.executor.spin_once(timeout_sec=0.05)
+
+    def statuses(self, statuses):
+        with self.lock:
+            poses = dict(self.poses) if self.thread.is_alive() else {}
+        return local_guard_statuses(statuses, poses, self.observers)
+
+    def close(self):
+        self.stop.set()
+        self.thread.join(timeout=2)
+        self.executor.shutdown(timeout_sec=2)
+        self.node.destroy_node()
+        self.context.shutdown()
+
+
+def local_guard_statuses(statuses, poses, observers=()):
+    # Missing local data must fail closed, never fall back to an old SSH pose.
+    states = dict(statuses)
+    states.update({name: dict(state='OBSERVED') for name in observers})
+    return {name: dict(state=status['state'], **poses.get(name, {}))
+            for name, status in states.items()}
+
+
+class SeparationGuard:
+    """Conservative constant-velocity lookahead; holds, never routes around robots."""
+    def __init__(self, minimum, horizon=1.5):
+        self.minimum = minimum
+        self.horizon = horizon
+        self.previous = {}
+        self.velocity = {}
+        self.history = {}
+
+    def check(self, statuses, now):
+        if not self.minimum:
+            return ''
+        positions = {}
+        frames = set()
+        for name, status in statuses.items():
+            if status['state'] in ('PREPARING', 'FINISHED', 'ABORTED'):
+                continue
+            try:
+                x,y,stamp = (float(status[k]) for k in ('x','y','pose_stamp'))
+                if not all(math.isfinite(v) for v in (x,y,stamp)) or not -0.1 <= now-stamp <= 0.5:
+                    return 'separation_pose_stale: ' + name
+            except (KeyError,TypeError,ValueError):
+                return 'separation_pose_missing: ' + name
+            previous = self.previous.get(name)
+            if status.get('pose_frame'):
+                frames.add(status['pose_frame'])
+                if len(frames) > 1:
+                    return 'separation_frame_mismatch'
+            if previous and stamp > previous[2]:
+                dt = stamp-previous[2]
+                if math.hypot(x-previous[0], y-previous[1]) > 0.03 + dt:
+                    return 'separation_pose_jump: ' + name
+            elif previous and stamp < previous[2]:
+                return 'separation_pose_clock_reversed: ' + name
+            self.previous[name] = (x,y,stamp)
+            history = self.history.setdefault(name, deque())
+            if not history or stamp > history[-1][2]:
+                history.append((x,y,stamp))
+                while len(history) > 2 and history[1][2] <= stamp - 0.25:
+                    history.popleft()
+                span = stamp - history[0][2]
+                # Avoid turning millimetre-scale marker jitter into high velocity.
+                if span >= 0.2:
+                    self.velocity[name] = ((x-history[0][0])/span, (y-history[0][1])/span)
+            vx,vy = self.velocity.get(name,(0,0))
+            if math.hypot(vx,vy)>1:
+                return 'separation_pose_jump: ' + name
+            age = max(0,now-stamp)
+            positions[name] = (x+vx*age,y+vy*age,vx,vy)
+        for a,b in itertools.combinations(positions,2):
+            p,q = positions[a],positions[b]
+            dx,dy,vx,vy = (p[k]-q[k] for k in range(4))
+            speed2 = vx*vx+vy*vy
+            t = max(0,min(self.horizon,-(dx*vx+dy*vy)/speed2)) if speed2 else 0
+            if math.hypot(dx+vx*t,dy+vy*t)<self.minimum:
+                return 'predicted_close_approach: '+a+' '+b
+        return ''
+
+
 class FleetState:
-    """Latch faults: recovered messages alone cannot silently restart the fleet."""
-    def __init__(self, auto_resume_sec=0.0):
+    """Coordinate manual recovery, or explicitly enabled transient-GT recovery."""
+    def __init__(self, auto_resume_sec=0.0, auto_resume_gt=False):
         self.mode = 'hold'
         self.started = False
         self.generation = 0
         self.start_epoch = None
-        # > 0: release automatically once every robot has been recovery-ready
-        # for this long (a new fault resets it). 0: operator release only.
-        self.auto_resume_sec = float(auto_resume_sec)
-        self.all_ready_since = None
+        self.trajectory_time = 0.0
+        self.last_time = None
+        self.auto_resume_sec = float(auto_resume_sec) if auto_resume_sec > 0 else 1.0
+        self.auto_resume_gt = auto_resume_gt or auto_resume_sec > 0
+        self.auto_blocked = False
+        self.auto_gt_seen = False
+        self.auto_ready_since = None
 
-    def update(self, statuses, now, release=False):
+    def automatic_release(self, statuses, now, external_fault):
+        if not self.auto_resume_gt or not self.started or self.mode == 'abort':
+            return False
+        if external_fault:
+            if external_fault.startswith('separation_pose_stale: '):
+                self.auto_gt_seen = True
+            else:
+                self.auto_blocked = True
+        for status in statuses:
+            if (status['state'] == 'PAUSED' and
+                    status.get('resume_generation_seen', 0) >= self.generation):
+                if status.get('auto_resume_safe') is not True:
+                    self.auto_blocked = True
+                if is_transient_gt_fault(status.get('reason', '')):
+                    self.auto_gt_seen = True
+        ready = (bool(statuses) and self.auto_gt_seen and not self.auto_blocked and not external_fault and
+                 all(s['state'] == 'PAUSED' and s.get('recovery_ready') is True and
+                     s.get('resume_generation_seen', 0) == self.generation and
+                     isinstance(s.get('pose_stamp'), (int, float)) and
+                     math.isfinite(s['pose_stamp']) and -0.1 <= now-s['pose_stamp'] <= 0.5
+                     for s in statuses))
+        if not ready:
+            self.auto_ready_since = None
+            return False
+        if self.auto_ready_since is None:
+            self.auto_ready_since = now
+        # Robot-local stable-pose checks are followed by a fleet-wide clear window.
+        return now - self.auto_ready_since >= self.auto_resume_sec
+
+    def update(self, statuses, now, release=False, external_fault=''):
+        auto_release = self.automatic_release(statuses, now, external_fault)
+        release = release or auto_release
+        if self.last_time is not None and self.start_epoch is not None and self.started and self.mode == 'run':
+            self.trajectory_time += max(0.0, now - max(self.last_time, self.start_epoch))
+        self.last_time = now
         states = [s['state'] for s in statuses]
         if any(s == 'ABORTED' or (s == 'FINISHED' and x.get('exit_code', 1) != 0)
                for s, x in zip(states, statuses)):
             self.mode = 'abort'
         elif self.mode != 'abort':
-            if not self.started and all(s == 'ARMED' for s in states):
+            if external_fault:
+                self.mode = 'hold'
+            elif not self.started and all(s == 'ARMED' for s in states):
                 self.started = True
                 self.start_epoch = now + 3
                 self.mode = 'run'
@@ -249,19 +441,14 @@ class FleetState:
                 if self.mode != 'hold':
                     self.mode = 'hold'
                 all_ready = all(x['state'] == 'PAUSED' and x.get('recovery_ready') for x in statuses)
-                if not all_ready:
-                    self.all_ready_since = None
-                elif self.all_ready_since is None:
-                    self.all_ready_since = now
-                if self.auto_resume_sec > 0 and all_ready and now - self.all_ready_since >= self.auto_resume_sec:
-                    release = True
                 if release and all_ready:
                     self.generation += 1
                     self.mode = 'run'
-                    self.all_ready_since = None
-            else:
-                self.all_ready_since = None
-        return dict(mode=self.mode, resume_generation=self.generation, start_epoch=self.start_epoch)
+                    self.auto_blocked = False
+                    self.auto_gt_seen = False
+                    self.auto_ready_since = None
+        return dict(mode=self.mode, resume_generation=self.generation, start_epoch=self.start_epoch,
+                    trajectory_time=self.trajectory_time, auto_resumed=auto_release and self.mode == 'run')
 
 
 def ssh_command(args, robot, remote_args):
@@ -271,7 +458,7 @@ def ssh_command(args, robot, remote_args):
                      ' '.join(shlex.quote(v) for v in remote_args)]
 
 
-def validate_worker(run_id, log_path=None):
+def validate_worker(run_id, log_path=None, timing_only=False):
     """Audit a finished run's bags and motion summary.
 
     Called automatically by the worker once the wrapper exits, and available as
@@ -300,23 +487,25 @@ def validate_worker(run_id, log_path=None):
                '--strict', '--require-gt', '--require-imu', '--require-resilient-storage',
                '--window-start-epoch', str(summary['start_epoch']), '--window-duration', str(summary['elapsed_sec']),
                '--min-duration', str(manifest['config']['duration']), '--json-out', str(directory/'bag_validation.json')]
+    if timing_only:
+        command.append('--timing-only')
     log = open(log_path, 'w') if log_path else None
     try:
         output = dict(stdout=log, stderr=subprocess.STDOUT) if log else {}
-        bag_rc = subprocess.run(command, env=env, **output).returncode
+        bag_rc = subprocess.run(command, env=env, timeout=8 if timing_only else None, **output).returncode
         motion_rc = subprocess.run([sys.executable, str(ROOT/'scripts/scenarios/validate_s1_circle_summary.py'),
                                     artifacts['summary'], '--max-radius-error',
                                     str(manifest['config'].get('max_radius_error', 0.20)),
-                                    '--max-pose-age', '0.5'], **output).returncode
+                                    '--max-pose-age', '0.5'], timeout=5 if timing_only else None, **output).returncode
     finally:
         if log:
             log.close()
-    verdict = 'PASS' if bag_rc == 0 and motion_rc == 0 else 'REJECTED_OR_INTERRUPTED'
+    verdict = ('TIMING_PASS' if timing_only else 'PASS') if bag_rc == 0 and motion_rc == 0 else 'REJECTED_OR_INTERRUPTED'
     atomic_json(directory/'validation.json', dict(verdict=verdict, bag_exit_code=bag_rc, motion_exit_code=motion_rc,
                                                   log=str(log_path) if log_path else None))
     if not log_path:
         print(verdict, directory)
-    return 0 if verdict == 'PASS' else 1
+    return 0 if bag_rc == 0 and motion_rc == 0 else 1
 
 
 def main():
@@ -330,6 +519,8 @@ def main():
     parser.add_argument('--user', default='ubuntu')
     parser.add_argument('--password', action='store_true', help='Prompt once; requires sshpass, never saved in config')
     parser.add_argument('--yes', action='store_true', help='Operator confirms all paths are clear for motion')
+    parser.add_argument('--local-poses', action='store_true',
+                        help='Use laptop-local ROS poses for the separation guard (requires ROS environment)')
     parser.add_argument('--output', type=Path, default=Path('data/fleet_sessions'))
     args = parser.parse_args()
     if args.worker:
@@ -339,6 +530,8 @@ def main():
     if args.config is None:
         parser.error('--config is required')
     config = validate_config(json.loads(args.config.read_text()))
+    if args.action == 'run' and config.get('observers') and not args.local_poses:
+        parser.error('Observed stationary robots require --local-poses')
     if not re.fullmatch(r'[a-z_][a-z0-9_-]*', args.user) or not args.repo.startswith('/'):
         parser.error('Specify a valid SSH username and absolute remote repository path')
     if args.action == 'run' and not args.yes:
@@ -359,14 +552,17 @@ def main():
     run_id = uuid.uuid4().hex
     output = args.output/run_id
     output.mkdir(parents=True)
-    atomic_json(output/'manifest.json', dict(run_id=run_id, config=config, created_epoch=time.time()))
+    atomic_json(output/'manifest.json', dict(run_id=run_id, config=config, created_epoch=time.time(),
+                separation_pose_source='local_ros' if args.local_poses else 'robot_status'))
     children = {}
     statuses = {r['name']: dict(state='PREPARING') for r in config['robots']}
     received = {r['name']: time.monotonic() for r in config['robots']}
     messages = queue.Queue()
     keys = queue.Queue()
-    fleet = FleetState(config.get('auto_resume_sec', 0))
+    fleet = FleetState(config.get('auto_resume_sec', 0), auto_resume_gt=config.get('auto_resume_gt', False))
     link_abort_sec = float(config.get('link_abort_sec', 15))
+    separation_guard = SeparationGuard(config.get('min_separation',0))
+    pose_source = LocalPoseSource(config['robots'], config.get('observers', [])) if args.local_poses else None
     started = time.monotonic()
     def read_worker(name, proc):
         for line in proc.stdout:
@@ -379,8 +575,9 @@ def main():
         for line in sys.stdin:
             keys.put(line.strip().lower())
     threading.Thread(target=read_keys, daemon=True).start()
-    print('r + Enter: resume after all robots are recovery-ready%s. q + Enter / Ctrl+C: stop.'
-          % (' (automatic after %.0f s)' % fleet.auto_resume_sec if fleet.auto_resume_sec > 0 else ''))
+    print('r + Enter: resume after all robots are recovery-ready. q + Enter / Ctrl+C: stop.')
+    if fleet.auto_resume_gt:
+        print('Transient GT auto-resume enabled: all robots stable plus %.1fs clear separation.' % fleet.auto_resume_sec)
     last_states = {}
     try:
         for robot in config['robots']:
@@ -425,7 +622,19 @@ def main():
                         status = dict(status, state='PAUSED', reason='worker_link_stalled',
                                       recovery_ready=False, resume_generation_seen=fleet.generation)
                     effective.append(status)
-                command = fleet.update(effective, time.time(), release)
+                guard_statuses = pose_source.statuses(statuses) if pose_source else statuses
+                guard_fault = separation_guard.check(guard_statuses, time.time())
+                command = fleet.update(effective, time.time(), release, guard_fault)
+                if command['auto_resumed']:
+                    print('Fleet automatically resuming after stable GT recovery.', flush=True)
+                    events.write(json.dumps(dict(epoch=time.time(), state='AUTO_RESUME',
+                        resume_generation=fleet.generation, reason='stable_gt_recovery'))+'\n')
+                    events.flush()
+                if guard_fault and guard_fault != getattr(separation_guard,'last_fault',''):
+                    print('Fleet hold: '+guard_fault,flush=True)
+                    events.write(json.dumps(dict(epoch=time.time(),state='FLEET_HOLD',reason=guard_fault))+'\n')
+                    events.flush()
+                separation_guard.last_fault = guard_fault
                 command['run_id'] = run_id
                 for name, proc in children.items():
                     if proc.poll() is None:
@@ -446,7 +655,7 @@ def main():
                 if fleet.mode == 'abort':
                     print('Fleet abort requested; waiting for safe recorder finalisation.', flush=True)
                     break
-                time.sleep(0.25)
+                time.sleep(0.05)
     except KeyboardInterrupt:
         fleet.mode = 'abort'
     finally:
@@ -468,6 +677,8 @@ def main():
                 proc.wait(timeout=5)
         verdicts = {name: s.get('validation', 'PENDING') for name, s in statuses.items()}
         atomic_json(output/'result.json', dict(states=statuses, mode=fleet.mode, validation=verdicts))
+        if pose_source:
+            pose_source.close()
     print('Evidence:', output)
     for name, s in statuses.items():
         print('  %-8s %-22s %s' % (name, verdicts.get(name, 'PENDING'), s.get('validation_detail', '')), flush=True)

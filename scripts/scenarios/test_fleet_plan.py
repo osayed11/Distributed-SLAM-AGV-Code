@@ -26,6 +26,20 @@ def on_ring(cx, cy, r, bearing_deg, direction, offset_deg, heading_err_deg=0.0):
 
 
 class PlanTests(unittest.TestCase):
+    def test_replanning_radius_updates_coordinated_speed(self):
+        base = dict(BASE, phase_omega=0.1, robots=[dict(BASE['robots'][0], linear=0.08)])
+        poses = {'agv105': on_ring(0, 0, 1.5, 0, 'cw', 0)}
+        config, _, errors = plan(base, poses, 'cw', center=(0, 0))
+        self.assertEqual(errors, [])
+        self.assertAlmostEqual(config['robots'][0]['linear'], 0.15)
+
+    def test_multi_center_layout_is_not_silently_collapsed(self):
+        base = dict(BASE, robots=[dict(BASE['robots'][0], center_x=0, center_y=0),
+                                 dict(BASE['robots'][1], center_x=3, center_y=0)])
+        config, _, errors = plan(base, {}, 'cw')
+        self.assertIsNone(config)
+        self.assertIn('one shared centre', errors[0])
+
     def test_lined_up_fleet_on_two_rings_plans_cleanly(self):
         cx, cy = -0.655, 0.002
         poses = {'agv105': on_ring(cx, cy, 1.0, -90, 'cw', 0), 'agv106': on_ring(cx, cy, 1.0, 90, 'cw', -7),

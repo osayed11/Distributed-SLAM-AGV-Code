@@ -197,7 +197,13 @@ class NatNetPosePublisher(Node):
             old_id = old_id_by_name.get(target.name)
             new_id = new_id_by_name.get(target.name)
             if new_id is None and old_id is not None:
-                merged[old_id] = target.name  # keep publishing through a short response
+                if old_id not in received:
+                    merged[old_id] = target.name  # keep publishing through a short response
+                else:
+                    self.get_logger().warning(
+                        "Rigid body '%s' is absent and id %d now belongs to '%s'; dropping stale mapping"
+                        % (target.name, old_id, received[old_id])
+                    )
             elif old_id is not None and new_id is not None and old_id != new_id:
                 self.get_logger().warning(
                     "Rigid body '%s' changed id %d -> %d (re-created in Motive); following the new asset"

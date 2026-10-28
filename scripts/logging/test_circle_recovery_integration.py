@@ -7,12 +7,15 @@ import json
 import math
 from pathlib import Path
 import tempfile
+import sys
 from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
 import drive_mocap_circle_ros2 as circle
 from motion_recovery import atomic_json
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'scenarios'))
+from fleet_session import FleetState
 
 
 class Clock:
@@ -29,9 +32,17 @@ class Twist:
 
 
 class FakeNode:
-    def __init__(self, clock, outage=None, control=None, resume_at=None):
+    def __init__(self, clock, outage=None, control=None, resume_at=None, shared_clock=False,
+                 status=None, auto_recovery=False):
         self.clock, self.outage, self.control, self.resume_at = clock, outage, control, resume_at
         self.pose_fault = ''
+        self.shared_clock = shared_clock
+        self.status = status
+        self.fleet = FleetState(auto_resume_gt=True) if auto_recovery else None
+        if self.fleet:
+            self.fleet.started = True
+            self.fleet.mode = 'run'
+            self.fleet.start_epoch = clock.time()
         self.pose_samples = 0
         self.commands = []
         self.pose = None
@@ -44,8 +55,13 @@ class FakeNode:
     def tick(self):
         t = self.clock.now
         if self.control:
-            atomic_json(self.control, dict(run_id='test', mode='run', received_monotonic=t,
-                                          resume_generation=int(self.resume_at is not None and t >= self.resume_at)))
+            command = dict(run_id='test', mode='run', received_monotonic=t,
+                           resume_generation=int(self.resume_at is not None and t >= self.resume_at))
+            if self.fleet:
+                status = json.loads(self.status.read_text()) if self.status.exists() else dict(state='RUNNING')
+                command.update(self.fleet.update([status], self.clock.time()))
+            if self.shared_clock: command['trajectory_time'] = max(0,t-.5)
+            atomic_json(self.control, command)
         if self.outage and self.outage[0] <= t < self.outage[1]:
             return
         # Fixed pose is sufficient to check permission/stop timing, not vehicle dynamics.
@@ -63,20 +79,31 @@ class FakeNode:
 
 
 class DriveLoopTests(unittest.TestCase):
-    def run_drive(self, outage=None, resume_at=None):
+    def test_stop_handler_never_reenters_logging(self):
+        circle.stop_requested = False
+        with patch('builtins.print', side_effect=RuntimeError('reentrant stdout')) as output:
+            circle.request_stop(15)
+        output.assert_not_called()
+        self.assertTrue(circle.stop_requested)
+        circle.stop_requested = False
+
+    def run_drive(self, outage=None, resume_at=None, phase_options=(), shared_clock=False, auto_recovery=False):
         clock = Clock()
         with tempfile.TemporaryDirectory() as directory:
             control = Path(directory)/'control.json'
+            status = Path(directory)/'status.json'
             args = circle.normalise_args(circle.parse_args([
                 '--pose-topic', '/gt/test', '--cmd-topic', '/test/cmd_vel', '--radius', '1',
                 '--center-x', '0', '--center-y', '0', '--clockwise', '--duration', '2',
                 '--stuck-timeout', '100', '--pose-timeout', '0.2', '--recovery-timeout', '3',
                 '--recovery-stable-sec', '0.3', '--control-file', str(control), '--run-id', 'test',
-                '--summary-json', str(Path(directory)/'summary.json'), '--yes']))
-            node = FakeNode(clock, outage, control, resume_at)
+                '--status-json', str(status),
+                '--summary-json', str(Path(directory)/'summary.json'), '--yes', *phase_options]))
+            node = FakeNode(clock, outage, control, resume_at, shared_clock, status, auto_recovery)
             ros = SimpleNamespace(ok=lambda: clock.now < 20,
                                   spin_once=lambda node, timeout_sec=0: (clock.sleep(timeout_sec), node.tick()))
             with patch.object(circle, 'time', clock), patch.object(circle, 'rclpy', ros), \
+                 patch('motion_recovery.time', clock), \
                  patch.object(circle, 'Twist', Twist), contextlib.redirect_stdout(io.StringIO()):
                 circle.stop_requested = False
                 summary = circle.drive(node, args)
@@ -88,6 +115,18 @@ class DriveLoopTests(unittest.TestCase):
         self.assertTrue(summary.reached_duration)
         self.assertFalse(saved['interrupted'])
         self.assertEqual(commands[-1][1:], (0, 0))
+
+    def test_phase_mode_missing_shared_clock_never_moves(self):
+        summary, commands, saved = self.run_drive(phase_options=('--phase-omega','.1'))
+        self.assertFalse(summary.reached_duration)
+        self.assertTrue(all(v==0 and w==0 for _,v,w in commands))
+
+    def test_phase_start_delay_keeps_both_commands_zero(self):
+        summary, commands, saved = self.run_drive(
+            phase_options=('--phase-omega','.1','--motion-delay','1'),shared_clock=True)
+        self.assertTrue(summary.reached_duration)
+        self.assertTrue(all(v==0 and w==0 for t,v,w in commands if t<1.5))
+        self.assertTrue(any(v>0 for _,v,_ in commands))
 
     def test_dropout_stops_then_explicit_resume_preserves_active_duration(self):
         summary, commands, saved = self.run_drive(outage=(1, 1.6), resume_at=2.2)
@@ -104,6 +143,16 @@ class DriveLoopTests(unittest.TestCase):
         self.assertFalse(summary.reached_duration)
         self.assertIn('recovery_budget_exhausted', summary.abort_reason)
         self.assertTrue(all(v == 0 and w == 0 for t,v,w in commands if t > 1.25))
+
+    def test_actual_drive_loop_auto_recovers_gt_and_finishes_active_duration(self):
+        summary, commands, saved = self.run_drive(outage=(1, 1.6), auto_recovery=True)
+        self.assertTrue(summary.reached_duration)
+        self.assertEqual(summary.pause_count, 1)
+        self.assertTrue(saved['interrupted'])
+        self.assertGreaterEqual(summary.active_sec, 2)
+        self.assertTrue(all(v == 0 and w == 0 for t,v,w in commands if 1.25 < t < 2.8))
+        self.assertTrue(any(v > 0 for t,v,w in commands if t > 3))
+        self.assertEqual(commands[-1][1:], (0, 0))
 
     def test_prolonged_dropout_aborts_stopped(self):
         summary, commands, _ = self.run_drive(outage=(1, 100))

@@ -383,16 +383,16 @@ def _mcap_log_times_from_indexes(stream, summary) -> Dict[int, List[int]]:
             (index_channel,) = struct.unpack_from("<H", data, 0)
             (records_length,) = struct.unpack_from("<I", data, 2)
             count = records_length // 16
-            if index_channel != channel_id or 6 + records_length > len(data):
+            if index_channel != channel_id or records_length % 16 or 6 + records_length != len(data):
                 raise ValueError(f"inconsistent message index at offset {offset}")
             log_times = struct.unpack_from("<" + "QQ" * count, data, 6)[0::2]
             times_by_channel.setdefault(channel_id, []).extend(log_times)
     return times_by_channel
 
 
-def inspect_mcap_bag(mcap_paths: Sequence[Path]) -> Dict[str, TopicStats]:
+def inspect_mcap_bag(mcap_paths: Sequence[Path], verify_payloads: bool = False) -> Dict[str, TopicStats]:
     try:
-        from mcap.reader import make_reader  # type: ignore
+        from mcap.reader import NonSeekingReader, make_reader  # type: ignore
     except Exception as exc:
         raise RuntimeError(f"MCAP parser unavailable: {exc}") from exc
 
@@ -402,7 +402,8 @@ def inspect_mcap_bag(mcap_paths: Sequence[Path]) -> Dict[str, TopicStats]:
         with mcap_path.open("rb") as stream:
             reader = make_reader(stream)
             summary = reader.get_summary()
-            if summary is not None and summary.chunk_indexes and summary.channels:
+            if (not verify_payloads and summary is not None and summary.chunk_indexes and summary.channels
+                    and all(chunk.message_index_offsets for chunk in summary.chunk_indexes)):
                 # Fast path: finalised bag, timestamps straight from the indexes.
                 stream.seek(0)
                 for channel_id, log_times in _mcap_log_times_from_indexes(stream, summary).items():
@@ -416,8 +417,8 @@ def inspect_mcap_bag(mcap_paths: Sequence[Path]) -> Dict[str, TopicStats]:
             # No summary (recorder killed before finalisation) or an unchunked
             # file: fall back to the full sequential read.
             stream.seek(0)
-            reader = make_reader(stream)
-            for schema, channel, message in reader.iter_messages():
+            reader = NonSeekingReader(stream, validate_crcs=verify_payloads)
+            for schema, channel, message in reader.iter_messages(log_time_order=False):
                 topic = channel.topic
                 msg_type = getattr(schema, "name", "") if schema else ""
                 type_by_topic.setdefault(topic, msg_type)
@@ -1003,6 +1004,8 @@ def main() -> int:
         help="rosbag2 directories or storage files belonging to the same run",
     )
     parser.add_argument("--strict", action="store_true", help="return WARN as non-zero")
+    parser.add_argument("--timing-only", action="store_true",
+                        help="fast MCAP index timing check; does not verify compressed payload integrity")
     parser.add_argument("--require-gt", action="store_true", default=env_bool("REQUIRE_GT"))
     parser.add_argument("--require-imu", action="store_true", default=env_bool("REQUIRE_IMU"))
     parser.add_argument(
@@ -1115,9 +1118,12 @@ def main() -> int:
 
     else:
         try:
-            stats = inspect_mcap_bag(mcap_files)
+            stats = inspect_mcap_bag(mcap_files, verify_payloads=not args.timing_only)
             for mcap in mcap_files:
-                record(results, PASS, "bag_integrity", f"readable MCAP: {mcap.name}")
+                if args.timing_only:
+                    record(results, PASS, "mcap_timing_read", f"MCAP timing readable; payload integrity not checked: {mcap.name}")
+                else:
+                    record(results, PASS, "bag_integrity", f"readable MCAP payloads and available CRCs: {mcap.name}")
         except Exception as exc:
             record(results, FAIL, "bag_integrity", str(exc))
             stats = {}
@@ -1252,6 +1258,7 @@ def main() -> int:
         "full_bag_duration_sec": full_bag_duration_sec,
         "evaluation_window": evaluation_window,
         "verdict": verdict,
+        "validation_scope": "timing_only" if args.timing_only else "payload_read_and_timing",
         "counts": {"pass": n_pass, "warn": n_warn, "fail": n_fail},
         "require_resilient_storage": args.require_resilient_storage,
         "gap_policy": {

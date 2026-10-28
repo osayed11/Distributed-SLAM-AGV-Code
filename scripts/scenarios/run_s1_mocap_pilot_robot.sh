@@ -571,7 +571,7 @@ start_runtime_guard() {
         --require-imu \
         --warn-only \
         "${guard_args[@]}" \
-        >"${RUNTIME_GUARD_LOG}" 2>&1 < /dev/null &
+        >"${RUNTIME_GUARD_LOG}" 2>&1 < /dev/null 9>&- &
     RUNTIME_GUARD_PID=$!
     sleep 0.3
     if ! kill -0 "${RUNTIME_GUARD_PID}" 2>/dev/null && ! runtime_guard_detected; then
@@ -765,10 +765,7 @@ else
 fi
 start_runtime_guard
 
-if ! timeout 8 ros2 param get /myagv_odometry_node command_timeout | grep -q 'Double value is:'; then
-    echo "ERROR: base watchdog unavailable; rebuild myagv_odometry before motion." >&2
-    exit 1
-fi
+# The concurrent live gate verifies the watchdog through its parameter service.
 if [ "$(df -Pk "${HOME}/agv_data" | awk 'NR==2 {print $4}')" -lt "${S1_MIN_FREE_KIB:-5242880}" ]; then
     echo "ERROR: insufficient recording space; no bags deleted automatically." >&2
     exit 1
@@ -832,6 +829,9 @@ CIRCLE_ARGS=(
 
 if bool_true "${S1_BEST_EFFORT_POSE}"; then
     CIRCLE_ARGS+=(--best-effort-pose)
+fi
+if [ "${S1_PHASE_OMEGA:-0}" != "0" ]; then
+    CIRCLE_ARGS+=(--phase-omega "${S1_PHASE_OMEGA}" --motion-delay "${S1_MOTION_DELAY:-0}")
 fi
 if bool_true "${S1_DRY_RUN}"; then
     CIRCLE_ARGS+=(--dry-run)

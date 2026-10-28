@@ -3,6 +3,7 @@
 import json
 import math
 import os
+import time
 from pathlib import Path
 
 
@@ -14,13 +15,14 @@ def atomic_json(path, value):
     os.replace(temporary, path)
 
 
-def read_control(path, run_id, now, timeout):
+def read_control(path, run_id, timeout):
     """Heartbeat timestamps are stamped on the robot, never on the laptop."""
     if not path:
         return {'mode': 'run', 'resume_generation': 0}, ''
     try:
         data = json.loads(Path(path).read_text())
-        age = now - float(data['received_monotonic'])
+        # Read first: the writer may refresh the heartbeat during file access.
+        age = time.monotonic() - float(data['received_monotonic'])
         if data['run_id'] != run_id or not math.isfinite(age) or not 0 <= age < timeout:
             raise ValueError('expired or wrong session')
         if data['mode'] not in ('hold', 'run', 'abort'):
@@ -44,6 +46,7 @@ class MotionRecovery:
         self.pause_started = None
         self.good_since = None
         self.resume_after = 0
+        self.auto_resume_safe = True
 
     def tick(self, now, fault='', permit=True, generation=0):
         if self.state == 'ABORTED':
@@ -55,6 +58,7 @@ class MotionRecovery:
             self.pause_started = now
             self.good_since = None
             self.resume_after = generation
+            self.auto_resume_safe = True
         if self.state == 'PAUSED':
             elapsed = now - self.pause_started
             if (elapsed >= self.timeout or self.pause_count > self.max_pauses or
@@ -63,6 +67,9 @@ class MotionRecovery:
                 self.reason = 'recovery_budget_exhausted: ' + self.reason
                 return self.state
             if fault:
+                # Remember unsafe faults even if a later stale-pose warning masks them.
+                if not is_transient_gt_fault(fault):
+                    self.auto_resume_safe = False
                 self.reason = fault
                 self.good_since = None
                 # A resume sent before a fault cleared must not become a delayed auto-resume.
@@ -83,3 +90,8 @@ class MotionRecovery:
 
     def total_paused(self, now):
         return self.paused_seconds + (0.0 if self.pause_started is None else now - self.pause_started)
+
+
+def is_transient_gt_fault(reason):
+    return (reason.startswith('mocap pose stale for ') or
+            reason == 'pose_source_timestamp_out_of_bounds')

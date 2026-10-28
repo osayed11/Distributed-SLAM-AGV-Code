@@ -95,6 +95,10 @@ def plan(base, poses, direction, rings=None, center=None, snap_to_rings=True):
     """Return (config, report_lines, errors). Pure; poses = {name: (x, y, z, yaw)}."""
     errors, lines = [], []
     robots = {r['name']: r for r in base['robots']}
+    centers = {(r['center_x'], r['center_y']) for r in robots.values()
+               if 'center_x' in r and 'center_y' in r}
+    if len(centers) > 1:
+        return None, lines, ['This planner handles one shared centre; plan each circle group separately.']
     missing = [n for n in robots if n not in poses]
     for n in missing:
         errors.append(f'{n}: no valid MoCap pose (check Motive asset / markers / publisher list)')
@@ -149,6 +153,14 @@ def plan(base, poses, direction, rings=None, center=None, snap_to_rings=True):
     config = dict(base)
     config['robots'] = [dict(robots[p['name']], radius=round(p['radius'], 3), center_x=round(cx, 3),
                              center_y=round(cy, 3), direction=direction) for p in planned]
+    omega = config.get('phase_omega', 0)
+    if not isinstance(omega, (int, float)) or isinstance(omega, bool) or not math.isfinite(omega) or omega < 0:
+        errors.append('phase_omega must be non-negative and finite')
+    elif omega:
+        for robot in config['robots']:
+            robot['linear'] = omega * robot['radius']
+            if not 0 < robot['linear'] <= 0.2:
+                errors.append(f"{robot['name']}: coordinated speed exceeds the 0.2 m/s run limit")
     config['plan'] = dict(center=[round(cx, 3), round(cy, 3)], direction=direction, rings=rings,
                           measured={p['name']: dict(x=round(p['x'], 3), y=round(p['y'], 3),
                                                     radius=round(p['measured_radius'], 3),
