@@ -52,9 +52,48 @@ def rearm_motion_module(node: str, timeout: float = 12.0) -> bool:
 
     Measured on 2026-10-28 (AGV103/106): when the camera stops producing HID
     IMU reports, disabling and re-enabling gyro/accel restores the stream in
-    about 3 s without restarting the node or the service. Returns True if all
-    four parameter writes were accepted.
+    about 3 s without restarting the node or the service. Uses one rclpy
+    SetParameters client (sub-second per call); four sequential `ros2 param
+    set` CLI invocations cost ~15 s on a Pi and left a 21 s gap in the bag.
+    Falls back to the CLI when rclpy is unavailable. Returns True if every
+    parameter write was accepted.
     """
+    try:
+        return _rearm_with_rclpy(node, timeout)
+    except Exception:
+        return _rearm_with_cli(node, timeout)
+
+
+def _rearm_with_rclpy(node: str, timeout: float) -> bool:
+    import rclpy
+    from rcl_interfaces.msg import Parameter, ParameterValue, ParameterType
+    from rcl_interfaces.srv import SetParameters
+
+    def params(value: bool):
+        return [Parameter(name=name, value=ParameterValue(type=ParameterType.PARAMETER_BOOL, bool_value=value))
+                for name in ("enable_gyro", "enable_accel")]
+
+    rclpy.init(args=None)
+    try:
+        client_node = rclpy.create_node("realsense_runtime_guard_rearm")
+        client = client_node.create_client(SetParameters, node.rstrip("/") + "/set_parameters")
+        if not client.wait_for_service(timeout_sec=timeout):
+            raise RuntimeError("set_parameters service unavailable")
+        accepted = True
+        for value in (False, True):
+            future = client.call_async(SetParameters.Request(parameters=params(value)))
+            rclpy.spin_until_future_complete(client_node, future, timeout_sec=timeout)
+            result = future.result()
+            accepted = accepted and result is not None and all(r.successful for r in result.results)
+            if value is False:
+                time.sleep(1.0)
+        client_node.destroy_node()
+        return accepted
+    finally:
+        rclpy.shutdown()
+
+
+def _rearm_with_cli(node: str, timeout: float) -> bool:
     ok = True
     for value in ("false", "true"):
         for name in ("enable_gyro", "enable_accel"):
@@ -191,6 +230,7 @@ def watch(
                     if rearms == 0:
                         capture_evidence(evidence_dir, bringup_log, start_epoch, fault, line)
                     rearms += 1
+                    rearm_started = time.time()
                     accepted = rearm_motion_module(rearm_node)
                     last_rearm = time.time()
                     write_status(status_file, f"REARMED_RUNTIME_GUARD {fault}", [
@@ -201,8 +241,9 @@ def watch(
                     ])
                     events_file.parent.mkdir(parents=True, exist_ok=True)
                     with events_file.open("a", encoding="utf-8") as events:
-                        events.write(json.dumps({"epoch": round(last_rearm, 3), "rearm": rearms,
-                                                 "accepted": accepted, "trigger": line.rstrip()}) + "\n")
+                        events.write(json.dumps({"epoch": round(last_rearm, 3), "rearm": rearms, "accepted": accepted,
+                                                 "rearm_seconds": round(last_rearm - rearm_started, 2),
+                                                 "trigger": line.rstrip()}) + "\n")
                     print(f"REARMED_RUNTIME_GUARD {rearms}/{max_rearms} accepted={accepted}", flush=True)
                     continue
                 fault = f"{fault} (re-arm budget {max_rearms} exhausted)"
