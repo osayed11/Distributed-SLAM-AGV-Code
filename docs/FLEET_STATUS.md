@@ -704,7 +704,7 @@ needed to pick up a re-created asset).
 **Also noted:** Riyaadh's 10-28 `prepare` left agv104's GT bridge pointed at
 `tcp/192.168.50.125:7447`; it is on `.98` for these tests.
 
-## agv108 — circle radius collapse diagnosed 2026-10-28: mecanum wheel mapping
+## agv108 — circle radius collapse 2026-10-28: rear mecanum wheels swapped (FIXED same day)
 
 (agv108 is the former agv110 hardware, `192.168.50.132`, new rigid body
 `orkar_agv108` id 43.) Fleet run `2663083c…` (cw, r=0.8, offset 180) shrank
@@ -729,7 +729,19 @@ the problem; **the asset pivot is at the marker centroid on every robot**
 (checked), so this is not a Motive artefact. agv104, same plate, strafes
 (weakly) without yawing and spins with a ~0.09 m lever.
 
-**Fix is physical:** check agv108's four mecanum wheels form the correct X
+**Fixed the same evening — the operator found agv108's rear wheels swapped
+relative to the other robots and put them right.** Re-measured: strafe ±0.08 now
+slides 2.6/−4.3 cm/s with ≤0.10 rad/s yaw (was 1.2 cm/s + 0.45 rad/s); spin
+±0.60 gives 0.50/−0.83 rad/s with a 0.12–0.15 m lever (was 0.35 rad/s, 0.23–0.31
+m); forward/reverse unchanged. **0.8 m cw circle (offset 180, 0.08 m/s): radius
+0.80–0.83 m for 22 s, error sd 1.8 cm / max 4.8 cm, heading −10° ± 4.7°, zero
+ω sign flips** — the geometry that collapsed to 0.60 m in the fleet run. The
+run then ended on an `implausible_pose_jump` pause (Motive reported the body
+0.44 m away in one frame while the robot was stopped; GT age was fine) and the
+recovery budget expired — a tracking glitch to watch, not a base fault.
+Residual: strafe is weak and left/right asymmetric, as on agv104.
+
+**(Earlier text, kept for the method:)** check agv108's four mecanum wheels form the correct X
 roller pattern and that the rear motor cables are on the right drivers; then
 repeat the spin/strafe test above (a correct base shows strafe without yaw and
 spin without translation). Keep it out of fleet circles until then.
