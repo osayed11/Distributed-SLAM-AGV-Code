@@ -242,3 +242,23 @@ Eight consecutive full recordings, one of them following an automatic re-arm,
 are the repeat evidence the handoff asked for; enabling the re-arm by default
 in the fleet configuration remains a team decision. Not changed: firmware,
 cables, power, profiles, quality criteria.
+
+### Continuous 8-minute recordings (28 October 2026, 20:17–20:38 UTC)
+
+Operator question: can a robot do an 8-minute run without the IMU dying?
+Two 480 s stationary recordings per robot with the guard re-arm active:
+
+| | AGV103 | AGV106 |
+|---|---|---|
+| run A (20:17) | **PASS 44 / FAIL 0**; gyro 199.7 Hz, max gap 0.031 s | stall at 20:22, re-armed (CLI path, ~15 s); bag shows a **21 s gyro / 24 s accel gap** → validator FAIL |
+| run B (20:30) | stall at 20:33, re-armed (service call, 7 s); **16 s gap** → FAIL on gap threshold, coverage otherwise complete | IMU stopped at 20:37:47 and **ten consecutive re-arms (20:37:57–20:39:45, all "accepted", 1.5–2.9 s each) did not revive it**; bag coverage ends 16.9 s before the recorder stopped |
+
+Reading: with the re-arm, a stall no longer ends a run, but it leaves a gap of
+~5 s (librealsense's timeout) + re-arm time; tonight's gaps were 16–24 s. The
+guard now (a) detects gyro/accel silence directly through a lightweight
+subscription (1 s) instead of waiting for the log line and (b) re-arms through
+one in-process service call (1.5–3 s), so the expected gap is ~3–5 s. AGV106's
+camera additionally enters a state the toggle cannot recover (also seen in the
+19:41–19:45 re-arm loop: 2 of 10 re-arms read 0 reports/s); that unit should be
+treated as a camera to replace or exclude from IMU-critical runs, not as a
+software problem. AGV103 ran 8 minutes clean once and lost 16 s once.
