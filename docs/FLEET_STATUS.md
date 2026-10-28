@@ -674,7 +674,8 @@ different sketch (same Arduino-ESP32 core, IDF v3.3.5). 106's image prints a
 
 **Fix (operator-approved):** wrote agv106's raw `app0` partition (0x10000,
 0x140000 B, `--flash_mode/freq/size keep`) to agv104; verified; hard reset.
-A first attempt with a trimmed app image boot-looped (the image carries an
+The reference image and the full esptool procedure are now in the repo under
+`firmware/myagv_base/` (`0379d2e`). A first attempt with a trimmed app image boot-looped (the image carries an
 appended SHA-256 — 3 bytes short → bootloader rejects it, ROM banner every
 ~0.1 s); writing the whole partition fixed it. **Rollback:** `~/mcu_fw/
 agv104_esp32_flash_20261028.bin` (full) and `agv104_app0_orig.bin` on the
