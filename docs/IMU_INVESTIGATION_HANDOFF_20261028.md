@@ -110,3 +110,65 @@ checks available CRCs but does not certify image semantics or calibration.
 The integrated snapshot has automated regression coverage, **not a new live fleet
 qualification**. Pull the same commit deliberately, preserve robot-local changes,
 and perform a short stationary check before the next authorized scenario.
+
+## Findings Added 28 October 2026 (evening), Read-Only
+
+Measured on AGV108 and AGV109 from their own logs and bags; nothing was reset,
+re-plugged or re-flashed, and no motion was commanded.
+
+**1. The stall leaves no kernel trace.** Every `uvcvideo ... Non-zero status
+(-71)` / `hid-sensor-hub: No report with id 0xffffffff` pair in both kernels
+sits 40 s after a *service restart* (AGV109 18:05:52 → 18:06:32, 18:56:02 →
+18:56:43; AGV108 18:41:02 → 18:41:42): they belong to the camera start-up
+sequence, not to the failures. At the actual stall times — AGV109 ≈18:45:09
+(run `8f1a0685`, gyro/accel last sample 58.4 s before bag end) and AGV108
+≈18:38:29 (run `ba9da8aa`, 23.9 s before end) — the kernel logged nothing on
+`usb 2-2`, xHCI, HID or IIO. The UVC interfaces kept streaming (colour/depth
+last samples 0.0–0.1 s before bag end in every run).
+
+**2. Recording is not required.** AGV109's first stall today began at
+18:04:04 with no bag open (previous bag closed 17:57:34, next activity 18:04:52)
+and no motion; the node had been streaming since 17:50:07. The only host
+activity in the preceding minutes was `apt-daily` (18:02:40–18:03:15) —
+AGV109's apt timers are still enabled (AGV108's are masked). Host pressure
+during today's runs is low (PSI cpu some avg10 ≈ 9, io ≈ 1–2, mem 0;
+`get_throttled` 0x0 since boot on both, so no under-voltage event on either
+Pi during the failures).
+
+**3. SDK versions are not the discriminator.** Runtime libraries actually
+mapped by the running `realsense2_camera_node` (from `/proc/<pid>/maps`):
+AGV109 `/opt/ros/humble/lib/aarch64-linux-gnu/librealsense2.so.2.58.3`,
+AGV108 `.../librealsense2.so.2.58.4`; both stall. Hazard found while checking:
+both robots also carry Intel's standalone `librealsense2 2.58.1`
+(`/usr/lib/aarch64-linux-gnu/librealsense2.so.2.58.1`, md5 `5650ea0b…`) with
+the **same soname** `librealsense2.so.2.58`; plain `ldd` resolves to 2.58.1
+and only the ROS environment's `LD_LIBRARY_PATH` makes the node load the ROS
+build. Any standalone probe (Doctor stream tests, `rs-enumerate-devices`) is
+therefore exercising a *different* SDK build from the node.
+
+**4. Same backend everywhere.** Kernel HID/IIO path on both: `hid_sensor_hub`
+→ `hid_sensor_gyro_3d`/`accel_3d` → `/dev/iio:device0/1` (buffer length 128
+samples ≈ 0.64 s of gyro), librealsense `backend-hid.cpp` (`iio_hid_sensor`).
+Kernels differ (AGV108 5.15.0-1061, AGV109 5.15.0-1105) and both stall.
+
+**5. Time-since-start is not deterministic.** Stalls occurred 14 min (AGV109,
+idle), 13 min (AGV108, in-run) and 39 min (AGV109, in-run) after the node
+started; at 20:20 both nodes had streamed 1 h 25–40 min without a stall.
+
+**Instrument now armed (read-only) for the next stall.** The healthy camera
+delivers exactly **300 HID input reports/s** on
+`/sys/kernel/debug/hid/0003:8086:0B5C.0001/events` (200 gyro + 100 accel).
+`scripts/diagnostics/imu_hid_probe.sh` samples that stream, IIO buffer state,
+PSI, throttling and the kernel log; `/tmp/imu_stall_watch.sh` on AGV108/109
+runs it automatically when `bringup.log` gains a HID-timeout line, and again
+20 s later. A 1 Hz CSV (`~/agv_data/diagnostics/psi_agvN_*.csv`) logs PSI,
+temperature, throttle bits and the HID report rate. **If the stall shows 0
+reports/s, the camera/USB stopped sending (device side); if it shows 300, the
+kernel IIO/librealsense path stopped consuming (host side).** That single
+number decides the next test (firmware/power/cable vs backend/kernel), and a
+cheaper recovery than restarting the whole service — toggling the motion
+module (`enable_gyro`/`enable_accel`) — should be tried once the side is known.
+
+Riyaadh's phase A evidence (`imu_ab_20261028_185557/A_streaming`) covers only
+19 s before interruption and contains no stall; it neither supports nor
+refutes a recording effect.
