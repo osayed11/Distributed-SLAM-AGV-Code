@@ -132,8 +132,8 @@ D455 firmware:                  5.17.0.10
 USB link:                       USB 3.x / 5000 Mb/s
 D455 IMU:                       BMI085
 Standalone librealsense tools:  2.58.1
-ROS driver package:             realsense2_camera 4.58.2
-ROS node LibRealSense runtime:  2.58.2
+ROS driver package:             realsense2_camera 4.58.4
+ROS node LibRealSense runtime:  2.58.4
 RGB-D profile:                  640x480 at 15 Hz
 D455 IMU rate:                  about 200 Hz live, >=150 Hz in recorded bags
 Gyro raw topic:                 /camera/gyro/sample at about 200 Hz
@@ -269,6 +269,35 @@ IMU path. The runtime watchdog is disabled by default because `ros2 topic hz`
 probes can perturb a publishable run; use post-run bag validation as the
 authority.
 
+Dataset-mode Robot Doctor also requires the active continuous-writeback policy
+(`dirty_bytes=16 MiB`, `dirty_background_bytes=8 MiB`, writeback `100 cs`,
+expiry `200 cs`). The setup script installs it to prevent burst SD flushing from
+stalling the robot-local Zenoh GT client during RGB-D recording.
+
+`ROSBAG2_STORAGE_ID=auto` resolves before the storage profile is selected:
+MCAP uses `configs/mcap_resilient_high_throughput.yaml`, while SQLite uses
+`configs/sqlite_resilient.yaml`. An explicit preset overrides the config, and a
+missing selected config aborts before recording instead of silently falling
+back to an untracked storage policy.
+
+The recording write bottleneck on a 2 GB Pi with a standard SD card is **SD
+write bandwidth, not CPU** — measured on two robots (agv24 and agv110). During a
+full MCAP recording the SD card runs at about 100% utilization while the CPU
+holds 25-55% idle, i.e. the recorder is waiting on the disk. The write load is
+about 99% raw RGB-D images: `/camera/color/image_raw` ~11 MB/s (58%) and
+`/camera/depth/image_rect_raw` ~8 MB/s (41%); raw IMU, LiDAR, odometry, TF, and
+ground truth combined are under 1% (ground truth alone ~0.01 MB/s). Zstd barely
+compresses the raw images, so on-disk writes (~20-25 MB/s) are close to the raw
+data volume and MCAP compression is not a useful lever here. The effect is RGB-D
+recorded at about 13 Hz (dropped image frames) instead of 15, marginally under
+the 12 Hz floor on some runs, while every other stream (IMU ~200/100 Hz, LiDAR,
+odometry, TF) records at full rate — the small `camera_info` topics stay at
+15 Hz while the large image frames drop, which confirms the constraint is write
+bandwidth. This is why the commissioning full MCAP run plus post-run validator
+is required per robot. Faster storage (USB-SSD or a higher-endurance card) or
+recording compressed image topics are the expected mitigations, but neither has
+been verified by intervention on this hardware.
+
 The S1 runner has a separate `S1_RUNTIME_IMU_GUARD=true` source guard. It tails
 the existing RealSense bringup log and creates no ROS subscriptions. If
 librealsense reports a fatal HID/IIO motion-frame timeout, the runner stops the
@@ -333,6 +362,16 @@ FAIL 0, WARN 0       ideal
 FAIL 0, WARN >0      review warnings; often acceptable for home/non-GT tests
 FAIL >0              not publishable; fix the failed branch and rerun
 ```
+
+Raw D455 IMU gaps over `0.10s` and at most `0.25s` are explicit warnings;
+larger gaps are failures. The strict fleet audit rejects warnings, so accepting
+a bounded gap for a final release remains a deliberate dataset-level decision.
+Required ground truth must average at least `30 Hz`; internal GT gaps over
+`0.25s` warn and gaps over the controller's `0.50s` stale-pose timeout fail.
+When `MOCAP_TOPIC` is set, that exact per-robot stream is authoritative;
+unrelated GT-like topics are informational and cannot fail or rescue the run.
+For an explicit scenario window, the validator checks every gap and requires
+each stream at the window boundaries instead of applying recorder edge grace.
 
 For final copied dataset artifacts on the laptop:
 
@@ -436,7 +475,9 @@ data.
 The ROS 2 validator ignores a small start/stop edge window for gap checks while
 still enforcing coverage and mid-run continuity. This avoids rejecting bags just
 because the `ros2 bag` recorder and drivers shut down at different speeds after
-`Ctrl+C`.
+`Ctrl+C`. When an explicit experiment window is supplied, no edge gaps are
+ignored and every required stream must cover the window within its hard-gap
+tolerance.
 
 Mid-run gaps still fail.
 
@@ -515,13 +556,20 @@ If the topic is listed but both commands receive no samples, check that Motive
 is streaming and the rigid body is actively tracked. A discovered publisher is
 not evidence that the upstream node is emitting poses.
 
-The standard S1 command runs sensor gates, then a required 5-second unrecorded
+For repeatable fleet starts and pause/recovery, use
+[Warm Scenario Sessions](docs/WARM_SCENARIO_SESSIONS.md). It separates prepare,
+run, validate and stop, retains healthy drivers between bags, and requires an
+explicit fleet resume after feedback recovers. Deployment and physical watchdog
+qualification are required before using this new flow on robots.
+
+The single-robot S1 command runs sensor gates, then a required 5-second unrecorded
 motion precheck, then starts the recorder and runs the full circle. For a local
 inferred counter-clockwise circle, place the robot 0.8 m from the marked center
 and tangent with the center on its left. Put the center on its right and set
 `S1_DIRECTION=cw` for clockwise.
 
 ```bash
+python3 scripts/scenarios/sensor_session.py prepare agv103
 ROS_DOMAIN_ID=0 \
 MOCAP_TOPIC=/optitrack/rigid_bodies/orkar_agv103 \
 CMD_TOPIC=/agv103/cmd_vel \
@@ -531,7 +579,7 @@ bash scripts/scenarios/run_s1_mocap_pilot_robot.sh agv103 s1_circle_0p8
 ```
 
 The recorder cannot start unless GT is fresh, its measured transport rate is
-inside the configured `MOCAP_MIN_HZ` to `MOCAP_MAX_HZ` band (20 to 120 Hz by
+inside the configured `MOCAP_MIN_HZ` to `MOCAP_MAX_HZ` band (30 to 120 Hz by
 default), direction-normalised progress is positive, and the precheck radius
 error stays within 0.15 m. The upper rate bound rejects duplicate publishers or
 amplified bridge routes instead of recording repeated poses. The post-run bag
@@ -611,6 +659,10 @@ python3 scripts/logging/drive_mocap_straight_ros2.py \
   --verbose
 ```
 
+Add `--reverse` to return along the opposite direction without turning the
+robot. This mode is intended for guarded out-and-back commissioning tests; it
+still uses MoCap progress, lateral-error, stale-pose, and stuck-timeout aborts.
+
 Mocap square:
 
 ```bash
@@ -618,10 +670,17 @@ python3 scripts/logging/drive_mocap_square_ros2.py \
   --pose-topic /optitrack/rigid_bodies/orkar_agv110 \
   --cmd-topic /agv110/cmd_vel \
   --side-length 1.0 \
-  --linear 0.18 \
-  --yes \
-  --verbose
+  --line-yaw-offset-deg OFFSET \
+  --turn-sign SIGN \
+  --bounds MIN_X MAX_X MIN_Y MAX_Y \
+  --boundary-margin 0.20 \
+  --preview-only
 ```
+
+Preview and approve every corner before removing `--preview-only`. For managed
+sensor recording, motion, and strict post-run validation, use
+`scripts/logging/record_mocap_square_session_ros2.sh`; the complete operator
+sequence is in `docs/NEXT_LAB_SQUARE_SESSION.md`.
 
 Circle scenario helper:
 
@@ -645,6 +704,7 @@ scripts/network/load_ros_transport_env.sh      one robot-local ROS transport env
 scripts/mocap/natnet_ros2_pose_publisher.py    supervised NatNet-to-PoseStamped source
 scripts/mocap/orkar_natnet_sdk_client.py       OptiTrack NatNet SDK 4.4 adapter
 scripts/logging/start_session.sh               managed bringup, gate, recording, manifest
+scripts/logging/record_mocap_square_session_ros2.sh guarded square recording and validation
 scripts/logging/validate_ros2_bag.py           ROS 2 .mcap/.db3 post-run validator
 scripts/diagnostics/dataset_ready_gate.sh      read-only pre-run dataset gate
 scripts/diagnostics/robot_doctor.py            evidence engine and failure classifier
@@ -658,6 +718,7 @@ scripts/diagnostics/diagnostic_pipeline_audit.py repo coverage audit
 configs/robot_doctor_dataset_gate.json         dataset gate values
 configs/rosbag2_sensor_qos.yaml                rosbag2 sensor QoS overrides
 configs/sqlite_resilient.yaml                  SQLite fallback storage profile
+docs/NEXT_LAB_SQUARE_SESSION.md                next-session guarded square runbook
 agv2_ws/src/agv_bringup/launch/bringup.launch.py ROS 2 bringup
 ```
 

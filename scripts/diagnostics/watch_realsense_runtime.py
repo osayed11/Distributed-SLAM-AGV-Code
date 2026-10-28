@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
-"""Stop a dataset run when the RealSense source reports a fatal runtime fault.
+"""Preserve evidence when the RealSense source reports a runtime fault.
 
 This guard tails the existing bringup log. It creates no ROS subscriptions, so
 it does not add load to camera topics or alter recorder QoS. On the first fatal
 motion/HID signature it preserves the evidence needed by the RealSense fault
 classifier and writes a machine-readable status file for the scenario runner.
+In --warn-only mode a log signature does not terminate collection: actual
+sample availability and gaps must be determined from the recorded data.
 """
 
 from __future__ import annotations
@@ -38,6 +40,10 @@ def write_status(path: Path, state: str, details: list[str] | None = None) -> No
     temporary = path.with_suffix(path.suffix + ".tmp")
     temporary.write_text("\n".join(lines) + "\n", encoding="utf-8")
     temporary.replace(path)
+
+
+def fault_status(fault: str, warn_only: bool) -> str:
+    return f"{'WARN' if warn_only else 'FAIL'}_RUNTIME_GUARD {fault}"
 
 
 def capture_command(path: Path, command: str, timeout: float = 6.0) -> None:
@@ -114,6 +120,8 @@ def watch(
     evidence_dir: Path,
     require_imu: bool,
     poll_seconds: float,
+    start_at_end: bool = False,
+    warn_only: bool = False,
 ) -> int:
     status_file.parent.mkdir(parents=True, exist_ok=True)
     start_epoch = time.time()
@@ -134,6 +142,8 @@ def watch(
         return 0
 
     with bringup_log.open("r", encoding="utf-8", errors="replace") as stream:
+        if start_at_end:
+            stream.seek(0, 2)
         while not stopping:
             line = stream.readline()
             if not line:
@@ -144,16 +154,16 @@ def watch(
                 continue
 
             details = [
-                "FAIL camera gyro stream: /camera/gyro/sample source HID timeout",
-                "FAIL camera accel stream: /camera/accel/sample source HID timeout",
+                "HID timeout observed; verify gyro/accel continuity in the bag",
                 f"trigger: {line.rstrip()}",
                 f"evidence_dir: {evidence_dir}",
             ]
-            write_status(status_file, f"FAIL_RUNTIME_GUARD {fault}", details)
-            print(f"FAIL_RUNTIME_GUARD {fault}", flush=True)
+            status = fault_status(fault, warn_only)
+            write_status(status_file, status, details)
+            print(status, flush=True)
             print(line.rstrip(), flush=True)
             capture_evidence(evidence_dir, bringup_log, start_epoch, fault, line)
-            return 2
+            return 0 if warn_only else 2
 
     write_status(status_file, "STOPPED_CLEANLY")
     return 0
@@ -166,6 +176,8 @@ def main() -> int:
     parser.add_argument("--evidence-dir", type=Path, required=True)
     parser.add_argument("--require-imu", action="store_true")
     parser.add_argument("--poll-seconds", type=float, default=0.2)
+    parser.add_argument('--start-at-end', action='store_true', help='Monitor new events in a persistent bringup log')
+    parser.add_argument('--warn-only', action='store_true', help='Preserve fault evidence without aborting collection')
     args = parser.parse_args()
 
     if args.poll_seconds <= 0:
@@ -176,6 +188,8 @@ def main() -> int:
         evidence_dir=args.evidence_dir,
         require_imu=args.require_imu,
         poll_seconds=args.poll_seconds,
+        start_at_end=args.start_at_end,
+        warn_only=args.warn_only,
     )
 
 

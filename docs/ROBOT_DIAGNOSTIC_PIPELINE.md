@@ -98,10 +98,12 @@ Instead, the pre-run gate proves:
   failure.
 
 By default, RGB-D gaps above `0.25s` are warnings and RGB-D gaps above `0.75s`
-are hard failures. The D455 IMU remains a hard failure above `0.10s` because it
-is small, low-bandwidth, and should stay stable. A bounded RGB-D warning means
-the robot can start recording, but the final bag still needs the post-run bag
-validator/audit before the run is called publishable.
+are hard failures. The short live D455 gate remains strict at `0.10s`. In a
+recorded bag, an isolated IMU gap above `0.10s` and at most `0.25s` is retained
+as a warning; a gap above `0.25s` is a hard failure. This distinction keeps
+bounded scheduler jitter visible without misclassifying it as a transport
+outage. Final `dataset_run_audit.py --strict` still rejects any warning, so a
+publishable acceptance policy never silently ignores bounded loss.
 
 During recording, the runtime watchdog intentionally avoids `ros2 topic hz`
 probes against camera-owned RGB-D and D455 IMU streams by default. Those probes
@@ -140,6 +142,26 @@ On Raspberry Pi robots the managed logger defaults to a 512 MB rosbag2 cache
 kept LiDAR, odom, TF, RGB-D, and D455 IMU present without introducing recorder
 stalls. Enable the watchdog only for debugging, then validate the resulting bag
 before treating it as data.
+
+The managed logger resolves `ROSBAG2_STORAGE_ID=auto` before choosing a storage
+profile. MCAP uses `configs/mcap_resilient_high_throughput.yaml`; SQLite uses
+`configs/sqlite_resilient.yaml`. An explicit storage preset takes precedence,
+and a selected but unreadable config is a pre-recording error. The manifest
+records only the config or preset actually applied.
+
+The S1 recorder waits until every required subscription is confirmed, permits
+at most the same three-second startup spread used by post-run coverage checks,
+and then adds recorder pre-roll before motion. Startup discovery latency is
+therefore not confused with missing experiment data.
+
+Ground truth is validated for continuity as well as average rate and edge
+coverage. Internal gaps above `0.25s` are warnings and gaps above the S1
+controller's `0.50s` stale-pose safety timeout are hard failures. Required GT
+below `30 Hz` is also a hard failure; a high average rate cannot mask one long
+outage. `MOCAP_TOPIC` selects the one authoritative per-robot GT stream;
+secondary GT-like topics are reported only as information. Exact scenario
+windows receive no start/stop edge-gap exemption and use each stream's hard-gap
+limit as the boundary coverage tolerance.
 
 The managed logger also leaves the D455 IMU recording keepalive disabled
 (`ENABLE_IMU_RECORDING_KEEPALIVE=false`). The recorder already subscribes to
@@ -396,8 +418,8 @@ The current ROS 2 dataset gate standard is:
 ```text
 D455 firmware:                  5.17.0.10
 standalone librealsense tools:  2.58.1
-RealSense ROS driver:           realsense2_camera 4.58.2
-RealSense ROS node runtime:     LibRealSense 2.58.2
+RealSense ROS driver:           realsense2_camera 4.58.4
+RealSense ROS node runtime:     LibRealSense 2.58.4
 RGB-D stream gate:              640x480 at 15 Hz
 D455 IMU gate:                  raw gyro + raw accel, not fused /camera/imu
 USB gate:                       USB 3.x / 5000 Mb/s
@@ -421,7 +443,7 @@ USB gate:                       USB 3.x / 5000 Mb/s
 | `1.2 d455_usb_autosuspend_delay` | D455 `autosuspend_delay_ms` is not `-1` | Run the targeted `d455-autosuspend` fix, power-cycle, and rerun doctor |
 | `2.2 realsense_tools` | RealSense tools are not installed | Run `SUDO_PASSWORD=ubuntu bash scripts/setup_robot_ros2.sh <robot_id> --skip-build`, or the targeted `realsense-standalone-tools` fix |
 | `2.2 realsense_apt_source` | The Intel RealSense apt source is missing, duplicated, legacy, or using the explicit key-mismatch fallback | Rerun `scripts/setup_robot_ros2.sh`; `trusted=yes` is acceptable only when logged with expected package versions |
-| `2.2 realsense_package_holds` | Installed RealSense packages are not pinned against accidental upgrades | Rerun `scripts/setup_robot_ros2.sh` or `apt-mark hold` the standardized packages |
+| `2.2 realsense_package_holds` | Installed standalone or ROS RealSense packages are not pinned against accidental upgrades | Rerun `scripts/setup_robot_ros2.sh` or `apt-mark hold` the standardized packages |
 | `2.2 realsense_python_binding` | `pyrealsense2` is missing or mismatched, so the standalone stream gate cannot run | Install the matching `pyrealsense2` binding before using the dataset gate |
 | `2.2 librealsense_version` | Robot is not on fleet standard SDK | Run the pinned standalone RealSense fix before comparing data quality |
 | `2.2 realsense_ros_driver_version` | ROS wrapper package/source version differs from the fleet standard | Reinstall/rebuild the standard `realsense2_camera` package |
@@ -432,6 +454,7 @@ USB gate:                       USB 3.x / 5000 Mb/s
 | `2.3 topic_present` | ROS graph is missing a required stream | Fix launch/remap/driver before recording |
 | `2.3 topic_rate` | Stream exists but rate is too low | Check CPU load, USB bandwidth, driver config, then lower load only if hardware is clean |
 | `3.1 disk_free` | Bag recording may fail or truncate | Clear `~/agv_data` or use larger storage |
+| `3.1 recording_writeback` | Active dirty-page limits do not match the validated continuous-writeback policy, so RGB-D MCAP I/O can stall the robot-local GT bridge | Rerun setup or install/apply `99-orkar-recording.conf`, then repeat the full MCAP gate |
 | `3.1 storage_resilience` | ROS2 bag uses SQLite `.db3` without recorded `sqlite_resilient`/WAL evidence when resilient storage is required | Record with MCAP or ensure the session manifest records the sqlite resilient/WAL storage config |
 | `3.2 bag_validation` | Recorded data is missing/low-rate/corrupt | Use validator output; rerun only after fixing the failed branch |
 | `3.3 clock_sync` / `3.3 chrony_offset` | Multi-robot timestamps are not trustworthy or parsed Chrony offset exceeds the gate threshold | Repair chrony/NTP before publishable collection |

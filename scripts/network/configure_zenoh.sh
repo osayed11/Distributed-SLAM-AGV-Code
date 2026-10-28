@@ -122,8 +122,10 @@ run_router() {
     install_bridge_binary "${HOME}/.local/bin/zenoh-bridge-ros2dds"
     echo "Starting MoCap router on tcp/0.0.0.0:7447 (Ctrl+C to stop)."
     export ROS_DISTRO=humble
+    export ROS_LOCALHOST_ONLY=1
     export RUST_LOG="${ZENOH_RUST_LOG:-zenoh_plugin_ros2dds=info}"
     exec "${HOME}/.local/bin/zenoh-bridge-ros2dds" \
+        --ros-localhost-only \
         -c "${ROOT}/configs/zenoh/mocap_router.json5"
 }
 

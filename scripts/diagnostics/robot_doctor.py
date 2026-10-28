@@ -88,9 +88,9 @@ DEFAULT_TOPIC_SPECS = {
     "/scan": {"min_hz": 5.0, "target_hz": 18.0},
     "/odom": {"min_hz": 12.0, "target_hz": 20.0},
     "/tf": {"min_hz": 10.0, "target_hz": 50.0},
-    "/camera/color/image_raw": {"min_hz": 12.0, "target_hz": 15.0},
+    "/camera/color/image_raw": {"min_hz": 10.0, "target_hz": 15.0},
     "/camera/color/camera_info": {"min_hz": 0.0, "target_hz": 0.0},
-    "/camera/depth/image_rect_raw": {"min_hz": 12.0, "target_hz": 15.0},
+    "/camera/depth/image_rect_raw": {"min_hz": 10.0, "target_hz": 15.0},
     "/camera/depth/camera_info": {"min_hz": 0.0, "target_hz": 0.0},
     "/camera/gyro/sample": {"min_hz": 150.0, "target_hz": 200.0},
     "/camera/accel/sample": {"min_hz": 60.0, "target_hz": 100.0},
@@ -604,14 +604,13 @@ class Doctor:
 
     def wait_for_bringup_topics(self) -> None:
         deadline = time.time() + max(0, int(self.args.bringup_wait))
-        if self.args.profile == "dataset":
-            required = [
-                topic
-                for topic, spec in self.live_topic_specs().items()
-                if spec.get("min_hz", 0.0) > 0
-            ]
-        else:
-            required = ["/scan", "/odom", "/tf"]
+        # Preflight also checks the camera, which may start after the base/LiDAR.
+        # Wait for every expected data stream before taking the graph snapshot.
+        required = [
+            topic
+            for topic, spec in self.live_topic_specs().items()
+            if spec.get("min_hz", 0.0) > 0
+        ]
         required.extend(topic for topic in self.args.required_topic if topic not in required)
         required = list(dict.fromkeys(required))
         last_seen: Dict[str, str] = {}
@@ -718,6 +717,7 @@ class Doctor:
         self.check_clock()
         self.check_network()
         self.check_wifi_management()
+        self.check_recording_writeback()
         self.check_native_ros2_stack()
 
     def check_native_ros2_stack(self) -> None:
@@ -952,6 +952,56 @@ class Doctor:
             self.args.profile,
         )
         self.add(code, status, check, summary, [result.log], next_action)
+
+    def check_recording_writeback(self) -> None:
+        result = self.run(
+            "recording_writeback",
+            "printf 'dirty_bytes='; sysctl -n vm.dirty_bytes 2>/dev/null || true; "
+            "printf 'dirty_background_bytes='; sysctl -n vm.dirty_background_bytes 2>/dev/null || true; "
+            "printf 'dirty_writeback_centisecs='; sysctl -n vm.dirty_writeback_centisecs 2>/dev/null || true; "
+            "printf 'dirty_expire_centisecs='; sysctl -n vm.dirty_expire_centisecs 2>/dev/null || true; "
+            "echo CONFIG; sed -n '1,80p' /etc/sysctl.d/99-orkar-recording.conf 2>/dev/null || true",
+            timeout=8,
+        )
+        code, status, check, summary, next_action = self.classify_recording_writeback(
+            self.command_output(result),
+            self.args.profile,
+        )
+        self.add(code, status, check, summary, [result.log], next_action)
+
+    @staticmethod
+    def classify_recording_writeback(text: str, profile: str) -> Tuple[str, str, str, str, str]:
+        expected = {
+            "dirty_bytes": 16777216,
+            "dirty_background_bytes": 8388608,
+            "dirty_writeback_centisecs": 100,
+            "dirty_expire_centisecs": 200,
+        }
+        observed: Dict[str, int] = {}
+        for key in expected:
+            match = re.search(rf"^{re.escape(key)}=([0-9]+)$", text, re.MULTILINE)
+            if match:
+                observed[key] = int(match.group(1))
+        if observed == expected:
+            return (
+                "3.1",
+                PASS,
+                "recording_writeback",
+                "continuous SD writeback matches the validated 16 MB/8 MB recording policy",
+                "",
+            )
+        differences = [
+            f"{key}={observed.get(key, 'missing')} (expected {value})"
+            for key, value in expected.items()
+            if observed.get(key) != value
+        ]
+        return (
+            "3.1",
+            FAIL if profile == "dataset" else WARN,
+            "recording_writeback",
+            "recording writeback policy mismatch: " + ", ".join(differences),
+            "rerun scripts/setup_robot_ros2.sh or install /etc/sysctl.d/99-orkar-recording.conf, apply it with sysctl -p, then repeat the full MCAP gate",
+        )
 
     @staticmethod
     def classify_wifi_management(text: str, profile: str) -> Tuple[str, str, str, str, str]:
@@ -1362,8 +1412,10 @@ class Doctor:
             "realsense_versions",
             "echo STANDALONE_RS_TOOLS; command -v rs-enumerate-devices || true; "
             "echo STANDALONE_PKG_CONFIG; pkg-config --modversion realsense2 2>/dev/null || true; "
-            "echo DPKG; dpkg-query -W 'librealsense2*' 'ros-*-realsense2-camera' 2>/dev/null || true; "
-            "echo APT_HOLDS; apt-mark showhold 2>/dev/null | grep -E '^(librealsense2|python3-pyrealsense2)' || true; "
+            "echo DPKG; dpkg-query -W 'librealsense2*' 'ros-*-librealsense2' "
+            "'ros-*-realsense2-camera-msgs' 'ros-*-realsense2-camera' 2>/dev/null || true; "
+            "echo APT_HOLDS; apt-mark showhold 2>/dev/null | "
+            "grep -E '^(librealsense2(-[[:alnum:]+.-]+)?|python3-pyrealsense2|ros-[[:alnum:]]+-(librealsense2|realsense2-camera(-msgs)?))(:|$)' || true; "
             "echo REALSENSE_APT_SOURCES; "
             "for f in /etc/apt/sources.list.d/*librealsense* /etc/apt/sources.list.d/archive_uri-https_librealsense*; do "
             "[ -f \"$f\" ] || continue; echo FILE:$f; sed -n '1,20p' \"$f\"; done 2>/dev/null || true; "
@@ -1538,9 +1590,9 @@ class Doctor:
 
         installed = self.parse_installed_realsense_packages(text)
         holds = self.parse_apt_holds(text)
-        hold_targets = sorted(pkg for pkg in installed if pkg.startswith("librealsense2"))
+        hold_targets = installed
         if not hold_targets:
-            self.add("2.2", INFO, "realsense_package_holds", "no installed librealsense apt packages found", evidence)
+            self.add("2.2", INFO, "realsense_package_holds", "no installed RealSense apt packages found", evidence)
         else:
             missing_holds = [pkg for pkg in hold_targets if pkg not in holds]
             if missing_holds:
@@ -1722,9 +1774,17 @@ class Doctor:
             ["APT_HOLDS", "REALSENSE_APT_SOURCES", "PYREALSENSE2", "ROS_REALSENSE_PACKAGE"],
         ):
             stripped = line.strip()
-            if not stripped.startswith("librealsense2"):
+            if not stripped:
                 continue
             pkg = stripped.split()[0].split(":", 1)[0]
+            is_ros_realsense = bool(
+                re.fullmatch(
+                    r"ros-[a-z0-9]+-(?:librealsense2|realsense2-camera(?:-msgs)?)",
+                    pkg,
+                )
+            )
+            if not pkg.startswith("librealsense2") and not is_ros_realsense:
+                continue
             packages.append(pkg)
         return sorted(set(packages))
 
@@ -1737,8 +1797,17 @@ class Doctor:
             ["REALSENSE_APT_SOURCES", "PYREALSENSE2", "ROS_REALSENSE_PACKAGE"],
         ):
             stripped = line.strip()
-            if stripped.startswith("librealsense2") or stripped == "python3-pyrealsense2":
-                holds.append(stripped.split(":", 1)[0])
+            if not stripped:
+                continue
+            pkg = stripped.split(":", 1)[0]
+            is_ros_realsense = bool(
+                re.fullmatch(
+                    r"ros-[a-z0-9]+-(?:librealsense2|realsense2-camera(?:-msgs)?)",
+                    pkg,
+                )
+            )
+            if pkg.startswith("librealsense2") or pkg == "python3-pyrealsense2" or is_ros_realsense:
+                holds.append(pkg)
         return sorted(set(holds))
 
     @staticmethod
@@ -3530,7 +3599,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--mocap-min-hz",
         type=float,
-        default=float(os.environ.get("MOCAP_MIN_HZ", "20")),
+        default=float(os.environ.get("MOCAP_MIN_HZ", "30")),
         help="minimum accepted live ground-truth rate",
     )
     parser.add_argument(

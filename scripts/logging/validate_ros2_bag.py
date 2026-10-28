@@ -102,16 +102,10 @@ def required_specs() -> List[TopicSpec]:
     color_info_topic = os.environ.get("COLOR_INFO_TOPIC", "/camera/color/camera_info")
     depth_topic = os.environ.get("DEPTH_TOPIC", "/camera/depth/image_rect_raw")
     depth_info_topic = os.environ.get("DEPTH_INFO_TOPIC", "/camera/depth/camera_info")
-    legacy_rgbd_min_hz = os.environ.get("RGBD_BAG_MIN_HZ")
-    if legacy_rgbd_min_hz is None:
-        # Both image streams are configured for 15 Hz. Use one fleet-wide hard
-        # floor at 80% of nominal; retain the exact measured rates in reports.
-        color_min_hz = env_float("COLOR_BAG_MIN_HZ", 12.0)
-        depth_min_hz = env_float("DEPTH_BAG_MIN_HZ", 12.0)
-    else:
-        shared_min_hz = env_float("RGBD_BAG_MIN_HZ", 10.0)
-        color_min_hz = env_float("COLOR_BAG_MIN_HZ", shared_min_hz)
-        depth_min_hz = env_float("DEPTH_BAG_MIN_HZ", shared_min_hz)
+    # Acquisition stays at 15 Hz; the agreed recorded-image minimum is 10 Hz.
+    shared_min_hz = env_float("RGBD_BAG_MIN_HZ", 10.0)
+    color_min_hz = env_float("COLOR_BAG_MIN_HZ", shared_min_hz)
+    depth_min_hz = env_float("DEPTH_BAG_MIN_HZ", shared_min_hz)
     rgbd_target_hz = env_float("RGBD_TARGET_HZ", 15.0)
     camera_info_min_hz = env_float("CAMERA_INFO_MIN_HZ", 10.0)
 
@@ -500,12 +494,13 @@ def classify_gaps(
     target_hz: float,
     bag_start_ns: Optional[int],
     bag_end_ns: Optional[int],
+    ignore_edge_gaps: bool = True,
 ) -> Tuple[int, int, Optional[float], int]:
     if target_hz <= 0 or item.count <= 2 or item.first_ns is None:
         return 0, 0, item.max_gap_sec, 0
 
     minor_limit, major_limit = gap_limits_for_topic(item.topic, target_hz)
-    edge_ignore_sec = env_float("EDGE_GAP_IGNORE_SEC", 3.0)
+    edge_ignore_sec = env_float("EDGE_GAP_IGNORE_SEC", 3.0) if ignore_edge_gaps else 0.0
     edge_ignore_ns = int(max(0.0, edge_ignore_sec) * 1e9)
     edge_start_ns = (bag_start_ns + edge_ignore_ns) if bag_start_ns is not None else None
     edge_end_ns = (bag_end_ns - edge_ignore_ns) if bag_end_ns is not None else None
@@ -537,15 +532,26 @@ def classify_gaps(
 
 def gap_limits_for_topic(topic: str, target_hz: float) -> Tuple[float, float]:
     if (
+        topic in {"/mocap", "/ground_truth", "/ground_truth/pose", "/optitrack/rigid_bodies"}
+        or topic.startswith("/optitrack/rigid_bodies/")
+        or (topic.startswith("/gt/") and topic.endswith("/pose"))
+    ):
+        return (
+            env_float("GT_MINOR_GAP_SEC", 0.25),
+            env_float("GT_MAJOR_GAP_SEC", 0.50),
+        )
+    if (
         topic in {"/camera/imu", "/imu"}
         or topic.endswith("/gyro/sample")
         or topic.endswith("/accel/sample")
     ):
-        hard_limit = env_float(
-            "IMU_MAJOR_GAP_SEC",
-            env_float("MAX_CAMERA_IMU_GATE_GAP_SEC", 0.10),
+        return (
+            env_float(
+                "IMU_MINOR_GAP_SEC",
+                env_float("MAX_CAMERA_IMU_GATE_GAP_SEC", 0.10),
+            ),
+            env_float("IMU_MAJOR_GAP_SEC", 0.25),
         )
-        return hard_limit, hard_limit
     if topic.startswith("/camera/") and topic.endswith("/camera_info"):
         return (
             env_float("CAMERA_INFO_MINOR_GAP_SEC", 0.75),
@@ -571,6 +577,32 @@ def coverage_tolerance_sec(target_hz: float) -> float:
     return max(env_float("COVERAGE_TOLERANCE_SEC", 3.0), 3.0 / target_hz)
 
 
+def validate_gap_policy(parser: argparse.ArgumentParser) -> None:
+    gt_min_hz = env_float("GT_BAG_MIN_HZ", env_float("MOCAP_MIN_HZ", 30.0))
+    if not math.isfinite(gt_min_hz) or gt_min_hz <= 0:
+        parser.error(f"invalid ground-truth rate policy: require finite minimum > 0, got {gt_min_hz}")
+    representative_topics = [
+        ("ground truth", "/optitrack/rigid_bodies/example", 30.0),
+        ("IMU", "/camera/gyro/sample", 200.0),
+        ("RGB-D", "/camera/color/image_raw", 15.0),
+        ("camera info", "/camera/color/camera_info", 15.0),
+        ("generic", "/scan", 18.0),
+    ]
+    for label, topic, target_hz in representative_topics:
+        minor, major = gap_limits_for_topic(topic, target_hz)
+        if (
+            not math.isfinite(minor)
+            or not math.isfinite(major)
+            or minor < 0
+            or major < 0
+            or minor > major
+        ):
+            parser.error(
+                f"invalid {label} gap policy: require finite 0 <= warning ({minor}) "
+                f"<= hard ({major}) thresholds"
+            )
+
+
 def validate_topic_coverage(
     results: List[Result],
     item: TopicStats,
@@ -578,12 +610,17 @@ def validate_topic_coverage(
     bag_start_ns: Optional[int],
     bag_end_ns: Optional[int],
     check_name: str,
+    exact_window: bool = False,
 ) -> None:
     if target_hz <= 0 or item.first_ns is None or item.last_ns is None:
         return
     if bag_start_ns is None or bag_end_ns is None or bag_end_ns <= bag_start_ns:
         return
-    tolerance = coverage_tolerance_sec(target_hz)
+    tolerance = (
+        gap_limits_for_topic(item.topic, target_hz)[1]
+        if exact_window
+        else coverage_tolerance_sec(target_hz)
+    )
     late_start_sec = max(0.0, (item.first_ns - bag_start_ns) / 1e9)
     early_stop_sec = max(0.0, (bag_end_ns - item.last_ns) / 1e9)
     if late_start_sec > tolerance or early_stop_sec > tolerance:
@@ -630,6 +667,7 @@ def validate_topics(
     duration_sec: float,
     bag_start_ns: Optional[int],
     bag_end_ns: Optional[int],
+    exact_window: bool = False,
 ) -> None:
     print("\n--- Required topics ---")
     for spec in required_specs():
@@ -669,6 +707,7 @@ def validate_topics(
             bag_start_ns,
             bag_end_ns,
             spec.label + "_coverage",
+            exact_window,
         )
 
         minor, major, max_gap, ignored_edge = classify_gaps(
@@ -676,6 +715,7 @@ def validate_topics(
             spec.target_hz,
             bag_start_ns,
             bag_end_ns,
+            ignore_edge_gaps=not exact_window,
         )
         if spec.target_hz > 0 and max_gap is not None:
             edge_note = f"; ignored {ignored_edge} start/stop edge gap(s)" if ignored_edge else ""
@@ -721,32 +761,95 @@ def validate_ground_truth(
     require_gt: bool,
     bag_start_ns: Optional[int],
     bag_end_ns: Optional[int],
+    exact_window: bool = False,
 ) -> None:
     print("\n--- Ground truth ---")
     candidates = ground_truth_topics(stats.keys())
+    explicit_topic = os.environ.get("MOCAP_TOPIC", "").strip()
     present = [stats[topic] for topic in candidates if topic in stats]
-    if not present:
+    primary = stats.get(explicit_topic) if explicit_topic else (present[0] if present else None)
+    if primary is None:
+        if explicit_topic:
+            message = f"selected MOCAP_TOPIC missing: {explicit_topic}"
+        else:
+            message = "missing; checked {} plus per-robot /gt/.../pose and /optitrack/rigid_bodies/... topics".format(
+                ", ".join(ground_truth_topics())
+            )
         record(
             results,
             FAIL if require_gt else WARN,
             "ground_truth",
-            "missing; checked {} plus per-robot /gt/.../pose and /optitrack/rigid_bodies/... topics".format(
-                ", ".join(ground_truth_topics())
-            ),
+            message,
         )
         return
+    min_hz = env_float("GT_BAG_MIN_HZ", env_float("MOCAP_MIN_HZ", 30.0))
     for item in present:
-        level = PASS if item.hz >= 30.0 else WARN
-        record(results, level, item.topic, f"{item.count} msgs @ {item.hz:.1f} Hz", item.topic)
+        is_primary = item.topic == primary.topic
+        if not is_primary:
+            record(
+                results,
+                PASS,
+                "ground_truth_secondary",
+                f"{item.topic}: {item.count} msgs @ {item.hz:.1f} Hz (informational)",
+                item.topic,
+            )
+            continue
+        level = PASS if item.hz >= min_hz else WARN
+        if require_gt and item.hz < min_hz:
+            level = FAIL
+        record(
+            results,
+            level,
+            item.topic,
+            f"{item.count} msgs @ {item.hz:.1f} Hz (selected ground truth; minimum {min_hz:.1f} Hz)",
+            item.topic,
+        )
         if require_gt:
             validate_topic_coverage(
                 results,
                 item,
-                30.0,
+                min_hz,
                 bag_start_ns,
                 bag_end_ns,
                 "ground_truth_coverage",
+                exact_window,
             )
+        minor, major, max_gap, ignored_edge = classify_gaps(
+            item,
+            min_hz,
+            bag_start_ns,
+            bag_end_ns,
+            ignore_edge_gaps=not exact_window,
+        )
+        if max_gap is not None:
+            edge_note = f"; ignored {ignored_edge} start/stop edge gap(s)" if ignored_edge else ""
+            check = "ground_truth_gaps"
+            if major:
+                _, major_limit = gap_limits_for_topic(item.topic, min_hz)
+                record(
+                    results,
+                    FAIL if require_gt else WARN,
+                    check,
+                    f"{major} major gap(s), {minor} minor gap(s); max internal gap {max_gap:.3f}s exceeds hard threshold {major_limit:.3f}s{edge_note}",
+                    item.topic,
+                )
+            elif minor:
+                minor_limit, _ = gap_limits_for_topic(item.topic, min_hz)
+                record(
+                    results,
+                    WARN,
+                    check,
+                    f"{minor} minor gap(s); max internal gap {max_gap:.3f}s exceeds warning threshold {minor_limit:.3f}s{edge_note}",
+                    item.topic,
+                )
+            else:
+                record(
+                    results,
+                    PASS,
+                    check,
+                    f"max internal gap {max_gap:.3f}s{edge_note}",
+                    item.topic,
+                )
 
 
 def validate_imu(
@@ -755,6 +858,7 @@ def validate_imu(
     require_imu: bool,
     bag_start_ns: Optional[int],
     bag_end_ns: Optional[int],
+    exact_window: bool = False,
 ) -> None:
     print("\n--- IMU ---")
     present = [stats[topic] for topic in imu_topics() if topic in stats]
@@ -784,13 +888,15 @@ def validate_imu(
                 bag_start_ns,
                 bag_end_ns,
                 item.topic.strip("/").replace("/", "_") + "_coverage",
+                exact_window,
             )
         target_hz = target_hz_for_topic(item.topic)
-        _, major, max_gap, ignored_edge = classify_gaps(
+        minor, major, max_gap, ignored_edge = classify_gaps(
             item,
             target_hz,
             bag_start_ns,
             bag_end_ns,
+            ignore_edge_gaps=not exact_window,
         )
         if max_gap is not None:
             check = item.topic.strip("/").replace("/", "_") + "_gaps"
@@ -802,6 +908,15 @@ def validate_imu(
                     FAIL if require_imu else WARN,
                     check,
                     f"{major} major gap(s); max internal gap {max_gap:.3f}s exceeds hard threshold {major_limit:.3f}s{edge_note}",
+                    item.topic,
+                )
+            elif minor:
+                minor_limit, _ = gap_limits_for_topic(item.topic, target_hz)
+                record(
+                    results,
+                    WARN,
+                    check,
+                    f"{minor} minor gap(s); max internal gap {max_gap:.3f}s exceeds warning threshold {minor_limit:.3f}s{edge_note}",
                     item.topic,
                 )
             else:
@@ -888,6 +1003,7 @@ def main() -> int:
         parser.error("--window-duration must be positive")
     if has_window_end and args.window_end_epoch <= args.window_start_epoch:
         parser.error("--window-end-epoch must be later than --window-start-epoch")
+    validate_gap_policy(parser)
 
     paths = [Path(value).expanduser() for value in args.bags]
     files_by_path = [
@@ -1037,10 +1153,31 @@ def main() -> int:
         )
 
     if stats:
-        validate_topics(stats, results, duration_sec, bag_start_ns, bag_end_ns)
+        validate_topics(
+            stats,
+            results,
+            duration_sec,
+            bag_start_ns,
+            bag_end_ns,
+            exact_window=has_window_start,
+        )
         validate_storage_timestamp_monotonicity(full_stats, results)
-        validate_ground_truth(stats, results, args.require_gt, bag_start_ns, bag_end_ns)
-        validate_imu(stats, results, args.require_imu, bag_start_ns, bag_end_ns)
+        validate_ground_truth(
+            stats,
+            results,
+            args.require_gt,
+            bag_start_ns,
+            bag_end_ns,
+            exact_window=has_window_start,
+        )
+        validate_imu(
+            stats,
+            results,
+            args.require_imu,
+            bag_start_ns,
+            bag_end_ns,
+            exact_window=has_window_start,
+        )
 
     n_pass = sum(1 for item in results if item.level == PASS)
     n_warn = sum(1 for item in results if item.level == WARN)
@@ -1070,6 +1207,13 @@ def main() -> int:
         "verdict": verdict,
         "counts": {"pass": n_pass, "warn": n_warn, "fail": n_fail},
         "require_resilient_storage": args.require_resilient_storage,
+        "gap_policy": {
+            "edge_gap_ignore_sec": 0.0 if has_window_start else env_float("EDGE_GAP_IGNORE_SEC", 3.0),
+            "gt_minor_gap_sec": gap_limits_for_topic("/optitrack/rigid_bodies/example", 30.0)[0],
+            "gt_major_gap_sec": gap_limits_for_topic("/optitrack/rigid_bodies/example", 30.0)[1],
+            "imu_minor_gap_sec": gap_limits_for_topic("/camera/gyro/sample", 200.0)[0],
+            "imu_major_gap_sec": gap_limits_for_topic("/camera/gyro/sample", 200.0)[1],
+        },
         "topics": {name: asdict(item) for name, item in sorted(stats.items())},
         "results": [asdict(item) for item in results],
     }

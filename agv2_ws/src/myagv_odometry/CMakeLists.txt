@@ -46,4 +46,12 @@ install(DIRECTORY include/
   DESTINATION include
 )
 
+if(BUILD_TESTING)
+  enable_testing()
+  add_executable(test_command_watchdog test_command_watchdog.cpp)
+  target_include_directories(test_command_watchdog PRIVATE include)
+  target_compile_features(test_command_watchdog PRIVATE cxx_std_14)
+  add_test(NAME command_watchdog COMMAND test_command_watchdog)
+endif()
+
 ament_package()

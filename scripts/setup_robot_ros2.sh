@@ -30,8 +30,8 @@ APPLY_LOW_RISK_FIXES=true
 
 ROS_DISTRO="${ROS_DISTRO:-humble}"
 EXPECTED_LIBREALSENSE="${EXPECTED_LIBREALSENSE:-2.58.1}"
-EXPECTED_REALSENSE_ROS_DRIVER="${EXPECTED_REALSENSE_ROS_DRIVER:-4.58.2}"
-EXPECTED_REALSENSE_ROS_LIBREALSENSE="${EXPECTED_REALSENSE_ROS_LIBREALSENSE:-2.58.2}"
+EXPECTED_REALSENSE_ROS_DRIVER="${EXPECTED_REALSENSE_ROS_DRIVER:-4.58.4}"
+EXPECTED_REALSENSE_ROS_LIBREALSENSE="${EXPECTED_REALSENSE_ROS_LIBREALSENSE:-2.58.4}"
 EXPECTED_D455_FIRMWARE="${EXPECTED_D455_FIRMWARE:-5.17.0.10}"
 PYREALSENSE2_PIP_VERSION="${PYREALSENSE2_PIP_VERSION:-2.58.1.10581}"
 ALLOW_REALSENSE_VERSION_DRIFT="${ALLOW_REALSENSE_VERSION_DRIFT:-false}"
@@ -336,12 +336,21 @@ install_realsense_stack() {
 
 install_realsense_ros_stack() {
     section "realsense ros packages"
-    install_expected_version_package "ros-${ROS_DISTRO}-librealsense2" "${EXPECTED_REALSENSE_ROS_LIBREALSENSE}"
-    install_expected_version_package "ros-${ROS_DISTRO}-realsense2-camera-msgs" "${EXPECTED_REALSENSE_ROS_DRIVER}"
-    install_expected_version_package "ros-${ROS_DISTRO}-realsense2-camera" "${EXPECTED_REALSENSE_ROS_DRIVER}"
+    local pkg
+    local realsense_ros_packages=(
+        "ros-${ROS_DISTRO}-librealsense2"
+        "ros-${ROS_DISTRO}-realsense2-camera-msgs"
+        "ros-${ROS_DISTRO}-realsense2-camera"
+    )
+    install_expected_version_package "${realsense_ros_packages[0]}" "${EXPECTED_REALSENSE_ROS_LIBREALSENSE}"
+    install_expected_version_package "${realsense_ros_packages[1]}" "${EXPECTED_REALSENSE_ROS_DRIVER}"
+    install_expected_version_package "${realsense_ros_packages[2]}" "${EXPECTED_REALSENSE_ROS_DRIVER}"
     apt_install \
         "ros-${ROS_DISTRO}-diagnostic-updater" \
         "ros-${ROS_DISTRO}-realsense2-description"
+    for pkg in "${realsense_ros_packages[@]}"; do
+        sudo_run apt-mark hold "${pkg}" >/dev/null || true
+    done
 }
 
 install_d455_boot_quirk() {
@@ -491,6 +500,28 @@ path.write_text(" ".join(parts) + "\n")'
     echo "installed ${rule_file}; /dev/ydlidar -> /dev/${target}"
 }
 
+install_recording_writeback_tuning() {
+    section "recording writeback tuning"
+    # RGB-D MCAP recording pegs the SD card. With ratio-based writeback (the Pi
+    # default and the pre-existing 99-agv-writeback.conf), hundreds of MB of
+    # dirty pages accumulate on a 2 GB Pi then flush in one stall that starves
+    # the Zenoh ground-truth client, aborting MoCap drives on pose staleness.
+    # Force small continuous writeback instead. The 99-orkar name sorts after
+    # 99-agv-writeback.conf so these dirty_bytes settings win on sysctl --system.
+    local conf_file="/etc/sysctl.d/99-orkar-recording.conf"
+    local conf_content="# Continuous SD writeback so heavy RGB-D recording I/O does not stall the
+# Zenoh ground-truth client (proven cause of MoCap pose staleness on a 2 GB Pi:
+# with recording on, GT stalled 0.8-1.2s and aborted the drive; with these
+# settings GT max age stays ~0.13s and a full S1 circle completes).
+vm.dirty_bytes = 16777216
+vm.dirty_background_bytes = 8388608
+vm.dirty_writeback_centisecs = 100
+vm.dirty_expire_centisecs = 200"
+    sudo_write_file "${conf_file}" 0644 "${conf_content}"
+    sudo_run sysctl -p "${conf_file}" >/dev/null 2>&1 || true
+    echo "installed ${conf_file}"
+}
+
 check_python_binding() {
     section "pyrealsense2 import"
     if python3 - <<'PY'
@@ -606,6 +637,7 @@ if [ "${APPLY_LOW_RISK_FIXES}" = "true" ]; then
     install_d455_power_rule
     install_d455_uvc_bind_rule
     install_ydlidar_uart_rule
+    install_recording_writeback_tuning
 fi
 
 if [ "${INSTALL_YDLIDAR_SDK}" = "true" ]; then

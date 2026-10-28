@@ -1,0 +1,315 @@
+---
+name: agv-robot-ops
+description: >-
+  Operate the Distributed SLAM AGV fleet from this repo — set up, update, test,
+  or debug a robot (Raspberry Pi 4 + ROS 2 Humble + Intel D455 + YDLidar +
+  wheel odometry). Use this whenever provisioning a new or reflashed robot,
+  pulling code onto a robot, running readiness/doctor gates, recording and
+  validating bags, configuring MoCap/Zenoh ground-truth transport, or
+  diagnosing sensor/USB/SD-card problems. It encodes the branch model, the
+  commit/push safety rules, and the mandatory validation steps so fleet work
+  stays cautious, consistent, and reproducible.
+---
+
+# AGV Robot Operations
+
+You are operating physical data-collection robots. Mistakes cost lab time,
+corrupt datasets, or brick hardware. Work slowly, verify everything with real
+command output, and never assume — confirm.
+
+## GOLDEN RULES (read first, always apply)
+
+1. **Evidence only — never theorize. State only what you are 100% certain of,
+   and back every claim with a measurement.** Do NOT present a cause, diagnosis,
+   or conclusion as fact unless direct evidence proves it. Banned: "probably X",
+   "likely the Y", "it's a Z thing" — any root cause you have not measured.
+   - Always separate **PROVEN** (measured; quote the real output/numbers) from
+     **UNPROVEN** (a hypothesis) — and if something is a hypothesis, say so
+     explicitly; never let it stand as the answer.
+   - Watch for over-reading a single number: e.g. high load average with idle
+     CPU does **not** prove CPU exhaustion. Check the confounders before naming
+     a cause.
+   - If you lack the data to be certain, say "I don't know yet" and run the
+     measurement that settles it (isolate variables, A/B test) before concluding.
+     Ruling a cause **out** with data beats guessing one **in**.
+   - When you do conclude, cite what proved it and what you ruled out and how.
+2. **Never `git commit`, `git push`, or merge without explicit user
+   confirmation.** Show the diff / plan first and wait for a clear yes. This
+   applies even when the change seems obviously correct.
+3. **Never add `Co-Authored-By` (or any co-author) lines to commits.** Standing
+   user instruction.
+4. **Branch model — respect it strictly:**
+   - `main` = the **last known-good, fleet-validated** version. Stable baseline.
+   - `ros2-migration` = **staging** for changes not yet proven on every robot.
+   - Do **all** work on `ros2-migration`. New robots are set up from it too.
+   - Merge `ros2-migration → main` **only after** a change is validated across
+     the fleet, and **only with explicit user sign-off**. It is normal and
+     desired for `ros2-migration` to sit ahead of `main`. Do not "fix" that.
+   - **Never force-push** a shared branch (`main` or `ros2-migration`).
+5. **Always run the doctor and validation scripts** — never declare a robot or
+   bag "ready" from eyeballing logs. The **post-run bag validator is the
+   authority** on publishability. `READY: false` / `dataset_ready=false` on the
+   preflight/sensor-logging gate is **normal** (it isn't the dataset gate).
+6. **Report outcomes honestly.** If a gate FAILs, say so with the evidence. Never
+   soften or skip a failure. Distinguish benign failures (e.g. `cmd_vel` missing
+   in a stationary test) from real ones.
+7. **Confirm before anything hard to reverse:** reboot, reflash, `apt`
+   install/upgrade, killing processes, deleting bags, pushing, merging. State
+   what you're about to do and why, then wait.
+8. **Physical faults are not software-fixable.** USB `-71`/HID-timeout, SD-card
+   read-only, cable/port issues → diagnose, present the evidence, and hand off
+   to the human. Do not loop on software "fixes" for hardware problems.
+9. **Networking:** use **one persistent managed path** — NetworkManager
+   (`nmcli`) *or* netplan/systemd-networkd; `robot_doctor.py`'s
+   `wifi_management` check passes either. Never run manual
+   `wpa_supplicant`/`dhclient` — duplicate WiFi/DHCP processes break SSH and ROS
+   discovery. Check `ls /etc/netplan/` before reaching for `nmcli`: fleet robots
+   have shipped on netplan with no NetworkManager installed at all.
+
+## Repo orientation
+
+- Production branch: `ros2-migration`. Robots clone/track it.
+- Workspace: `~/slam_project` on each robot; ROS 2 workspace at
+  `agv2_ws/` (symlink-installed — launch/config file changes take effect
+  **without** a colcon rebuild; only C++/message changes need a rebuild).
+- Session artifacts go to `~/agv_data/` (bags, manifests, logs) and
+  `~/agv_data/diagnostics/` (doctor reports) — **outside** the repo, gitignored.
+- Key scripts:
+  - `scripts/setup_robot_ros2.sh` — one-time provisioning.
+  - `scripts/diagnostics/robot_doctor.sh` — readiness gates (via `--config`).
+  - `scripts/diagnostics/dataset_ready_gate.sh` — read-only pre-run dataset gate.
+  - `scripts/logging/start_session.sh` — managed bringup + record + manifest.
+  - `scripts/logging/validate_ros2_bag.py` — post-run bag validator (authority).
+  - `scripts/scenarios/run_s1_mocap_pilot_robot.sh` — gated S1 MoCap circle run.
+  - `scripts/network/configure_zenoh.sh` — Zenoh ground-truth transport.
+  - Dev checks: `scripts/diagnostics/robot_doctor_selftest.py`,
+    `scripts/diagnostics/diagnostic_pipeline_audit.py`.
+- Two readiness gates:
+  - `configs/robot_doctor_sensor_logging_gate.json` — proves the robot-local
+    sensor stack, **no ground truth required** (`require_gt: false`).
+  - `configs/robot_doctor_dataset_gate.json` — full publishable gate (needs
+    MoCap GT + odom-vs-MoCap sanity).
+
+## Fleet hardware standard (must match before collection)
+
+D455 firmware `5.17.0.10`; USB **5000 Mb/s** (USB3); RGB-D `640x480x15`; raw
+gyro `/camera/gyro/sample` ~200 Hz, raw accel `/camera/accel/sample` ~100 Hz;
+MCAP storage. RealSense ROS versions are **fleet-wide config**, pinned in the
+gate JSONs, `setup_robot_ros2.sh`, docs, and the selftest — see the version
+workflow below. Standalone librealsense tools stay at `2.58.1`; do not bump them
+with the ROS packages.
+
+---
+
+## Workflow A — Set up a new or reflashed robot
+
+1. Console (or SSH): `sudo hostnamectl set-hostname agv<N> && sudo reboot`.
+2. WiFi (see Golden Rule 9). NetworkManager image:
+   `sudo nmcli device wifi connect "<SSID>" password "<PW>"`. Netplan image: add
+   the SSID under `wifis.wlan0.access-points` in the existing `/etc/netplan/*.yaml`
+   (keep lab and home SSIDs side by side so it roams), `sudo netplan apply`.
+   Either way verify with `ping -c3 8.8.8.8`.
+3. Clone + provision (needs internet + sudo password):
+   ```
+   git clone -b ros2-migration https://github.com/osayed11/Distributed-SLAM-AGV-Code.git ~/slam_project
+   SUDO_PASSWORD=<pw> bash ~/slam_project/scripts/setup_robot_ros2.sh agv<N>
+   ```
+4. **Reboot before the first camera gate.** `setup_robot_ros2.sh` writes
+   `usbcore.quirks=8086:0b5c:kn` to `cmdline.txt` but does not reboot, and the
+   quirk only applies at boot. Until then a D455 can fail outright —
+   `UVCIOC_CTRL_QUERY ... Connection timed out`, kernel `-110`, no camera topics
+   after the full bringup wait. Do **not** reach for `d455-usb-reset` /
+   `d455-authorize-cycle` first: on a hot-plugged camera without the quirk that
+   escalated the fault to `VIDIOC_S_FMT errno=5`. A plain reboot cleared it.
+5. Re-add the operator's SSH public key to `~/.ssh/authorized_keys` if remote
+   access is needed (ask the user for the key; do not invent one).
+6. Prefer a **high-endurance SD card or USB-SSD boot** — recording write loads
+   wear out cheap cards (see SD gotcha below).
+
+## Workflow B — Update code on an existing robot
+
+1. SSH in. `cd ~/slam_project`.
+2. `git status --porcelain` — if there are local changes, **diff them first**
+   (`git diff <file>`). Discard a local hand-patch **only after confirming** it's
+   superseded upstream (e.g. an old IMU `sleep` patch now in the mainline file).
+   Ask if unsure.
+3. `git fetch origin`; check `git merge-base --is-ancestor HEAD origin/ros2-migration`.
+   - Clean tree + ancestor → `git pull --ff-only origin ros2-migration`.
+   - Diverged (e.g. sitting on a `main` merge commit) → `git reset --hard
+     origin/ros2-migration` **only** if the tree is clean and the user agrees.
+4. Launch/config-only changes need no rebuild (symlink install). Verify with the
+   installed vs source file if in doubt.
+5. Check RealSense versions against the gate config (see Workflow D + version
+   note). Bump if needed.
+6. Run the dev checks before trusting diagnostic/logging changes:
+   `python3 scripts/diagnostics/robot_doctor_selftest.py` (expect `OK`) and
+   `python3 scripts/diagnostics/diagnostic_pipeline_audit.py` (all rows PASS).
+
+## Workflow C — Test / validate a robot (no MoCap needed)
+
+1. **Sensor-logging gate** (~3–5 min, needs D455 connected):
+   ```
+   ROS_LOCALHOST_ONLY=1 bash scripts/diagnostics/robot_doctor.sh agv<N> \
+     --config configs/robot_doctor_sensor_logging_gate.json \
+     --bringup-cmd "ros2 launch agv_bringup bringup.launch.py agv_color_profile:=640x480x15 agv_depth_profile:=640x480x15 initial_reset:=false agv_cmd_vel_topic:=/agv<N>/cmd_vel" \
+     --bringup-wait 180
+   ```
+   Pass = **no FAIL checks**. `READY: false` here is expected.
+2. **Home-test record → validate** (proves the full loop, incl. IMU-in-bag).
+   Backgrounded sessions need a clean process-group SIGINT to finalize MCAP —
+   launch under `setsid`, wait for the "starting bag recording" log line, record
+   ~60s, then `kill -INT -<PGID>` and wait for "Recording stopped" + flush.
+   ```
+   REQUIRE_IMU=true REQUIRE_GT=false CMD_TOPIC=/agv<N>/cmd_vel \
+     bash scripts/logging/start_session.sh agv<N> home_test
+   # after it finalizes:
+   CMD_TOPIC=/agv<N>/cmd_vel REQUIRE_IMU=true REQUIRE_GT=false \
+     python3 scripts/logging/validate_ros2_bag.py <bag_dir> --require-resilient-storage
+   ```
+   Then **confirm IMU actually landed**: `ros2 bag info <bag_dir>` should show
+   non-zero counts on `/camera/gyro/sample` and `/camera/accel/sample`. A
+   `cmd_vel: missing` FAIL is **benign** when the robot was stationary (nothing
+   published cmd_vel); it clears once the robot is driven during a run.
+
+## Workflow D — RealSense version standardization
+
+The ROS apt repo keeps **only the latest** version, so pins drift out of the
+repo over time. If the gate FAILs on `realsense_ros_driver_version` /
+`realsense_ros_librealsense`:
+
+1. `echo <pw> | sudo -S apt-get update` first (the index is often stale).
+2. `apt-cache madison ros-humble-realsense2-camera` to see the actual candidate.
+3. If it matches the pin → install it. If the repo has **moved past** the pin
+   (only a newer version available), this is a **fleet decision** — surface it
+   to the user. To advance the standard, update **every** reference together:
+   both gate JSONs, `setup_robot_ros2.sh` `EXPECTED_*` defaults,
+   `diagnostic_pipeline_audit.py`, `robot_doctor_selftest.py` assertions,
+   `README.md`, and `docs/ROBOT_DIAGNOSTIC_PIPELINE.md`. Leave standalone
+   librealsense (`2.58.1`) and D455 firmware (`5.17.0.10`) untouched. Then run
+   the dev checks (Workflow B step 6) before proposing a commit.
+4. Install (mirrors `install_realsense_ros_stack`): the 3 pinned ROS packages
+   (`ros-humble-librealsense2`, `-realsense2-camera-msgs`, `-realsense2-camera`)
+   plus `-diagnostic-updater` and `-realsense2-description`.
+
+## Workflow E — MoCap / fleet ground-truth (lab only)
+
+Ground truth crosses the network via **Zenoh** (`zenoh-bridge-ros2dds`), not
+DDS multicast. Robots stay `ROS_LOCALHOST_ONLY=1` on `rmw_fastrtps_cpp`; only
+`/optitrack/rigid_bodies/orkar_agv*` is bridged in. **Never combine with
+`ROS_DISCOVERY_SERVER`.**
+
+1. Lab laptop, in this order: start the NatNet pose source (Motive streaming,
+   rigid body `orkar_agv<N>` **enabled** — a disabled asset is absent from the
+   streamed model definitions, and the publisher only enumerates at connect, so
+   re-enabling one in Motive needs a publisher restart to take effect), then the
+   router (`configure_zenoh.sh router-run`) **with `ROS_DISTRO=humble` set**.
+   Without it the bridge assumes `iron`, rejects every Humble
+   `ros_discovery_info` as a bad GID length, and routes **nothing** while
+   looking healthy — listening on `:7447`, robots connected, zero
+   `Discovered ROS Node` lines. Confirm `Route Publisher ... created` in the
+   router log. Its REST plugin binds `127.0.0.1:8000`; if something else holds
+   that port the router panics on start — run from a config copy with a free
+   `http_port`. **The order matters for a second reason:** on bridge 1.9.0 a
+   `Route Publisher ... removed` keeps forwarding, so every time the NatNet
+   publisher is restarted under a running router each pose reaches the robots
+   one more time (3 `created` lines in the log = every sample delivered 3×).
+   Restart the router after the publisher's *final* start, and whenever you
+   restart the publisher later (e.g. to add a rigid body).
+2. Robot: `bash scripts/network/configure_zenoh.sh robot <LAPTOP_IP> 7447` then
+   `source scripts/network/load_ros_transport_env.sh`. (Pre-staging the pinned
+   bridge binary at `/usr/local/bin/zenoh-bridge-ros2dds` while on reliable
+   internet lets this step skip the download.)
+3. **Prove GT samples actually arrive** (a discovered topic ≠ a publishing one):
+   `ros2 topic echo /optitrack/rigid_bodies/orkar_agv<N> --once` and
+   `ros2 topic hz ...` (must be inside the configured 20–120 Hz band). A rate
+   well above Motive's frame rate (~75–80 Hz here) means duplicated routes, not
+   a faster MoCap: count messages vs distinct `header.stamp` over 10 s on the
+   robot — the ratio must be 1.00. The dataset gate's `mocap_rate` check fails
+   above 120 Hz for this reason; the sensor gate does not look at GT.
+4. Run the gated S1 circle (needs a measured per-robot
+   `S1_FORWARD_YAW_OFFSET_DEG` — never inferred from robot ID). To measure it:
+   one open-loop 1 m straight (`drive_mocap_straight_ros2.py --heading-kp 0
+   --max-angular 0 --yes`), offset = travel bearing − rigid-body yaw at start.
+   Marker frames differ per robot (one robot measured −90°, another ~0°);
+   measured values live in `docs/FLEET_STATUS.md`. With the wrong offset the
+   precheck fails on `direction-normalised progress` — that is the gate working.
+   ```
+   MOCAP_TOPIC=/optitrack/rigid_bodies/orkar_agv<N> CMD_TOPIC=/agv<N>/cmd_vel \
+     bash scripts/scenarios/run_s1_mocap_pilot_robot.sh agv<N> s1_circle_1m
+   ```
+   It self-gates: GT freshness/rate, a 5 s unrecorded precheck (radius error,
+   direction progress, pose age), and recorder subscription readiness before it
+   records or moves. Trust those gates.
+
+---
+
+## Hard-won gotchas
+
+- **GT stalls of 0.3–0.6 s that abort prechecks/drives on some robots but not
+  others at the same instant → WiFi power-save on the Pi** (brcmfmac default is
+  ON). Check `iw dev wlan0 get power_save` (`apt-get install iw`; `/usr/sbin`
+  is not on the non-login PATH) and set it off; `orkar-wifi-powersave-off.service`
+  makes it persistent. Pings show 0 % loss but 120–190 ms bursts. Found
+  2026-10-22; fixed the fleet run on the next attempt (GT age 0.6 s → 0.03 s).
+- **"another S1 motion/recording session owns the lock" with no runner alive**
+  → the lock fd was inherited by bringup's `static_transform_publisher`
+  children of a killed run (`fuser /tmp/orkar_s1_motion.lock` names them).
+  The runner now closes fd 9 for bringup; older checkouts: kill the holders.
+- **Fleet circles: the centre is wherever the robots are, not the MoCap
+  origin.** Read all rigid-body poses, fit the line/rings, and pass the derived
+  `S1_CENTER_X/Y` and the *measured* radii; robots must already sit within
+  0.15 m of their ring and face its tangent for the chosen direction (the
+  default is ccw — robots lined up facing one way are usually cw for half of
+  them). Release with `S1_START_SIGNAL_FILE` only after every runner prints
+  `FLEET_READY`; write the same epoch (now + ~25 s) to each robot.
+- **IMU missing from a bag** (`/camera/gyro|accel/sample` count 0) despite live
+  rates before recording → **first confirm the bag was compressed.** Older
+  `start_session.sh` passed `--storage-config-file` only for sqlite3, so MCAP
+  sessions ran with no chunk compression at ~2× the S1 runner's write rate —
+  enough to stall a 2 GB Pi and drop the HID stream with exactly this signature,
+  on a perfectly good cable. Read the MCAP chunk indexes to check (rosbag2's
+  `compression_format` in `metadata.yaml` is empty either way). Only with the
+  writer profile right is a **marginal USB3 cable** the suspect. The kernel shows
+  `uvcvideo ... Non-zero status (-71)` (EPROTO) and
+  `hid-sensor-hub ... No report`; librealsense logs `Frames didn't arrive`.
+  Video (UVC) survives, IMU (HID) dies under combined load — the gates test
+  video-only and motion-only separately, so they can pass while a real record
+  fails. Fix is physical: reseat/swap the Intel cable, direct USB3 (blue) port,
+  no hub. A software USB reset will not fix it.
+- **Root filesystem read-only / `EXT4-fs ... Remounting filesystem read-only`**
+  → SD-card wear-out (write-protect latch). Try a **cold power cycle** (full
+  power off ~30 s, not a warm reboot) then `fsck -y /dev/mmcblk0p2`. If fsck
+  reports "unable to set superblock flags" or the OS can't even
+  unmount/probe the card, it's dead — **reflash a fresh card**; don't fight it.
+- **Build wedges / `task kworker … blocked for more than N seconds` during
+  `colcon build`** → often *not* a bad card. On a **low-RAM Pi (2 GB)** a
+  full-parallel build exhausts RAM; the kernel thrashes dirty-page writeback to
+  the slow SD, a `kworker` blocks on I/O, and the whole box wedges (SSH dies with
+  it). It *looks* like card death but the card is usually fine. Rule out the
+  imposters first: `free -h` (is it a 2 GB board?) and `vcgencmd get_throttled`
+  (`0x0` = not under-voltage). The fix is to **throttle the build** —
+  `setup_robot_ros2.sh` does NOT (it runs `colcon build --symlink-install` on all
+  cores). Kill the hung build (via its process group), clean `agv2_ws/{build,
+  install,log}`, then build by hand: source ROS + the workspace, then
+  `MAKEFLAGS=-j2 colcon build --symlink-install --parallel-workers 1` — one
+  package at a time stays in RAM (often never even swaps). Optional headroom: a
+  2 GB swapfile helps under *moderate* pressure, but prefer **zram** (compressed
+  RAM swap, no SD I/O) over an SD swapfile, which can itself thrash when it
+  collides with build writes. Long-term fix: a 4/8 GB Pi or USB-SSD boot.
+- **Pi 4 USB buses:** bus 2 = USB3 (blue, 5000 Mb/s), bus 1 = USB2 (480). A
+  D455 that enumerates on bus 1 is in the wrong port and will be degraded.
+- **`D455_RESET_MODE` default is `none`** — a healthy camera must not be reset
+  as routine setup (reset can itself wedge UVC). Reset only for explicit
+  recovery.
+- **Depth is raw** (`/camera/depth/image_rect_raw`), not aligned; IMU is raw
+  split streams (`unite_imu_method:=0`), fused `/camera/imu` is compat-only.
+- Don't run the SD card near full; clean-shutdown before cutting battery power.
+
+## Verification discipline (how to close out any task)
+
+- Re-read actual command output; never report success you didn't observe.
+- After a gate/validation, quote the PASS/WARN/FAIL counts and the verdict.
+- Before proposing a commit: run the dev checks, show `git diff`/`--stat`, list
+  every file touched, and confirm no `4.58.x`-style drift or stray edits.
+- Leave the robot in a known state (branch, clean tree, services as expected)
+  and summarize what changed, what's validated, and what's still pending.

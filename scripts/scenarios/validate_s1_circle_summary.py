@@ -27,6 +27,7 @@ def main() -> int:
     parser.add_argument("--min-laps", type=float, default=0.02)
     parser.add_argument("--max-pose-age", type=float, default=0.20)
     parser.add_argument("--min-pose-samples", type=int, default=30)
+    parser.add_argument('--max-heading-error-deg', type=float, default=30)
     args = parser.parse_args()
 
     path = Path(args.summary_json).expanduser()
@@ -37,8 +38,12 @@ def main() -> int:
         return 1
 
     failures = []
+    if data.get('interrupted') or data.get('pause_count', 0):
+        failures.append('interrupted motion is not an uninterrupted scenario; retain and label the recording')
+    if data.get('abort_reason'):
+        failures.append('controller aborted: ' + str(data['abort_reason']))
     if data.get("reached_duration") is not True:
-        failures.append(f"motion did not reach 5s duration: {data.get('abort_reason') or 'unknown abort'}")
+        failures.append(f"motion did not reach requested duration: {data.get('abort_reason') or 'unknown abort'}")
 
     try:
         initial_radius_error = abs(finite_number(data, "initial_radius_error_m"))
@@ -47,9 +52,12 @@ def main() -> int:
         laps = finite_number(data, "laps")
         max_pose_age = finite_number(data, "max_pose_age_sec")
         pose_samples = int(finite_number(data, "pose_samples"))
+        heading_error = abs(finite_number(data, 'max_heading_error_deg'))
     except ValueError as exc:
         failures.append(str(exc))
     else:
+        if heading_error > args.max_heading_error_deg:
+            failures.append(f'heading error {heading_error:.1f}deg exceeds {args.max_heading_error_deg:.1f}deg')
         if initial_radius_error > args.max_radius_error:
             failures.append(
                 f"initial radius error {initial_radius_error:.3f}m exceeds {args.max_radius_error:.3f}m"

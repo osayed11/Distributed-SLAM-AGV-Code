@@ -60,8 +60,10 @@ ROSBAG2_MAX_CACHE_SIZE="${ROSBAG2_MAX_CACHE_SIZE:-536870912}"
 ROSBAG2_MAX_BAG_SIZE="${ROSBAG2_MAX_BAG_SIZE:-2147483648}"
 ROSBAG2_STORAGE_ID="${ROSBAG2_STORAGE_ID:-auto}"
 ROSBAG2_STORAGE_ID_EFFECTIVE="${ROSBAG2_STORAGE_ID}"
-ROSBAG2_STORAGE_CONFIG="${ROSBAG2_STORAGE_CONFIG:-${ROOT}/configs/sqlite_resilient.yaml}"
+ROSBAG2_STORAGE_CONFIG="${ROSBAG2_STORAGE_CONFIG:-}"
 ROSBAG2_STORAGE_PRESET_PROFILE="${ROSBAG2_STORAGE_PRESET_PROFILE:-}"
+ROSBAG2_STORAGE_CONFIG_APPLIED=""
+ROSBAG2_STORAGE_PRESET_PROFILE_APPLIED=""
 ROSBAG2_QOS_OVERRIDES="${ROSBAG2_QOS_OVERRIDES:-${ROOT}/configs/rosbag2_sensor_qos.yaml}"
 ROSBAG_STOP_TIMEOUT="${ROSBAG_STOP_TIMEOUT:-180}"
 BRINGUP_STOP_TIMEOUT="${BRINGUP_STOP_TIMEOUT:-60}"
@@ -83,7 +85,7 @@ RUNTIME_WATCHDOG_INTERVAL="${RUNTIME_WATCHDOG_INTERVAL:-20}"
 RUNTIME_WATCHDOG_HZ_TIMEOUT="${RUNTIME_WATCHDOG_HZ_TIMEOUT:-12}"
 RUNTIME_WATCHDOG_MAX_CONSECUTIVE_FAILURES="${RUNTIME_WATCHDOG_MAX_CONSECUTIVE_FAILURES:-2}"
 RUNTIME_WATCHDOG_ABORT_ON_FAILURE="${RUNTIME_WATCHDOG_ABORT_ON_FAILURE:-false}"
-MIN_RGBD_HZ="${MIN_RGBD_HZ:-12}"
+MIN_RGBD_HZ="${MIN_RGBD_HZ:-10}"
 MIN_CAMERA_IMU_HZ="${MIN_CAMERA_IMU_HZ:-150}"
 MIN_SCAN_HZ="${MIN_SCAN_HZ:-5}"
 MIN_ODOM_HZ="${MIN_ODOM_HZ:-10}"
@@ -246,6 +248,32 @@ if [ "${ROSBAG2_STORAGE_ID}" = "auto" ]; then
     fi
 else
     ROSBAG2_STORAGE_ID_EFFECTIVE="${ROSBAG2_STORAGE_ID}"
+fi
+
+# Select a backend-compatible resilient profile only after resolving `auto`.
+# An explicit preset owns the policy and therefore takes precedence over a
+# config file. A selected config must exist; silently falling back would make
+# the manifest claim resilience that rosbag2 did not apply.
+if [ -n "${ROSBAG2_STORAGE_PRESET_PROFILE}" ]; then
+    ROSBAG2_STORAGE_PRESET_PROFILE_APPLIED="${ROSBAG2_STORAGE_PRESET_PROFILE}"
+else
+    if [ -z "${ROSBAG2_STORAGE_CONFIG}" ]; then
+        case "${ROSBAG2_STORAGE_ID_EFFECTIVE}" in
+            mcap)
+                ROSBAG2_STORAGE_CONFIG="${ROOT}/configs/mcap_resilient_high_throughput.yaml"
+                ;;
+            sqlite3)
+                ROSBAG2_STORAGE_CONFIG="${ROOT}/configs/sqlite_resilient.yaml"
+                ;;
+        esac
+    fi
+    if [ -n "${ROSBAG2_STORAGE_CONFIG}" ]; then
+        if [ ! -r "${ROSBAG2_STORAGE_CONFIG}" ]; then
+            echo "ERROR: rosbag2 storage config is not readable: ${ROSBAG2_STORAGE_CONFIG}" >&2
+            exit 1
+        fi
+        ROSBAG2_STORAGE_CONFIG_APPLIED="${ROSBAG2_STORAGE_CONFIG}"
+    fi
 fi
 
 # ---------------------------------------------------------------------------
@@ -424,8 +452,8 @@ rosbag2_max_cache_size_bytes: ${ROSBAG2_MAX_CACHE_SIZE}
 rosbag2_max_bag_size_bytes: ${ROSBAG2_MAX_BAG_SIZE}
 rosbag2_storage_id_requested: "${ROSBAG2_STORAGE_ID}"
 rosbag2_storage_id_effective: "${ROSBAG2_STORAGE_ID_EFFECTIVE}"
-rosbag2_storage_config: "${ROSBAG2_STORAGE_CONFIG}"
-rosbag2_storage_preset_profile: "${ROSBAG2_STORAGE_PRESET_PROFILE}"
+rosbag2_storage_config: "${ROSBAG2_STORAGE_CONFIG_APPLIED}"
+rosbag2_storage_preset_profile: "${ROSBAG2_STORAGE_PRESET_PROFILE_APPLIED}"
 rosbag2_qos_overrides: "${ROSBAG2_QOS_OVERRIDES}"
 rosbag_stop_timeout_sec: ${ROSBAG_STOP_TIMEOUT}
 bringup_stop_timeout_sec: ${BRINGUP_STOP_TIMEOUT}
@@ -1408,15 +1436,11 @@ ROS2_STORAGE_ARGS=()
 if [ -n "${ROSBAG2_STORAGE_ID_EFFECTIVE}" ]; then
     ROS2_STORAGE_ARGS+=(-s "${ROSBAG2_STORAGE_ID_EFFECTIVE}")
 fi
-if [ "${ROSBAG2_STORAGE_ID_EFFECTIVE}" = "sqlite3" ] && [ -n "${ROSBAG2_STORAGE_CONFIG}" ]; then
-    if [ -f "${ROSBAG2_STORAGE_CONFIG}" ]; then
-        ROS2_STORAGE_ARGS+=(--storage-config-file "${ROSBAG2_STORAGE_CONFIG}")
-    else
-        echo "  [WARN] rosbag2 storage config not found: ${ROSBAG2_STORAGE_CONFIG}; using rosbag2 defaults."
-    fi
+if [ -n "${ROSBAG2_STORAGE_CONFIG_APPLIED}" ]; then
+    ROS2_STORAGE_ARGS+=(--storage-config-file "${ROSBAG2_STORAGE_CONFIG_APPLIED}")
 fi
-if [ -n "${ROSBAG2_STORAGE_PRESET_PROFILE}" ]; then
-    ROS2_STORAGE_ARGS+=(--storage-preset-profile "${ROSBAG2_STORAGE_PRESET_PROFILE}")
+if [ -n "${ROSBAG2_STORAGE_PRESET_PROFILE_APPLIED}" ]; then
+    ROS2_STORAGE_ARGS+=(--storage-preset-profile "${ROSBAG2_STORAGE_PRESET_PROFILE_APPLIED}")
 fi
 if [ -n "${ROSBAG2_QOS_OVERRIDES}" ]; then
     if [ -f "${ROSBAG2_QOS_OVERRIDES}" ]; then

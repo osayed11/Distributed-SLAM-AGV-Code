@@ -13,18 +13,20 @@
 #include <array>
 #include <string>
 #include <memory>
+#include "myagv_odometry/command_watchdog.hpp"
 
 class MyAGV : public rclcpp::Node
 {
 public:
   MyAGV();
-  ~MyAGV() = default;
+  ~MyAGV();
   bool init();
   void execute();
 
 private:
   void cmdCallback(const geometry_msgs::msg::Twist::SharedPtr msg);
   bool readSpeed();
+  bool readBytes(unsigned char * data, size_t size, CommandWatchdog::Clock::time_point deadline);
   void writeSpeed(double movex, double movey, double rot);
   void publishImuSensor();
 
@@ -35,7 +37,9 @@ private:
   double ax{0.0}, ay{0.0}, az{0.0};
   double wx{0.0}, wy{0.0}, wz{0.0};
 
-  double linearX{0.0}, linearY{0.0}, angularZ{0.0};
+  CommandWatchdog command_;
+  double command_timeout_{0.3};
+  int serial_read_timeout_ms_{100};
 
   rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr pub_;
   rclcpp::Publisher<sensor_msgs::msg::Imu>::SharedPtr pub_imu_;

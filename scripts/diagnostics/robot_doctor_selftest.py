@@ -110,9 +110,12 @@ def write_ros2_bag(
     scan_bounded_gap: bool = False,
     scan_shutdown_gap: bool = False,
     imu_major_gap: bool = False,
+    imu_gap_offsets_sec: Optional[dict[str, float]] = None,
+    gt_gap_offset_sec: float = 0.0,
     truncated_topic: str = "",
     non_monotonic_topic: str = "",
     topic_hz_overrides: Optional[dict[str, float]] = None,
+    additional_topics: Optional[list[tuple[str, str, float]]] = None,
 ) -> None:
     bag_dir.mkdir(parents=True, exist_ok=True)
     db_path = bag_dir / "test_0.db3"
@@ -133,7 +136,8 @@ def write_ros2_bag(
     if missing_topic:
         missing.add(missing_topic)
     hz_overrides = topic_hz_overrides or {}
-    for name, msg_type, default_hz in TOPICS:
+    imu_gap_offsets = imu_gap_offsets_sec or {}
+    for name, msg_type, default_hz in [*TOPICS, *(additional_topics or [])]:
         if name in missing:
             continue
         hz = hz_overrides.get(name, default_hz)
@@ -156,6 +160,14 @@ def write_ros2_bag(
                 offset_ns += 350_000_000
             if imu_major_gap and name == "/camera/gyro/sample" and i > n_msgs // 2:
                 offset_ns += 250_000_000
+            if name in imu_gap_offsets and i > n_msgs // 2:
+                offset_ns += int(imu_gap_offsets[name] * 1e9)
+            if (
+                gt_gap_offset_sec > 0
+                and name == "/optitrack/rigid_bodies/agv"
+                and i > n_msgs // 2
+            ):
+                offset_ns += int(gt_gap_offset_sec * 1e9)
             if non_monotonic_topic == name and i == n_msgs // 2:
                 offset_ns = 0
             cur.execute(
@@ -312,6 +324,145 @@ class ValidateRos2BagTests(unittest.TestCase):
                 any(item["check"] == "camera_gyro_sample_gaps" for item in failures)
             )
 
+    def test_required_ground_truth_major_gap_fails(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            bag = Path(tmp) / "gt_major_gap"
+            write_ros2_bag(bag, gt_gap_offset_sec=0.60)
+            rc, report = run_validator(bag)
+            self.assertEqual(rc, 1)
+            failures = [item for item in report["results"] if item["level"] == "FAIL"]
+            self.assertTrue(any(item["check"] == "ground_truth_gaps" for item in failures))
+            self.assertEqual(report["gap_policy"]["gt_minor_gap_sec"], 0.25)
+            self.assertEqual(report["gap_policy"]["gt_major_gap_sec"], 0.50)
+
+    def test_bounded_ground_truth_gap_is_warning(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            bag = Path(tmp) / "gt_bounded_gap"
+            write_ros2_bag(bag, gt_gap_offset_sec=0.30)
+            rc, report = run_validator(bag)
+            self.assertEqual(rc, 0)
+            warnings = [item for item in report["results"] if item["level"] == "WARN"]
+            self.assertTrue(any(item["check"] == "ground_truth_gaps" for item in warnings))
+
+    def test_required_ground_truth_low_rate_fails(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            bag = Path(tmp) / "gt_low_rate"
+            write_ros2_bag(
+                bag,
+                topic_hz_overrides={"/optitrack/rigid_bodies/agv": 20.0},
+            )
+            rc, report = run_validator(bag)
+            self.assertEqual(rc, 1)
+            failures = [item for item in report["results"] if item["level"] == "FAIL"]
+            self.assertTrue(
+                any(item["check"] == "/optitrack/rigid_bodies/agv" for item in failures)
+            )
+
+    def test_selected_ground_truth_ignores_low_rate_secondary_stream(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            bag = Path(tmp) / "selected_gt"
+            write_ros2_bag(
+                bag,
+                additional_topics=[("/mocap", "geometry_msgs/msg/PoseStamped", 20.0)],
+            )
+            rc, report = run_validator(bag)
+            self.assertEqual(rc, 0)
+            self.assertFalse(
+                [item for item in report["results"] if item["level"] == "FAIL"]
+            )
+            secondary = [
+                item
+                for item in report["results"]
+                if item["check"] == "ground_truth_secondary"
+            ]
+            self.assertEqual([item["topic"] for item in secondary], ["/mocap"])
+
+    def test_missing_selected_ground_truth_fails_even_with_secondary_stream(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            bag = Path(tmp) / "missing_selected_gt"
+            write_ros2_bag(
+                bag,
+                missing_topic="/optitrack/rigid_bodies/agv",
+                additional_topics=[("/mocap", "geometry_msgs/msg/PoseStamped", 50.0)],
+            )
+            rc, report = run_validator(bag)
+            self.assertEqual(rc, 1)
+            failure = next(
+                item for item in report["results"] if item["check"] == "ground_truth"
+            )
+            self.assertEqual(failure["level"], "FAIL")
+            self.assertIn("selected MOCAP_TOPIC missing", failure["message"])
+
+    def test_bounded_raw_imu_gaps_are_visible_warnings(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            bag = Path(tmp) / "imu_bounded_gaps"
+            write_ros2_bag(
+                bag,
+                imu_gap_offsets_sec={
+                    "/camera/gyro/sample": 0.16,
+                    "/camera/accel/sample": 0.12,
+                },
+            )
+            rc, report = run_validator(bag)
+            self.assertEqual(rc, 0)
+            warnings = [item for item in report["results"] if item["level"] == "WARN"]
+            self.assertTrue(
+                any(item["check"] == "camera_gyro_sample_gaps" for item in warnings)
+            )
+            self.assertTrue(
+                any(item["check"] == "camera_accel_sample_gaps" for item in warnings)
+            )
+            self.assertEqual(report["gap_policy"]["imu_minor_gap_sec"], 0.10)
+            self.assertEqual(report["gap_policy"]["imu_major_gap_sec"], 0.25)
+
+            strict_rc, _ = run_validator(bag, extra_args=["--strict"])
+            self.assertEqual(strict_rc, 2)
+
+    def test_raw_imu_gap_policy_overrides_are_reported(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            bag = Path(tmp) / "imu_gap_override"
+            write_ros2_bag(
+                bag,
+                imu_gap_offsets_sec={"/camera/gyro/sample": 0.16},
+            )
+            rc, report = run_validator(
+                bag,
+                {
+                    "IMU_MINOR_GAP_SEC": "0.20",
+                    "IMU_MAJOR_GAP_SEC": "0.30",
+                },
+            )
+            self.assertEqual(rc, 0)
+            self.assertEqual(report["gap_policy"]["imu_minor_gap_sec"], 0.20)
+            self.assertEqual(report["gap_policy"]["imu_major_gap_sec"], 0.30)
+            gyro_gap = next(
+                item
+                for item in report["results"]
+                if item["check"] == "camera_gyro_sample_gaps"
+            )
+            self.assertEqual(gyro_gap["level"], "PASS")
+
+    def test_inverted_gap_policy_is_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            bag = Path(tmp) / "invalid_gap_policy"
+            write_ros2_bag(bag)
+            env = os.environ.copy()
+            env.update(
+                {
+                    "IMU_MINOR_GAP_SEC": "0.30",
+                    "IMU_MAJOR_GAP_SEC": "0.20",
+                }
+            )
+            proc = subprocess.run(
+                [sys.executable, str(VALIDATOR), str(bag)],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                env=env,
+            )
+            self.assertEqual(proc.returncode, 2)
+            self.assertIn("invalid IMU gap policy", proc.stdout)
+
     def test_experiment_window_excludes_recorder_preroll_gap(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             bag = Path(tmp) / "preroll_gap"
@@ -342,16 +493,71 @@ class ValidateRos2BagTests(unittest.TestCase):
             failures = [item for item in report["results"] if item["level"] == "FAIL"]
             self.assertFalse(failures)
 
+    def test_experiment_window_does_not_ignore_early_ground_truth_outage(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            bag = Path(tmp) / "window_early_gt_gap"
+            write_ros2_bag(bag)
+            conn = sqlite3.connect(str(bag / "test_0.db3"))
+            conn.execute(
+                "UPDATE messages SET timestamp = timestamp + ? "
+                "WHERE topic_id = (SELECT id FROM topics WHERE name = ?) AND timestamp >= ?",
+                (1_000_000_000, "/optitrack/rigid_bodies/agv", 4_000_000_000),
+            )
+            conn.commit()
+            conn.close()
+
+            rc, report = run_validator(
+                bag,
+                extra_args=[
+                    "--window-start-epoch",
+                    "2",
+                    "--window-duration",
+                    "5",
+                ],
+            )
+            self.assertEqual(rc, 1)
+            failures = [item for item in report["results"] if item["level"] == "FAIL"]
+            self.assertTrue(any(item["check"] == "ground_truth_gaps" for item in failures))
+            self.assertEqual(report["gap_policy"]["edge_gap_ignore_sec"], 0.0)
+
+    def test_experiment_window_requires_ground_truth_at_window_boundary(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            bag = Path(tmp) / "window_late_gt"
+            write_ros2_bag(bag)
+            conn = sqlite3.connect(str(bag / "test_0.db3"))
+            conn.execute(
+                "DELETE FROM messages WHERE topic_id = "
+                "(SELECT id FROM topics WHERE name = ?) AND timestamp >= ? AND timestamp < ?",
+                ("/optitrack/rigid_bodies/agv", 2_000_000_000, 2_800_000_000),
+            )
+            conn.commit()
+            conn.close()
+
+            rc, report = run_validator(
+                bag,
+                extra_args=[
+                    "--window-start-epoch",
+                    "2",
+                    "--window-duration",
+                    "5",
+                ],
+            )
+            self.assertEqual(rc, 1)
+            failures = [item for item in report["results"] if item["level"] == "FAIL"]
+            self.assertTrue(
+                any(item["check"] == "ground_truth_coverage" for item in failures)
+            )
+
     def test_default_full_system_rgbd_bag_rate_policy(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             bag = Path(tmp) / "full_system_rgbd_rates"
             write_ros2_bag(
                 bag,
                 topic_hz_overrides={
-                    "/camera/color/image_raw": 12.2,
-                    "/camera/color/camera_info": 12.2,
-                    "/camera/depth/image_rect_raw": 12.2,
-                    "/camera/depth/camera_info": 12.2,
+                    "/camera/color/image_raw": 10.5,
+                    "/camera/color/camera_info": 10.5,
+                    "/camera/depth/image_rect_raw": 10.5,
+                    "/camera/depth/camera_info": 10.5,
                 },
             )
             rc, report = run_validator(bag)
@@ -367,7 +573,7 @@ class ValidateRos2BagTests(unittest.TestCase):
                 topic_hz_overrides={
                     "/camera/color/image_raw": 12.2,
                     "/camera/color/camera_info": 12.2,
-                    "/camera/depth/image_rect_raw": 11.0,
+                    "/camera/depth/image_rect_raw": 9.0,
                     "/camera/depth/camera_info": 11.0,
                 },
             )
@@ -382,7 +588,7 @@ class ValidateRos2BagTests(unittest.TestCase):
             write_ros2_bag(
                 bag,
                 topic_hz_overrides={
-                    "/camera/color/image_raw": 11.0,
+                    "/camera/color/image_raw": 9.0,
                     "/camera/color/camera_info": 11.0,
                     "/camera/depth/image_rect_raw": 13.2,
                     "/camera/depth/camera_info": 13.2,
@@ -593,6 +799,31 @@ class RobotDoctorParserTests(unittest.TestCase):
         code, status, check, _, _ = Doctor.classify_wifi_management(text, "preflight")
         self.assertEqual((code, status, check), ("3.3", "PASS", "wifi_management"))
 
+    def test_recording_writeback_classifier_accepts_fleet_policy(self) -> None:
+        text = (
+            "dirty_bytes=16777216\n"
+            "dirty_background_bytes=8388608\n"
+            "dirty_writeback_centisecs=100\n"
+            "dirty_expire_centisecs=200\n"
+        )
+        code, status, check, _, _ = Doctor.classify_recording_writeback(text, "dataset")
+        self.assertEqual((code, status, check), ("3.1", "PASS", "recording_writeback"))
+
+    def test_recording_writeback_classifier_fails_ratio_defaults_for_dataset(self) -> None:
+        text = (
+            "dirty_bytes=0\n"
+            "dirty_background_bytes=0\n"
+            "dirty_writeback_centisecs=500\n"
+            "dirty_expire_centisecs=3000\n"
+        )
+        code, status, check, summary, next_action = Doctor.classify_recording_writeback(
+            text,
+            "dataset",
+        )
+        self.assertEqual((code, status, check), ("3.1", "FAIL", "recording_writeback"))
+        self.assertIn("dirty_bytes=0", summary)
+        self.assertIn("setup_robot_ros2.sh", next_action)
+
     def test_native_ros2_classifier_flags_bridge_when_expected(self) -> None:
         text = "ENV\nROS_DISTRO=humble\nROS_MASTER_URI=http://localhost:11311\nPROCESSES\n123 ros1_bridge dynamic_bridge\n"
         code, status, check, summary, next_action = Doctor.classify_native_ros2_stack(
@@ -781,9 +1012,15 @@ class RobotDoctorParserTests(unittest.TestCase):
             "DPKG\n"
             "librealsense2:arm64\t2.58.1-0~realsense.8235\n"
             "librealsense2-utils:arm64\t2.58.1-0~realsense.8235\n"
+            "ros-humble-librealsense2\t2.58.4-1jammy\n"
+            "ros-humble-realsense2-camera-msgs\t4.58.4-1jammy\n"
+            "ros-humble-realsense2-camera\t4.58.4-1jammy\n"
             "APT_HOLDS\n"
             "librealsense2\n"
             "librealsense2-utils\n"
+            "ros-humble-librealsense2\n"
+            "ros-humble-realsense2-camera-msgs\n"
+            "ros-humble-realsense2-camera\n"
             "REALSENSE_APT_SOURCES\n"
             "FILE:/etc/apt/sources.list.d/librealsense.list\n"
             "deb [trusted=yes] https://librealsense.intel.com/Debian/apt-repo jammy main\n"
@@ -795,9 +1032,24 @@ class RobotDoctorParserTests(unittest.TestCase):
         )
         self.assertEqual(
             Doctor.parse_installed_realsense_packages(text),
-            ["librealsense2", "librealsense2-utils"],
+            [
+                "librealsense2",
+                "librealsense2-utils",
+                "ros-humble-librealsense2",
+                "ros-humble-realsense2-camera",
+                "ros-humble-realsense2-camera-msgs",
+            ],
         )
-        self.assertEqual(Doctor.parse_apt_holds(text), ["librealsense2", "librealsense2-utils"])
+        self.assertEqual(
+            Doctor.parse_apt_holds(text),
+            [
+                "librealsense2",
+                "librealsense2-utils",
+                "ros-humble-librealsense2",
+                "ros-humble-realsense2-camera",
+                "ros-humble-realsense2-camera-msgs",
+            ],
+        )
         self.assertEqual(Doctor.parse_pyrealsense2_status(text), ("2.58.1.10581", ""))
         status, summary, _ = Doctor.classify_realsense_apt_sources(text)
         self.assertEqual(status, "INFO")
@@ -810,11 +1062,17 @@ class RobotDoctorParserTests(unittest.TestCase):
             "librealsense2-dev:arm64\t2.58.1-0~realsense.8235\n"
             "librealsense2-utils:arm64\t2.58.1-0~realsense.8235\n"
             "librealsense2-udev-rules:arm64\t2.58.1-0~realsense.8235\n"
+            "ros-humble-librealsense2\t2.58.4-1jammy\n"
+            "ros-humble-realsense2-camera-msgs\t4.58.4-1jammy\n"
+            "ros-humble-realsense2-camera\t4.58.4-1jammy\n"
             "APT_HOLDS\n"
             "librealsense2\n"
             "librealsense2-dev\n"
             "librealsense2-utils\n"
             "librealsense2-udev-rules\n"
+            "ros-humble-librealsense2\n"
+            "ros-humble-realsense2-camera-msgs\n"
+            "ros-humble-realsense2-camera\n"
             "REALSENSE_APT_SOURCES\n"
             "FILE:/etc/apt/sources.list.d/librealsense.list\n"
             "deb [signed-by=/key] https://librealsense.intel.com/Debian/apt-repo jammy main\n"
@@ -831,6 +1089,32 @@ class RobotDoctorParserTests(unittest.TestCase):
             self.assertIn("realsense_package_holds", checks)
             self.assertIn("realsense_python_binding", checks)
             self.assertTrue(all(item.status == "PASS" for item in doctor.results))
+
+    def test_realsense_setup_provenance_warns_for_unheld_ros_package(self) -> None:
+        text = (
+            "DPKG\n"
+            "ros-humble-librealsense2\t2.58.4-1jammy\n"
+            "ros-humble-realsense2-camera-msgs\t4.58.4-1jammy\n"
+            "ros-humble-realsense2-camera\t4.58.4-1jammy\n"
+            "APT_HOLDS\n"
+            "ros-humble-librealsense2\n"
+            "ros-humble-realsense2-camera-msgs\n"
+            "REALSENSE_APT_SOURCES\n"
+            "FILE:/etc/apt/sources.list.d/librealsense.list\n"
+            "deb [signed-by=/key] https://librealsense.intel.com/Debian/apt-repo jammy main\n"
+            "PYREALSENSE2\n"
+            "2.58.1.10581\n"
+            "ROS_REALSENSE_PACKAGE\n"
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            args = build_parser().parse_args(["agvtest", "--output-root", tmp])
+            doctor = Doctor(args)
+            doctor.check_realsense_setup_provenance(text, ["/tmp/evidence.log"], "2.58.1")
+            hold_check = next(
+                item for item in doctor.results if item.check == "realsense_package_holds"
+            )
+            self.assertEqual(hold_check.status, "WARN")
+            self.assertIn("ros-humble-realsense2-camera", hold_check.summary)
 
     def test_realsense_apt_source_duplicate_warns(self) -> None:
         text = (
@@ -1303,7 +1587,7 @@ class RobotDoctorConfigTests(unittest.TestCase):
                     {
                         "profile": "dataset",
                         "require_gt": True,
-                        "mocap_min_hz": 20,
+                        "mocap_min_hz": 30,
                         "mocap_max_hz": 120,
                         "require_bag": True,
                         "confirm_d455_camera_swap": True,
@@ -1312,8 +1596,8 @@ class RobotDoctorConfigTests(unittest.TestCase):
                         "d455_swap_notes": "/tmp/d455_swap_notes.md",
                         "expected_d455_serial": "333422300768",
                         "expected_d455_firmware": "5.17.0.10",
-                        "expected_realsense_ros_driver": "4.58.2",
-                        "expected_realsense_ros_librealsense": "2.58.2",
+                        "expected_realsense_ros_driver": "4.58.4",
+                        "expected_realsense_ros_librealsense": "2.58.4",
                         "expect_native_ros2": True,
                         "expected_robot_namespace": ["/agv100", "/agv101"],
                         "require_odom_mocap_sanity": True,
@@ -1330,7 +1614,7 @@ class RobotDoctorConfigTests(unittest.TestCase):
             self.assertEqual(loaded["profile"], "dataset")
             self.assertEqual(args.profile, "dataset")
             self.assertTrue(args.require_gt)
-            self.assertEqual(args.mocap_min_hz, 20)
+            self.assertEqual(args.mocap_min_hz, 30)
             self.assertEqual(args.mocap_max_hz, 120)
             self.assertTrue(args.require_bag)
             self.assertTrue(args.confirm_d455_camera_swap)
@@ -1339,8 +1623,8 @@ class RobotDoctorConfigTests(unittest.TestCase):
             self.assertEqual(args.d455_swap_notes, "/tmp/d455_swap_notes.md")
             self.assertEqual(args.expected_d455_serial, "333422300768")
             self.assertEqual(args.expected_d455_firmware, "5.17.0.10")
-            self.assertEqual(args.expected_realsense_ros_driver, "4.58.2")
-            self.assertEqual(args.expected_realsense_ros_librealsense, "2.58.2")
+            self.assertEqual(args.expected_realsense_ros_driver, "4.58.4")
+            self.assertEqual(args.expected_realsense_ros_librealsense, "2.58.4")
             self.assertTrue(args.expect_native_ros2)
             self.assertEqual(args.expected_robot_namespace, ["/agv100", "/agv101"])
             self.assertTrue(args.require_odom_mocap_sanity)
@@ -1419,6 +1703,53 @@ class RobotDoctorConfigTests(unittest.TestCase):
             self.assertEqual(matches[0].status, "PASS")
             self.assertIn("/camera/color/image_raw", matches[0].summary)
             self.assertIn("/camera/depth/image_rect_raw", matches[0].summary)
+
+    def test_preflight_bringup_waits_for_delayed_camera_topics(self) -> None:
+        from unittest.mock import patch
+
+        with tempfile.TemporaryDirectory() as tmp:
+            args = build_parser().parse_args(
+                ["agvtest", "--profile", "preflight", "--output-root", tmp, "--bringup-wait", "10"]
+            )
+            doctor = Doctor(args)
+            log_path = doctor.log_dir / "delayed_topics.log"
+            core = "/scan\n/odom\n/tf\n"
+            complete = core + "\n".join(
+                topic for topic in doctor.live_topic_specs() if topic.startswith("/camera/")
+            )
+            samples = iter([core, complete])
+
+            def fake_ros_cmd(*_args, **_kwargs):
+                log_path.write_text(next(samples))
+                return CommandResult("topic_list", "fake", 0, 0.0, False, str(log_path))
+
+            doctor.ros_cmd = fake_ros_cmd
+            with patch("robot_doctor.time.sleep") as sleep:
+                doctor.wait_for_bringup_topics()
+            sleep.assert_called_once_with(2.0)
+            self.assertEqual(doctor.results[-1].status, "PASS")
+            self.assertIn("/camera/gyro/sample", doctor.results[-1].summary)
+            self.assertIn("/camera/color/image_raw", doctor.results[-1].summary)
+
+    def test_preflight_bringup_without_camera_only_waits_for_base_topics(self) -> None:
+        from unittest.mock import patch
+
+        with tempfile.TemporaryDirectory() as tmp:
+            args = build_parser().parse_args(
+                ["agvtest", "--profile", "preflight", "--no-expect-camera",
+                 "--output-root", tmp, "--bringup-wait", "10"]
+            )
+            doctor = Doctor(args)
+            log_path = doctor.log_dir / "base_topics.log"
+            log_path.write_text("/scan\n/odom\n/tf\n")
+            doctor.ros_cmd = lambda *_args, **_kwargs: CommandResult(
+                "topic_list", "fake", 0, 0.0, False, str(log_path)
+            )
+            with patch("robot_doctor.time.sleep") as sleep:
+                doctor.wait_for_bringup_topics()
+            sleep.assert_not_called()
+            self.assertEqual(doctor.results[-1].status, "PASS")
+            self.assertNotIn("/camera/", doctor.results[-1].summary)
 
     def test_dataset_bringup_context_flags_missing_existing_graph(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
