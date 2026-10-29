@@ -37,7 +37,7 @@ Five fresh Pi 4 (2 GB) cards, Ubuntu 22.04.5 server arm64, ROS 2 Humble, user
 | agv111 | 192.168.50.151 | done (Riyaadh, `-j1` serial build after an SSH hang) | PASS/WARN `~/agv111-evidence/doctor/agv111_20261029_155313` | done | done (Riyaadh) + again 17:45 after the camera flash | watchdog ctest 1/1; zenoh-bridge 1.9.0 binary present, no router configured; **D455 flashed 5.13.0.55 → 5.17.0.10 17:43 UTC (user-authorised), gate `agv111_20261029_174659` firmware OK, streams 15/15/199/101 Hz** |
 | agv112 | 192.168.50.40 | done (suspended installer resumed by SIGCONT, sequential build 1m57s) | PASS/WARN post-reboot `~/agv112-evidence/doctor/agv112_20261029_160014` | done | done 15:59 UTC | Riyaadh's `~/agv112-verify.sh`: watchdog 1/1, 59 parser tests OK |
 | agv113 | 192.168.50.202 | done 17:52 (power-cycled 16:04 after the parallel-build hang; unit then blocked for ~1 h by unattended-upgrades holding dpkg; sequential rebuild) | PASS/WARN post-reboot `~/agv113-evidence/doctor/agv113_20261029_175524` | done | done 17:54 UTC | watchdog ctest 1/1; **no camera attached** |
-| agv114 | 192.168.50.177 | power-cycled 16:04; unit still blocked by unattended-upgrades at 17:56 (retries every 60 s) | — | pending | pending | camera attached (USB 3 after the 3rd re-plug), old firmware → flash authorised, pending install |
+| agv114 | 192.168.50.177 | done 18:15 (power-cycled 16:04 after the parallel-build hang; ~1.5 h behind unattended-upgrades; sequential rebuild) | dataset gate 18:20 `agv114_20261029_182029`: all sensors in spec | done | done 18:19 UTC | **D455 224223133587 flashed 5.13.0.55 → 5.17.0.10 18:17 (user-authorised)**; watchdog ctest 1/1 |
 
 **Sensor stage 29 Oct 16:40–17:20 UTC (cameras attached; no GT endpoint configured, so `mocap_topic` FAILs are expected and `odom_mocap_sanity` needs a drive):**
 
@@ -46,17 +46,17 @@ Five fresh Pi 4 (2 GB) cards, Ubuntu 22.04.5 server arm64, ROS 2 Humble, user
 | agv110 | 342343060269 / 5.17.0.10 / USB3 | sensors all OK: colour 14.3, depth 15.0, gyro 201, accel 93, scan 25, odom 12.7 Hz | 808 s, 8.6 GB: FAIL only `cmd_vel` missing (stationary) + one 0.255 s odom/tf gap; colour gaps ≤ 0.67 s |
 | agv111 | 224223132684 / **5.13.0.55** / USB3 | **FAIL d455_firmware (expected 5.17.0.10) — not flashed, needs authorization**; streams OK (colour 14.9, IMU 199/101) | 1158 s, 14 GB: **five ~1 s system-wide stalls** (scan, odom, tf, gyro, accel all gap together) → FAIL 8 |
 | agv112 | 337543062350 / 5.17.0.10 / USB3 | first run colour 4.4 Hz (transient); rerun colour 15.0, IMU 200/101 | 1131 s, 16 GB: **IMU 0 messages** — D455 HID stall began 16:59:43, 73 s before the recorder opened, 484 timeouts, never recovered; plus one 7.2 s system-wide stall; io PSI ≈ 29 % |
-| agv114 | bcdDevice 50.d0 (≈ fw 5.13) / USB3 after the 3rd re-plug (two earlier plugs enumerated at USB 2) | pending install | pending |
+| agv114 | 224223133587 / **5.17.0.10 (flashed 18:17)** / USB3 after the 3rd re-plug (two earlier plugs enumerated at USB 2) | colour 15.0, depth 15.0, gyro 201, accel 101, scan 17.6, odom 12.7 Hz | 188 s, 2.4 GB: **PASS 37 / WARN 10 / FAIL 1 (`cmd_vel` missing, stationary)**; max gaps colour 0.27 s, scan 0.22 s, IMU 0.17 s |
 
-Bags ran 13–19 min instead of 3 because `start_session.sh` only reacts to a terminal
+Bags on 110/111/112 ran 13–19 min instead of 3 because `start_session.sh` only reacts to a terminal
 Ctrl+C (the recorder is its foreground child); when driving it non-interactively,
-signal the recorder PID or the process group. All cards: SanDisk `SD64G`; writeback
+signal the recorder PID or the process group — done that way on 114, which stopped in 10 s and gave a clean 188 s bag. All cards: SanDisk `SD64G`; writeback
 sysctl live. The system-wide stalls on 111/112 are the SD-write class of problem
 documented in the README/`project_gt_staleness_recording_io`; the IMU loss on 112 is
 the open D455 IMU-stall investigation reproduced on a brand-new unit
 (`docs/IMU_INVESTIGATION_HANDOFF_20261028.md`).
 
-**Verdict 29 Oct 18:00 UTC:** software-ready 110/111/112/113; 114 pending; **dataset-ready: none** (GT deferred by the user; odom/MoCap sanity needs a drive; IMU stall and SD stalls open). Repo `83e0854` makes the in-run IMU re-arm the default (`runtime_imu_rearm`).
+**Verdict 29 Oct 18:35 UTC:** software-ready **110/111/112/113/114**; **dataset-ready: none** (GT deferred by the user; odom/MoCap sanity needs a drive; IMU stall and SD stalls open). Repo `83e0854` makes the in-run IMU re-arm the default (`runtime_imu_rearm`).
 
 **Package standard verified on 110/111/112:** librealsense2 2.58.1
 (`realsense.8235`), ros-humble-librealsense2 2.58.4, realsense2-camera 4.58.4,
