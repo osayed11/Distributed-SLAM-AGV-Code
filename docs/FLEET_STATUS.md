@@ -39,6 +39,25 @@ Five fresh Pi 4 (2 GB) cards, Ubuntu 22.04.5 server arm64, ROS 2 Humble, user
 | agv113 | 192.168.50.202 | **hung in default parallel colcon** (SSH dead, ping alive since ~15:48 UTC) | — | pending | pending | needs power-cycle, then sequential build |
 | agv114 | 192.168.50.177 | **same as 113** | — | pending | pending | needs power-cycle, then sequential build |
 
+**Sensor stage 29 Oct 16:40–17:20 UTC (cameras attached; no GT endpoint configured, so `mocap_topic` FAILs are expected and `odom_mocap_sanity` needs a drive):**
+
+| Robot | D455 serial / fw / link | Dataset gate (live) | Stationary bag (`start_session.sh`, validator) |
+|---|---|---|---|
+| agv110 | 342343060269 / 5.17.0.10 / USB3 | sensors all OK: colour 14.3, depth 15.0, gyro 201, accel 93, scan 25, odom 12.7 Hz | 808 s, 8.6 GB: FAIL only `cmd_vel` missing (stationary) + one 0.255 s odom/tf gap; colour gaps ≤ 0.67 s |
+| agv111 | 224223132684 / **5.13.0.55** / USB3 | **FAIL d455_firmware (expected 5.17.0.10) — not flashed, needs authorization**; streams OK (colour 14.9, IMU 199/101) | 1158 s, 14 GB: **five ~1 s system-wide stalls** (scan, odom, tf, gyro, accel all gap together) → FAIL 8 |
+| agv112 | 337543062350 / 5.17.0.10 / USB3 | first run colour 4.4 Hz (transient); rerun colour 15.0, IMU 200/101 | 1131 s, 16 GB: **IMU 0 messages** — D455 HID stall began 16:59:43, 73 s before the recorder opened, 484 timeouts, never recovered; plus one 7.2 s system-wide stall; io PSI ≈ 29 % |
+| agv114 | bcdDevice 50.d0 (≈ fw 5.13) / USB3 after the 3rd re-plug (two earlier plugs enumerated at USB 2) | pending install | pending |
+
+Bags ran 13–19 min instead of 3 because `start_session.sh` only reacts to a terminal
+Ctrl+C (the recorder is its foreground child); when driving it non-interactively,
+signal the recorder PID or the process group. All cards: SanDisk `SD64G`; writeback
+sysctl live. The system-wide stalls on 111/112 are the SD-write class of problem
+documented in the README/`project_gt_staleness_recording_io`; the IMU loss on 112 is
+the open D455 IMU-stall investigation reproduced on a brand-new unit
+(`docs/IMU_INVESTIGATION_HANDOFF_20261028.md`).
+
+**Verdict 29 Oct:** software-ready 110/111/112; **dataset-ready: none.**
+
 **Package standard verified on 110/111/112:** librealsense2 2.58.1
 (`realsense.8235`), ros-humble-librealsense2 2.58.4, realsense2-camera 4.58.4,
 rosbag2-storage-mcap 0.15.17, python mcap 1.6.0, pyrealsense2 2.58.1.10581,
