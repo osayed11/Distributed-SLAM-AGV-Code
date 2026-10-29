@@ -58,6 +58,11 @@ def validate_config(data):
             raise ValueError(key + ' must be non-negative and finite')
     if data.get('link_abort_sec', 15) < 3:
         raise ValueError('link_abort_sec must allow at least the 3 s worker status timeout')
+    if not isinstance(data.get('runtime_imu_rearm', True), bool):
+        raise ValueError('runtime_imu_rearm must be true or false')
+    rearms = data.get('max_imu_rearms', 5)
+    if isinstance(rearms, bool) or not isinstance(rearms, int) or rearms < 0:
+        raise ValueError('max_imu_rearms must be a non-negative integer')
     if not isinstance(data.get('max_pauses', 3), int):
         raise ValueError('max_pauses must be an integer')
     if data['linear'] > 0.2 or data['duration'] > 1800:
@@ -120,6 +125,8 @@ def run_environment(config, robot, directory):
                 S1_RECOVERY_STABLE_SEC=str(config.get('recovery_stable_sec', 1.0)),
                 S1_MAX_PAUSES=str(int(config.get('max_pauses', 3))),
                 S1_MAX_PAUSE_SECONDS=str(config.get('max_pause_seconds', 30)),
+                S1_RUNTIME_IMU_REARM='true' if config.get('runtime_imu_rearm', True) else 'false',
+                S1_MAX_IMU_REARMS=str(int(config.get('max_imu_rearms', 5))),
                 MOCAP_TOPIC=robot['pose_topic'], CMD_TOPIC=f"/{robot['name']}/cmd_vel",
                 REQUIRE_IMU='true', REQUIRE_GT='true')
 

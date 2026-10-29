@@ -204,6 +204,8 @@ run configuration:
 | `max_pauses` | 3 | stops allowed per robot per run (0 = any fault aborts) |
 | `max_pause_seconds` | 30 | cumulative stopped time per robot per run |
 | `recovery_stable_sec` | 1.0 | fault-free time before a robot counts as recovery-ready |
+| `runtime_imu_rearm` | true | on D455 IMU silence the runtime guard re-arms the motion module in place (`S1_RUNTIME_IMU_REARM`); false = record the fault and stop |
+| `max_imu_rearms` | 5 | re-arms allowed per robot per run before the IMU fault is reported (`S1_MAX_IMU_REARMS`) |
 | `auto_resume_sec` | 0 | > 0: enables GT-only automatic recovery after this many seconds of fresh fleet poses and safe clearance. Non-GT or missing safety evidence requires operator release. With 0, `auto_resume_gt: true` still enables its default one-second clear window. |
 | `link_abort_sec` | 15 | coordinator↔robot link silence tolerated before abort; shorter stalls hold the fleet (the robot already stops when its 2 s lease expires) |
 

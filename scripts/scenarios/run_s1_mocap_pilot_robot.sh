@@ -79,11 +79,13 @@ Recording/gates:
   S1_RUNTIME_IMU_GUARD  Watch the existing bringup log for a fatal D455 HID
                     stall, capture evidence, and stop the run. Default: true
                     when REQUIRE_IMU=true. Adds no ROS subscriptions.
-  S1_RUNTIME_IMU_REARM  true/false. Default: false. On a HID IMU timeout the
-                    guard toggles /camera enable_gyro+enable_accel to re-arm
-                    the motion module in place (~3 s gap, measured 2026-10-28)
-                    instead of only recording the fault; first-stall evidence
-                    and every re-arm are still logged.
+  S1_RUNTIME_IMU_REARM  true/false. Default: true (team decision 2026-10-29
+                    after a new D455 lost its IMU for a whole stationary bag).
+                    On IMU silence the guard toggles /camera enable_gyro+
+                    enable_accel to re-arm the motion module in place (~3-5 s
+                    gap) instead of only recording the fault; first-stall
+                    evidence and every re-arm are still logged. Set false to
+                    get the old record-and-stop behaviour.
   S1_MAX_IMU_REARMS  Re-arms allowed per run before the fault is reported. Default: 5
 EOF
 }
@@ -433,7 +435,7 @@ REQUIRE_GT="${REQUIRE_GT:-true}"
 REQUIRE_IMU="${REQUIRE_IMU:-true}"
 REQUIRE_RESILIENT_STORAGE="${REQUIRE_RESILIENT_STORAGE:-true}"
 S1_RUNTIME_IMU_GUARD="${S1_RUNTIME_IMU_GUARD:-${REQUIRE_IMU}}"
-S1_RUNTIME_IMU_REARM="${S1_RUNTIME_IMU_REARM:-false}"
+S1_RUNTIME_IMU_REARM="${S1_RUNTIME_IMU_REARM:-true}"
 S1_MAX_IMU_REARMS="${S1_MAX_IMU_REARMS:-5}"
 
 require_nonempty "MOCAP_TOPIC" "${MOCAP_TOPIC}"
