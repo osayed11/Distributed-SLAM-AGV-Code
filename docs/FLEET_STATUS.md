@@ -34,10 +34,10 @@ Five fresh Pi 4 (2 GB) cards, Ubuntu 22.04.5 server arm64, ROS 2 Humble, user
 | Robot | IP (29 Oct) | Installer | Static doctor (`--no-expect-camera`) | Network match | Reboot w/ quirk | Notes |
 |---|---|---|---|---|---|---|
 | agv110 | 192.168.50.77 | done (Riyaadh, sequential build) | PASS/WARN post-reboot `~/agv110-evidence/doctor/agv110_20261029_155557` | done | done 15:52 UTC | watchdog ctest 1/1, 158 selftests (Riyaadh) |
-| agv111 | 192.168.50.151 | done (Riyaadh, `-j1` serial build after an SSH hang) | PASS/WARN `~/agv111-evidence/doctor/agv111_20261029_155313` | done | done (Riyaadh) | watchdog ctest 1/1; zenoh-bridge 1.9.0 binary present, no router configured |
+| agv111 | 192.168.50.151 | done (Riyaadh, `-j1` serial build after an SSH hang) | PASS/WARN `~/agv111-evidence/doctor/agv111_20261029_155313` | done | done (Riyaadh) + again 17:45 after the camera flash | watchdog ctest 1/1; zenoh-bridge 1.9.0 binary present, no router configured; **D455 flashed 5.13.0.55 → 5.17.0.10 17:43 UTC (user-authorised), gate `agv111_20261029_174659` firmware OK, streams 15/15/199/101 Hz** |
 | agv112 | 192.168.50.40 | done (suspended installer resumed by SIGCONT, sequential build 1m57s) | PASS/WARN post-reboot `~/agv112-evidence/doctor/agv112_20261029_160014` | done | done 15:59 UTC | Riyaadh's `~/agv112-verify.sh`: watchdog 1/1, 59 parser tests OK |
-| agv113 | 192.168.50.202 | **hung in default parallel colcon** (SSH dead, ping alive since ~15:48 UTC) | — | pending | pending | needs power-cycle, then sequential build |
-| agv114 | 192.168.50.177 | **same as 113** | — | pending | pending | needs power-cycle, then sequential build |
+| agv113 | 192.168.50.202 | done 17:52 (power-cycled 16:04 after the parallel-build hang; unit then blocked for ~1 h by unattended-upgrades holding dpkg; sequential rebuild) | PASS/WARN post-reboot `~/agv113-evidence/doctor/agv113_20261029_175524` | done | done 17:54 UTC | watchdog ctest 1/1; **no camera attached** |
+| agv114 | 192.168.50.177 | power-cycled 16:04; unit still blocked by unattended-upgrades at 17:56 (retries every 60 s) | — | pending | pending | camera attached (USB 3 after the 3rd re-plug), old firmware → flash authorised, pending install |
 
 **Sensor stage 29 Oct 16:40–17:20 UTC (cameras attached; no GT endpoint configured, so `mocap_topic` FAILs are expected and `odom_mocap_sanity` needs a drive):**
 
@@ -56,7 +56,7 @@ documented in the README/`project_gt_staleness_recording_io`; the IMU loss on 11
 the open D455 IMU-stall investigation reproduced on a brand-new unit
 (`docs/IMU_INVESTIGATION_HANDOFF_20261028.md`).
 
-**Verdict 29 Oct:** software-ready 110/111/112; **dataset-ready: none.**
+**Verdict 29 Oct 18:00 UTC:** software-ready 110/111/112/113; 114 pending; **dataset-ready: none** (GT deferred by the user; odom/MoCap sanity needs a drive; IMU stall and SD stalls open). Repo `83e0854` makes the in-run IMU re-arm the default (`runtime_imu_rearm`).
 
 **Package standard verified on 110/111/112:** librealsense2 2.58.1
 (`realsense.8235`), ros-humble-librealsense2 2.58.4, realsense2-camera 4.58.4,
