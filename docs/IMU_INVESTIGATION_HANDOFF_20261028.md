@@ -262,3 +262,27 @@ camera additionally enters a state the toggle cannot recover (also seen in the
 19:41–19:45 re-arm loop: 2 of 10 re-arms read 0 reports/s); that unit should be
 treated as a camera to replace or exclude from IMU-critical runs, not as a
 software problem. AGV103 ran 8 minutes clean once and lost 16 s once.
+
+### New unit, same stall — AGV112 commissioning bag, 29 October 2026
+
+AGV112 is a freshly provisioned robot (installer 7e17063, pins unchanged) with a
+new D455 (serial 337543062350, firmware 5.17.0.10, USB 3 link). Stationary, no
+motion, no GT. Sequence, all UTC:
+
+| time | event |
+|---|---|
+| ~16:58 | `start_session.sh` pre-run live gate: gyro 199.5 Hz, accel steady, max gap 0.024 s → PASS |
+| 16:59:43 | camera log: first `backend-hid.cpp:641 iio_hid_sensor: Frames didn't arrived` |
+| 17:00:56 | `ros2 bag record` starts (subscribed to `/camera/gyro/sample` and `/camera/accel/sample`) |
+| 17:00:56–17:19:47 | bag: **0 gyro, 0 accel messages**; colour 15 828 / depth 15 933 frames recorded normally; 484 HID timeout lines until stop |
+
+So the IMU died about 60 s after a clean gate and ~70 s before the recorder
+opened, and never came back for 19 minutes while colour, depth, LiDAR and odom
+continued. Validator: `imu: missing` → FAIL. This is the device-side stall
+already characterised on AGV103/106/108/109, now reproduced on a new camera,
+new Pi, new card and new cable; it is not specific to the older units. The
+in-run re-arm guard (`S1_RUNTIME_IMU_REARM`) was not active in this
+commissioning session. AGV110's bag from the same hour (808 s) had a complete
+IMU; AGV111's (1158 s) had a complete IMU with ~1 s system-wide stalls.
+Evidence on agv112: `~/agv_data/agv112_commission_stationary_20261029_165754*`,
+`~/agv112-bag-validation-2.log`.
