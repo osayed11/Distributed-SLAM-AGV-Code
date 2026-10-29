@@ -22,6 +22,57 @@ whenever a robot is gated, driven, or reconfigured.
 
 ---
 
+## New robots agv110–agv114 — provisioned 2026-10-29 (software only, NOT dataset-ready)
+
+Five fresh Pi 4 (2 GB) cards, Ubuntu 22.04.5 server arm64, ROS 2 Humble, user
+`ubuntu`, password SSH on / root SSH off, Omar's + Riyaadh's keys, Avahi
+(`agv11N.local`). agv110–114 were flashed from Riyaadh's cloud-init cards
+(`orkar-firstboot-setup.service`); agv111 from Omar's card (same image,
+`orkar-firstboot.service`, now disabled). Installer revision **`7e17063`** with
+`--no-doctor`. IPs are DHCP observations.
+
+| Robot | IP (29 Oct) | Installer | Static doctor (`--no-expect-camera`) | Network match | Reboot w/ quirk | Notes |
+|---|---|---|---|---|---|---|
+| agv110 | 192.168.50.77 | done (Riyaadh, sequential build) | PASS/WARN post-reboot `~/agv110-evidence/doctor/agv110_20261029_155557` | done | done 15:52 UTC | watchdog ctest 1/1, 158 selftests (Riyaadh) |
+| agv111 | 192.168.50.151 | done (Riyaadh, `-j1` serial build after an SSH hang) | PASS/WARN `~/agv111-evidence/doctor/agv111_20261029_155313` | done | done (Riyaadh) | watchdog ctest 1/1; zenoh-bridge 1.9.0 binary present, no router configured |
+| agv112 | 192.168.50.40 | done (suspended installer resumed by SIGCONT, sequential build 1m57s) | PASS/WARN post-reboot `~/agv112-evidence/doctor/agv112_20261029_160014` | done | done 15:59 UTC | Riyaadh's `~/agv112-verify.sh`: watchdog 1/1, 59 parser tests OK |
+| agv113 | 192.168.50.202 | **hung in default parallel colcon** (SSH dead, ping alive since ~15:48 UTC) | — | pending | pending | needs power-cycle, then sequential build |
+| agv114 | 192.168.50.177 | **same as 113** | — | pending | pending | needs power-cycle, then sequential build |
+
+**Package standard verified on 110/111/112:** librealsense2 2.58.1
+(`realsense.8235`), ros-humble-librealsense2 2.58.4, realsense2-camera 4.58.4,
+rosbag2-storage-mcap 0.15.17, python mcap 1.6.0, pyrealsense2 2.58.1.10581,
+8 apt holds. **No D455 attached to any of them** → sensor gate, real MCAP bag,
+Zenoh GT endpoint, odom/MoCap sanity and operator sign-offs all remain.
+
+**Network match (= agv101/105):** netplan + systemd-networkd own `wlan0`,
+NetworkManager **disabled**, `iw` installed, `orkar-wifi-powersave-off.service`
+enabled (power_save off verified after reboot), linger on for `ubuntu`.
+
+**Uncommitted fix living only on 110/111/112** (Riyaadh, 29 Oct):
+`scripts/setup_robot_ros2.sh`, `scripts/diagnostics/robot_doctor.py`,
+`scripts/diagnostics/robot_doctor_selftest.py` — Intel's apt signing key moved
+(`https://librealsense.realsenseai.com/Debian/librealsenseai.asc`, fingerprint
+`5381411D24E659FB18195FA5FB0B24895113F120`, repo `…realsenseai.com/Debian/apt-repo
+jammy main`, `signed-by`); the old URL fails `NO_PUBKEY FB0B24895113F120`.
+**Do not `git pull`/reset those checkouts until this is committed.** Patch:
+Riyaadh's laptop `/private/tmp/orkar_setup_20261029.patch`.
+
+**Gotchas from this provisioning day:**
+- Default parallel `colcon build` on a 2 GB Pi makes SSH unresponsive while
+  ping still answers (111, 113, 114). Use `~/.colcon/defaults.yaml`
+  (`executor: sequential`, `parallel-workers: 1`) and `MAKEFLAGS=-j1`/`-j2`.
+- `orkar-firstboot-setup.service` clones 15 s after `netplan apply`; wlan0 is
+  down ~10 s and DNS ~15 s, so the clone fails "Could not resolve host" and the
+  unit stops after 3 retries. Workaround used on 113/114: pre-clone at
+  `7e17063`, `systemctl reset-failed`, start.
+- First-boot clock skew → apt "Release file … not valid yet" (110).
+- Riyaadh's cards join DELTA_FLIGHT_ARENA with WPA2-PSK; `netplan set
+  network.renderer=NetworkManager` did not persist (NM stayed unmanaged).
+- macOS auto-mounts a freshly written card and drops Spotlight files on the
+  boot partition, breaking a whole-disk read-back hash; verify per partition /
+  per file (see agv111 card notes in Omar's memory).
+
 ## Fleet run 2026-10-22 — S1 concentric circles, four robots, one start epoch
 
 **agv105 + agv106 on r = 1.0 m, agv101 + agv104 on r = 1.7 m**, all clockwise
