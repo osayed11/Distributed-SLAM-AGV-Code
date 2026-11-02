@@ -355,3 +355,12 @@ time-to-stall that spanned 12–476 s on the old firmware the same morning, the
 longer times are not evidence of improvement. **Hypothesis 1 (firmware) is
 not a fix.** agv102 stays on 5.17.3.10 for now (Intel's stated minimum for the
 D455 row); note it when comparing it with fleet robots on 5.17.0.10.
+
+**Base controller IMU as a fallback — measured 2 Nov 12:29–12:39 UTC on agv102
+(myagv_odometry_node alone, `publish_imu:=true`, no cmd_vel, stationary):**
+`/imu` 7 604 msgs in 600 s = 12.67 Hz, 12–13 per second, max gap 0.084 s, no
+gaps > 0.5 s. Accelerometer plausible: z 9.879 m/s² (σ 0.051), x −0.034
+(σ 0.019), y 0.030 (σ 0.060). **Gyro: exactly 0.0 on all three axes for the whole
+run (σ 0).** Covariances published as zeros, frame `imu_link`, orientation zero.
+So the base provides a 13 Hz accelerometer and no angular rate: not a
+substitute for the camera IMU. An external IMU would have to be a real board.
