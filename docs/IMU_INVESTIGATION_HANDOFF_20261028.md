@@ -379,3 +379,15 @@ the fix.** Combined with the July logs (1103, SDK 2.58.2) and 112/103/106/108/10
 versions and three SDK versions. The remaining software-side candidate is the
 kernel HID-sensor *path itself* (hid-sensor-hub → IIO), testable only by
 bypassing it (userspace USB backend build, next).
+
+**Re-arm guard measured on agv102, 2 Nov 12:59–13:10 UTC (fleet-equivalent full
+streams, guard `--silence-seconds 1 --rearm-cooldown 3 --max-rearms 60`):**
+60 re-arms in 10 minutes, every one accepted by the driver, each 1.1–4.5 s. The
+IMU came back after every micro-stall for the first ~5.5 minutes; from ~340 s
+the camera stopped answering the re-arm (HID 0 reports/s for the remaining
+260 s while the driver kept accepting the parameter toggles). Total seconds
+with IMU silent: 257 of 600. The re-arm therefore covers the micro-stalls on
+this unit but not the hard stall; a camera-node restart is the next rung (it
+revived 102 after every hard stall today, ~30 s), a USB replug was never
+needed. On this camera the mitigation alone does not yield usable 8-minute IMU
+coverage.
