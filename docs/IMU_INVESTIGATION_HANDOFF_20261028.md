@@ -286,3 +286,57 @@ commissioning session. AGV110's bag from the same hour (808 s) had a complete
 IMU; AGV111's (1158 s) had a complete IMU with ~1 s system-wide stalls.
 Evidence on agv112: `~/agv_data/agv112_commission_stationary_20261029_165754*`,
 `~/agv112-bag-validation-2.log`.
+
+### AGV102 as a test rig — 2 November 2026 (stationary, camera only unless stated)
+
+Rule for this section: every line is a measurement on agv102 today, or is marked
+as a hypothesis with its test. agv102: Pi 4 2 GB, kernel 5.15.0-1110 (first boot
+on it today), ROS librealsense 2.58.4 / camera 4.58.4, D455 serial 342343061372
+on USB 3, fw 5.17.0.10, USB autosuspend off (live sysfs). Its own July logs show
+HID timeouts 2.5–3.5 min after node start in 6 of 55 runs (kernel 1103, SDK
+2.58.2), so the fault predates every autumn change.
+
+Instrument: per-second CSV (gyro/accel/colour/depth topic rates, HID input-report
+count from `/sys/kernel/debug/hid/0003:8086:0B5C.*/events`, USB power state,
+CPU and camera temperature, PSI, dmesg delta); "hard stall" = HID reports < 50/s
+for 30 s with no recovery in the following 120 s. Scripts: `~/imu_observer.py`,
+`~/soak_node.sh`, `~/soak_with_base.sh`, `~/analyze_runs.py` on the robot;
+evidence under `~/agv_data/diagnostics/imu102_*`.
+
+| Run (UTC) | Configuration | Time to hard stall | Notes |
+|---|---|---|---|
+| 10:53 baseline | fleet bringup (launch file: base + lidar + colour/depth 640x480x15 + IMU) | **12 s** | no recovery in 5 min |
+| 10:57 re-arm | param toggle on the stalled node | revived 300 reports/s for ~15 s, stalled again | toggle took 15.5 s on this checkout |
+| 11:32 A | node only, colour+depth+IMU (+infra 848x480x30, my mistake) | **476 s** | 10 self-recovering 1–3 s micro-stalls before it |
+| 11:44 B | as A + base driver running, 0 cmd_vel | **94 s** | |
+| 11:50 A2 | node only, fleet-equivalent colour+depth+IMU, infra off | **151 s** | |
+| 11:57 C2 | node only, IMU only (no video) | **56 s** | |
+
+Also: Intel's standalone `rs-data-collect` (gyro only, 200 Hz, 60 s, no ROS)
+recorded 11 941 samples with no gap; a librealsense hardware reset at node start
+did not change the picture; all stalls occurred with camera temperature 30–33 °C,
+CPU 54–60 °C, `throttled=0x0`, PSI low, kernel log silent, IIO buffers still
+enabled and the camera's control channel still answering.
+
+What this rules out **on this unit today**: video load (C2), the base driver
+(A, A2, C2), the launch file, host thermal/power-throttle flags, USB autosuspend,
+and anything that a librealsense hardware reset fixes. What it does not rule
+out: camera firmware, the kernel HID-sensor path, USB-side electrical issues,
+and the camera unit itself.
+
+Measurement gotchas found today (they invalidated some of my first numbers):
+- `ros2 run realsense2_camera_node` without `-r __ns:=/` publishes under
+  `/camera/camera/...`; count HID reports, not topics, as the primary signal.
+- `ros2 topic list` returns stale daemon entries right after a restart.
+- The driver's "Frames didn't arrived within 5 seconds" lines come from the
+  video backend every 5 s even while streaming; not a stall metric.
+- Running the node directly opens infra1/infra2 at 848x480x30 unless disabled.
+- The pip `pyrealsense2` 2.58.1 aarch64 wheel is a kernel-backend build (v4l2 +
+  iio_hid symbols), so it cannot serve as a userspace-backend comparison.
+
+Hypotheses queued with their tests: (1) firmware — Intel's v2.58.1 table lists
+the D455 family at "5.17.3.10 or later" while the fleet runs 5.17.0.10; test =
+flash agv102 to 5.17.3.10 and repeat A2/C2 (authorised 12:05, running);
+(2) kernel HID path — test = same runs on kernel 5.15.0-1103, still installed on
+agv102; (3) the unit — test = swap cameras with a robot whose camera has a clean
+long run; (4) base-driver effect on time-to-stall (B vs A, n = 1) — needs repeats.
