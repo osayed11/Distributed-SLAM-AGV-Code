@@ -340,3 +340,18 @@ flash agv102 to 5.17.3.10 and repeat A2/C2 (authorised 12:05, running);
 (2) kernel HID path — test = same runs on kernel 5.15.0-1103, still installed on
 agv102; (3) the unit — test = swap cameras with a robot whose camera has a clean
 long run; (4) base-driver effect on time-to-stall (B vs A, n = 1) — needs repeats.
+
+**Firmware trial, 2 Nov 12:02–12:28 UTC (agv102 D455 flashed 5.17.0.10 → 5.17.3.10, reboot, same runs):**
+
+| Run | Configuration | fw 5.17.0.10 | fw 5.17.3.10 |
+|---|---|---|---|
+| full, fleet-equivalent, node only | colour+depth 640x480x15 + IMU | hard stall at 151 s (A2) | hard stall at 453 s (A3) |
+| IMU only, node only | gyro+accel | hard stall at 56 s (C2) | hard stall at 149 s (C3) |
+
+Both configurations still stall hard with no recovery on 5.17.3.10, with the
+same signature (HID reports 300/s → 0 in one second, control path alive, kernel
+silent) and the same 1–3 s micro-stalls beforehand. With n = 1 per cell and a
+time-to-stall that spanned 12–476 s on the old firmware the same morning, the
+longer times are not evidence of improvement. **Hypothesis 1 (firmware) is
+not a fix.** agv102 stays on 5.17.3.10 for now (Intel's stated minimum for the
+D455 row); note it when comparing it with fleet robots on 5.17.0.10.
