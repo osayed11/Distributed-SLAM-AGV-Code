@@ -399,3 +399,22 @@ This is the camera that recorded a complete-IMU 19-minute bag on 29 Oct. So the
 behaviour is not peculiar to agv102, and a clean long bag on one day says
 nothing about the next power cycle. Across 102 and 111 today: 11 hard stalls in
 11 driver runs.
+
+**Tool vs node on the same camera, agv111, 2 Nov 13:19–13:58 UTC (kernel HID
+path in every case):**
+
+| Run | Software | Result over 600 s |
+|---|---|---|
+| collector, IMU only | Intel `rs-data-collect`, standalone librealsense 2.58.1 | 119 370 gyro @ 199 Hz, 60 230 accel @ 100 Hz; two 2.05 s gaps; **no hard stall** |
+| collector, colour+depth+IMU | same | 118 282 gyro, 59 635 accel, colour/depth 14.9 Hz; three 2.05 s gaps; **no hard stall** |
+| ROS node, IMU only (repeat) | realsense2_camera 4.58.4 + ROS librealsense 2.58.4 | **hard stall at 165 s** (first run: 254 s) |
+| collector, IMU only (repeat) | standalone 2.58.1 | one 2.06 s gap; **no hard stall** |
+
+The 2.05 s micro-gaps appear on both paths and are therefore below the
+library (device or kernel chain); the hard stall appeared only under the ROS
+node: 3 of 3 collector runs clean, 3 of 3 node runs hard-stalled on this camera
+(5 of 5 node runs on agv102). Tests now running: the ROS node with the
+standalone 2.58.1 library preloaded in place of 2.58.4 (agv111); collector on
+agv102 (worst camera); collector and node on agv110 (third camera). Userspace
+backend builds finished on 110 and 102 (next: collector and node on that
+backend).
