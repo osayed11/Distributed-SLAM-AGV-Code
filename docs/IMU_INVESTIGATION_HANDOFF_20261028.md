@@ -364,3 +364,18 @@ gaps > 0.5 s. Accelerometer plausible: z 9.879 m/s² (σ 0.051), x −0.034
 run (σ 0).** Covariances published as zeros, frame `imu_link`, orientation zero.
 So the base provides a 13 Hz accelerometer and no angular rate: not a
 substitute for the camera IMU. An external IMU would have to be a real board.
+
+**Kernel A/B, 2 Nov 12:40–12:57 UTC (agv102 booted on the previously installed
+5.15.0-1103, same runs, fw 5.17.3.10; then reverted to 1110):**
+
+| Run | Configuration | kernel 1110 (A3/C3) | kernel 1103 (A4/C4) |
+|---|---|---|---|
+| full, fleet-equivalent, node only | colour+depth+IMU | hard stall 453 s | hard stall 298 s |
+| IMU only, node only | gyro+accel | hard stall 149 s | hard stall 85 s |
+
+Same signature on both kernels. **Kernel package version (1103 vs 1110) is not
+the fix.** Combined with the July logs (1103, SDK 2.58.2) and 112/103/106/108/109
+(1061/1105), the stall is now measured across four kernel builds, two firmware
+versions and three SDK versions. The remaining software-side candidate is the
+kernel HID-sensor *path itself* (hid-sensor-hub → IIO), testable only by
+bypassing it (userspace USB backend build, next).
