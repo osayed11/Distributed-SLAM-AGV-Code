@@ -391,3 +391,11 @@ this unit but not the hard stall; a camera-node restart is the next rung (it
 revived 102 after every hard stall today, ~30 s), a USB replug was never
 needed. On this camera the mitigation alone does not yield usable 8-minute IMU
 coverage.
+
+**Second camera, agv111 (D455 224223132684, fw 5.17.0.10, kernel 1110), same
+instrument, 2 Nov 13:06–13:18 UTC:** full fleet-equivalent streams → hard stall
+after **19 s**; IMU only → hard stall after **254 s**; neither recovered in 120 s.
+This is the camera that recorded a complete-IMU 19-minute bag on 29 Oct. So the
+behaviour is not peculiar to agv102, and a clean long bag on one day says
+nothing about the next power cycle. Across 102 and 111 today: 11 hard stalls in
+11 driver runs.
