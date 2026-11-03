@@ -917,3 +917,31 @@ These bite repeatedly; full detail lives in the session memory notes.
   `linear_scale` over-corrects. Endpoints were fine on agv24 (no yaw drift) and
   misleading on agv110. Quantify yaw drift (odom yaw change minus GT yaw change
   per metre) as a separate `angular_scale` question.
+
+## Identity swap agv111 ↔ agv114 — 2026-11-02
+
+The 114 MoCap marker set was mounted on the robot provisioned as agv111, so the
+two hostnames were swapped (user decision, 2 Nov ~14:55 UTC). Hardware is what
+matters for the rows above:
+
+| Hostname from 2 Nov | Pi MAC | D455 serial / fw | Previous name | Notes |
+|---|---|---|---|---|
+| **agv114** | e4:5f:01:bf:ee:7f (was .151) | 224223132684 / 5.17.0.10 | agv111 | renamed in place 2 Nov; `preserve_hostname: true` added so cloud-init cannot revert it; all "agv111" rows/evidence dated 29 Oct–2 Nov above refer to this hardware |
+| **agv111** | e4:5f:01:d1:50:80 (now .176) | 224223133587 / 5.17.0.10 | agv114 | renamed 2 Nov ~15:05 UTC once powered on; `preserve_hostname: true` added; host key verified identical to the one it presented at .177 |
+
+Robot-side evidence directories keep their original prefixes (`imu111_*` on the
+robot now called agv114).
+
+## agv110 — standalone D455 IMU path deployed (2026-11-03)
+
+- Software: `agv_imu_source:=standalone` (split capture + supervisor + UDP publisher) built and
+  installed; `IMU_SOURCE=standalone` for sessions. Five consecutive clean-IMU moving sessions after a
+  camera reset; recovered stalls on degraded sessions. Details: `docs/IMU_STANDALONE_FLEET_ROLLOUT.md`.
+- Calibration (MoCap, measured): rigid-body forward yaw offset ≈ **175°**; base turns at ≈0.45× the
+  commanded rate; straight driver recipe `--enable-lateral --lateral-kp 1.5 --max-lateral 0.08
+  --heading-kp 1.0 --pose-timeout 0.6` → 2.7 cm max lateral over 1.5 m.
+- Procedure: reset/power-cycle the camera before the first session of a dataset run; the D455
+  degrades with session count since power-up (sessions 1–3 clean, 4–7 stalls).
+- Not persistent (redo after each boot until the fleet unit exists): Zenoh GT client from `~/zenoh`
+  at nice −15 (`~/zenoh/start_client.sh`), `ip link set lo multicast on`.
+- Last checked 2026-11-03 20:54: idle, camera healthy, disk 88 % (tonight's test bags).
