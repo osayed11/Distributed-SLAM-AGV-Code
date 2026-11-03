@@ -1191,3 +1191,8 @@ the day; 5th consecutive clean-IMU session after the 20:04 reset.**
 0.08 --heading-kp 1.0 --pose-timeout 0.6 [--reverse]`, with the split IMU
 capture + supervisor, Zenoh client at −15, IMU node default priority,
 camera reset before the first session of a power-up.
+
+**21:02 forward 3.0 m, final recipe (1st camera session after the 20:04
+reset's 5th… i.e. a fresh session, no new reset): complete, 2.97 m, max
+lateral 0.047 m, final 0.012 m, heading max 5.1°; IMU 0 restarts, 25 of
+25 windows; teardown 10 s. Bag `agv110_straight3m_1_20261103_210238`.**
