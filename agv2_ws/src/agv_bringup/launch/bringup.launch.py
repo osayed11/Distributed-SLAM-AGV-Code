@@ -1,9 +1,10 @@
 """ROS2 bringup launch for myAGV."""
 
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription
+from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, TimerAction, ExecuteProcess
 from launch.launch_description_sources import PythonLaunchDescriptionSource
-from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
+from launch.conditions import IfCondition
+from launch.substitutions import PythonExpression, LaunchConfiguration, PathJoinSubstitution
 from launch_ros.actions import Node
 from launch_ros.substitutions import FindPackageShare
 
@@ -28,6 +29,14 @@ def generate_launch_description():
         'enable_sync',
         default_value='false',
         description='Enable RealSense hardware frame sync')
+
+    imu_source_arg = DeclareLaunchArgument(
+        'agv_imu_source',
+        default_value='wrapper',
+        description="'wrapper': D455 gyro/accel published by realsense2_camera (hard-stalls within minutes on every "
+                    "fleet camera, measured 2 Nov 2026); 'standalone': wrapper runs video only and rs_imu_publisher "
+                    "streams the motion module through librealsense directly (same topics, frames and extrinsics). 'none': wrapper runs video only and nothing publishes IMU (for external tools such as rs-data-collect).",
+    )
 
     initial_reset_arg = DeclareLaunchArgument(
         'initial_reset',
@@ -126,9 +135,14 @@ def generate_launch_description():
             'rgb_camera.color_profile':         LaunchConfiguration('agv_color_profile'),
             'depth_module.depth_profile':       LaunchConfiguration('agv_depth_profile'),
             'depth_module.infra_profile':       LaunchConfiguration('agv_depth_profile'),
-            'enable_accel':                     'true',
-            'enable_gyro':                      'true',
+            'enable_accel':                     PythonExpression(["'true' if '", LaunchConfiguration('agv_imu_source'), "' == 'wrapper' else 'false'"]),
+            'enable_gyro':                      PythonExpression(["'true' if '", LaunchConfiguration('agv_imu_source'), "' == 'wrapper' else 'false'"]),
             'unite_imu_method':                 '0',
+            # With the wrapper running video-only next to the standalone IMU publisher its librealsense "global time"
+            # estimate for colour/depth drifts by seconds (agv110, 3 Nov 2026: -1.0 s -> -2.8 s within 30 s); with the
+            # option off the wrapper maps the device clock with a constant base and colour/depth/gyro agree within 8 ms.
+            # rs_launch.py only forwards its own argument list, so these go in via its config_file hook.
+            'config_file':                      PythonExpression(["'", PathJoinSubstitution([FindPackageShare('agv_bringup'), 'config', 'realsense_standalone_imu.yaml']), "' if '", LaunchConfiguration('agv_imu_source'), "' != 'wrapper' else \"''\""]),
             'enable_infra1':                    'false',
             'enable_infra2':                    'false',
             'rgb_camera.enable_auto_exposure':  'true',
@@ -137,7 +151,25 @@ def generate_launch_description():
         }.items(),
     )
 
+    # Standalone IMU path (docs/IMU_STANDALONE_FLEET_ROLLOUT.md): a capture process with no ROS in it owns the motion
+    # module and forwards samples over UDP to a thin publisher node. Started 25 s after the wrapper: when both opened
+    # the camera at the same instant the wrapper crashed (agv114, 2 Nov 2026).
+    rs_imu_publisher = TimerAction(
+        period=25.0,
+        actions=[
+            # capture process: librealsense only, no ROS (the collector path) -> UDP 127.0.0.1:27500
+            ExecuteProcess(cmd=[PathJoinSubstitution([FindPackageShare('agv_bringup'), '..', '..', 'lib', 'agv_bringup', 'rs_imu_capture_supervised.sh']),
+                                '--gyro-fps', '200', '--accel-fps', '100', '--port', '27500'], output='screen', name='rs_imu_capture'),
+            # the supervisor restarts the capture only on exit code 3 (IMU silence): a fresh process recovers the camera
+            # thin ROS publisher: UDP -> /camera/gyro/sample, /camera/accel/sample, static TF, extrinsics
+            Node(package='agv_bringup', executable='rs_imu_udp_publisher_node', name='rs_imu_publisher', output='screen',
+                 parameters=[{'port': 27500}]),
+        ],
+        condition=IfCondition(PythonExpression(["'", LaunchConfiguration('agv_imu_source'), "' == 'standalone'"])),
+    )
+
     return LaunchDescription([
+        imu_source_arg,
         serial_port_arg,
         color_profile_arg,
         depth_profile_arg,
@@ -151,4 +183,5 @@ def generate_launch_description():
         static_tf_laser,
         ydlidar_node,
         realsense_launch,
+        rs_imu_publisher,
     ])

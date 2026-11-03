@@ -8,6 +8,12 @@
   <license>MIT</license>
   <buildtool_depend>ament_cmake</buildtool_depend>
   <depend>launch_ros</depend>
+  <depend>rclcpp</depend>
+  <depend>sensor_msgs</depend>
+  <depend>geometry_msgs</depend>
+  <depend>tf2_ros</depend>
+  <depend>realsense2_camera_msgs</depend>
+  <depend>librealsense2</depend>
   <export>
     <build_type>ament_cmake</build_type>
   </export>

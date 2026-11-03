@@ -1,0 +1,7 @@
+# Wrapper parameters applied when agv_imu_source is not 'wrapper' (video-only wrapper; IMU from rs_imu_publisher_node).
+# rs_launch.py hands this file to the node as a flat {parameter: value} dict (no /** / ros__parameters wrapper).
+# With another process holding the motion module, the wrapper's librealsense global-time estimate for colour/depth
+# drifted by seconds (agv110, 3 Nov 2026); with the option off the device clock is mapped with a constant base and
+# colour, depth and the publisher's gyro agree within 8 ms.
+rgb_camera.global_time_enabled: false
+depth_module.global_time_enabled: false
