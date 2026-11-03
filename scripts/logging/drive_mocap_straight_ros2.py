@@ -185,7 +185,8 @@ def drive(pub, args):
         msg.linear.x = motion_sign * linear
         msg.angular.z = clamp(args.heading_kp * heading_error, -args.max_angular, args.max_angular)
         if not args.disable_lateral:
-            msg.linear.y = clamp(-args.lateral_kp * lateral, -args.max_lateral, args.max_lateral)
+            # the line frame is rotated 180 deg for --reverse, so the strafe sign must follow motion_sign
+            msg.linear.y = motion_sign * clamp(-args.lateral_kp * lateral, -args.max_lateral, args.max_lateral)
 
         if not args.dry_run:
             pub.publish(msg)
@@ -255,6 +256,8 @@ def parse_args(argv):
     )
     parser.add_argument("--max-lateral-error", type=float, default=0.25)
     parser.add_argument("--disable-lateral", action="store_true", default=True)
+    parser.add_argument("--enable-lateral", dest="disable_lateral", action="store_false",
+                        help="Strafe (linear.y = -lateral_kp * lateral, clamped to max_lateral) to hold the line; off by default")
     parser.add_argument("--position-tolerance", type=float, default=0.04)
     parser.add_argument("--timeout", type=float, default=25.0)
     parser.add_argument("--stuck-timeout", type=float, default=5.0)
