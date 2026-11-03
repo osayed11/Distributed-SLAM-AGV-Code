@@ -95,13 +95,9 @@ drifting ~4000 ppm) and do not stamp with arrival time (1–2 s HID bursts).
 
 ## 4. Rollout steps per robot
 
-The code is on branch `ros2-migration` in local commits on Omar's machine as of 3 Nov
-(not pushed). Until it is pushed, copy from agv110's checkout
-(`~/slam_project/agv2_ws/src/agv_bringup/{src,scripts,config,launch,CMakeLists.txt,package.xml}`
-and `scripts/logging/start_session.sh`, `scripts/scenarios/run_s1_mocap_pilot_robot.sh`,
-`scripts/logging/drive_mocap_straight_ros2.py`). Robot 110/111/112 checkouts carry
-Riyaadh's uncommitted RealSense-key fix in three files — never `git pull`/`reset` over
-them; copy files in.
+The code is on `origin/ros2-migration` (pushed 3 Nov, commits 4c3fe53..06dbd17). Robot
+110/111/112 checkouts carry Riyaadh's uncommitted RealSense-key fix in three files — never
+`git pull`/`reset` over them; fetch and copy the files in, or commit his fix first.
 
 1. Stationary robot, nothing running. Back up the files you replace.
 2. Copy in: `src/rs_imu_capture.cpp`, `src/rs_imu_udp_publisher_node.cpp`,
