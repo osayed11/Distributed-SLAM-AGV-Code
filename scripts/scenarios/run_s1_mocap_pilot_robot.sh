@@ -436,6 +436,7 @@ REQUIRE_IMU="${REQUIRE_IMU:-true}"
 REQUIRE_RESILIENT_STORAGE="${REQUIRE_RESILIENT_STORAGE:-true}"
 S1_RUNTIME_IMU_GUARD="${S1_RUNTIME_IMU_GUARD:-${REQUIRE_IMU}}"
 S1_RUNTIME_IMU_REARM="${S1_RUNTIME_IMU_REARM:-true}"
+S1_IMU_SOURCE="${S1_IMU_SOURCE:-wrapper}"   # wrapper | standalone (agv_bringup agv_imu_source)
 S1_MAX_IMU_REARMS="${S1_MAX_IMU_REARMS:-5}"
 
 require_nonempty "MOCAP_TOPIC" "${MOCAP_TOPIC}"
@@ -765,7 +766,7 @@ esac
 
 echo "Starting one bringup..."
 setsid bash -lc \
-    "source /opt/ros/humble/setup.bash; source '${ROOT}/scripts/network/load_ros_transport_env.sh'; [ -f '${ROOT}/agv2_ws/install/setup.bash' ] && source '${ROOT}/agv2_ws/install/setup.bash'; exec ros2 launch agv_bringup bringup.launch.py agv_serial_port:=/dev/ttyACM0 agv_color_profile:=640x480x15 agv_depth_profile:=640x480x15 enable_sync:=false initial_reset:=false agv_cmd_vel_topic:='${CMD_TOPIC}'" \
+    "source /opt/ros/humble/setup.bash; source '${ROOT}/scripts/network/load_ros_transport_env.sh'; [ -f '${ROOT}/agv2_ws/install/setup.bash' ] && source '${ROOT}/agv2_ws/install/setup.bash'; exec ros2 launch agv_bringup bringup.launch.py agv_serial_port:=/dev/ttyACM0 agv_color_profile:=640x480x15 agv_depth_profile:=640x480x15 enable_sync:=false initial_reset:=false agv_imu_source:=${S1_IMU_SOURCE} agv_cmd_vel_topic:='${CMD_TOPIC}'" \
     >"${BRINGUP_LOG}" 2>&1 < /dev/null 9>&- &
 BRINGUP_PID=$!
 echo "bringup_pid: ${BRINGUP_PID}"

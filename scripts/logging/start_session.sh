@@ -56,6 +56,8 @@ IMU_TOPICS="${IMU_TOPICS:-${CAMERA_GYRO_TOPIC} ${CAMERA_ACCEL_TOPIC} ${CAMERA_FU
 ENABLE_IMU_RECORDING_KEEPALIVE="${ENABLE_IMU_RECORDING_KEEPALIVE:-false}"
 IMU_RECORDING_KEEPALIVE_SECONDS="${IMU_RECORDING_KEEPALIVE_SECONDS:-30}"
 ENABLE_REALSENSE_SYNC="${ENABLE_REALSENSE_SYNC:-false}"
+# wrapper | standalone — see agv_bringup bringup.launch.py agv_imu_source (D455 IMU hard-stall, 2 Nov 2026)
+IMU_SOURCE="${IMU_SOURCE:-wrapper}"
 ROSBAG2_MAX_CACHE_SIZE="${ROSBAG2_MAX_CACHE_SIZE:-536870912}"
 ROSBAG2_MAX_BAG_SIZE="${ROSBAG2_MAX_BAG_SIZE:-2147483648}"
 ROSBAG2_STORAGE_ID="${ROSBAG2_STORAGE_ID:-auto}"
@@ -1352,6 +1354,7 @@ setsid ros2 launch agv_bringup bringup.launch.py \
     agv_depth_profile:="${DEPTH_PROFILE}" \
     enable_sync:="${ENABLE_REALSENSE_SYNC}" \
     initial_reset:="false" \
+    agv_imu_source:="${IMU_SOURCE}" \
     agv_cmd_vel_topic:="${CMD_TOPIC}" \
     > "${BRINGUP_LOG}" 2>&1 &
 BRINGUP_PID=$!
