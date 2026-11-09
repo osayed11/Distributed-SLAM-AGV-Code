@@ -1,6 +1,6 @@
 {
   "gate_id": "agv_dataset_gate_d455_640x480_15fps",
-  "gate_version": "1.0.0",
+  "gate_version": "1.1.0",
   "profile": "dataset",
   "ros": "auto",
   "require_gt": true,
@@ -22,7 +22,7 @@
   "confirm_d455_host_port_swap": false,
   "d455_swap_notes": "",
   "expected_d455_serial": "",
-  "expected_d455_firmware": "5.17.0.10",
+  "expected_d455_firmware": "5.17.3.10",
   "expected_librealsense": "2.58.1",
   "expected_realsense_ros_driver": "4.58.4",
   "expected_realsense_ros_librealsense": "2.58.4",

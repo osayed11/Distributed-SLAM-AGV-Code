@@ -1833,7 +1833,9 @@ class Doctor:
                 continue
             if not stripped or stripped.startswith("#"):
                 continue
-            if "librealsense.intel.com" not in stripped:
+            if not any(host in stripped for host in (
+                "librealsense.intel.com", "librealsense.realsenseai.com"
+            )):
                 continue
             if ".disabled-by-setup-" in current_file:
                 continue

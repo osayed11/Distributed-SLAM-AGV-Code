@@ -1194,6 +1194,29 @@ class RobotDoctorParserTests(unittest.TestCase):
             self.assertEqual(hold_check.status, "WARN")
             self.assertIn("ros-humble-realsense2-camera", hold_check.summary)
 
+    def test_realsense_current_signed_apt_source(self) -> None:
+        text = (
+            "REALSENSE_APT_SOURCES\n"
+            "FILE:/etc/apt/sources.list.d/librealsense.list\n"
+            "deb [signed-by=/etc/apt/keyrings/librealsenseai.gpg] "
+            "https://librealsense.realsenseai.com/Debian/apt-repo jammy main\n"
+            "PYREALSENSE2\n"
+        )
+        status, summary, _ = Doctor.classify_realsense_apt_sources(text)
+        self.assertEqual(status, "PASS")
+        self.assertIn("signed-by keyring", summary)
+
+    def test_realsense_old_and_current_sources_warn(self) -> None:
+        text = (
+            "REALSENSE_APT_SOURCES\n"
+            "deb [signed-by=/key] https://librealsense.intel.com/Debian/apt-repo jammy main\n"
+            "deb [signed-by=/key] https://librealsense.realsenseai.com/Debian/apt-repo jammy main\n"
+            "PYREALSENSE2\n"
+        )
+        status, summary, _ = Doctor.classify_realsense_apt_sources(text)
+        self.assertEqual(status, "WARN")
+        self.assertIn("multiple", summary)
+
     def test_realsense_apt_source_duplicate_warns(self) -> None:
         text = (
             "REALSENSE_APT_SOURCES\n"
