@@ -958,3 +958,9 @@ robot now called agv114).
   IMU off, image global-time params applied, 0 restarts, clean stop in 4 s.
 - Not yet: a 10-minute `start_session.sh` recording and a MoCap-driven run; yaw offset and base
   calibration unknown for this robot.
+- 2026-11-09 10:56 stationary 10-min `start_session.sh` recording (`IMU_SOURCE=standalone`, 2nd camera
+  session after boot, bag `agv101_commission_standalone_imu_20261109_105627`, 6.0 GB): gate passed
+  (gyro 199.5, accel 101.0 Hz); odom/tf no gap > 0.25 s; colour 13.1 Hz, depth with minor warn gaps.
+  **IMU stalled twice mid-recording** (at 232 s and 572 s into the bag) and the supervisor recovered it
+  both times; holes 18.9 s and 16.3 s → validator FAIL on `camera_gyro_sample_gaps` (and the expected
+  missing cmd_vel). Outside the holes the capture held 199.6–199.7 Hz. Teardown 15 s.
