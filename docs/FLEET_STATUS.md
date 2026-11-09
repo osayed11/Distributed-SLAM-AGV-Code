@@ -997,3 +997,8 @@ robot now called agv114).
   the holes 72 of 72 capture windows at full rate; video/odom/tf only minor warnings. Same pattern as
   agv101 this morning (also 5.17.3.10: 2 stalls, 18.9/16.3 s). On 5.17.0.10 (3 Nov) agv110's 10-min
   stationary runs had 0 and 1 stall. Firmware is now the leading suspect; same-camera A/B pending.
+- Same-camera firmware A/B on agv110 (10-min stationary `start_session.sh`, standalone IMU, 1st camera
+  session after boot each): **5.17.3.10 → 2 recovered IMU stalls; 5.17.0.10 → 4 recovered stalls**
+  (2 of 70 capture windows < 150 Hz). Firmware is not the cause; the older image is no better. Camera
+  flashed back to 5.17.3.10 (fleet standard) and verified after reboot (depth 146 frames/10 s, gyro
+  1974/10 s). The mid-run IMU stall rate (~2–4 per 10 min on 101 and 110 today vs 0–1 on 3 Nov) is open.
