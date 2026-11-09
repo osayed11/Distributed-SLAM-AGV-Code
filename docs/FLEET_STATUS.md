@@ -945,3 +945,16 @@ robot now called agv114).
 - Not persistent (redo after each boot until the fleet unit exists): Zenoh GT client from `~/zenoh`
   at nice −15 (`~/zenoh/start_client.sh`), `ip link set lo multicast on`.
 - Last checked 2026-11-03 20:54: idle, camera healthy, disk 88 % (tonight's test bags).
+
+## agv101 — updated to the standalone IMU path (2026-11-09)
+
+- Checkout fast-forwarded 03cbc0e → 06dbd17 (was 49 commits behind). Local edits backed up
+  (`~/backup_pre_pull_20261109_101940.tgz`) and stashed; 11 of them were older copies of work now on the
+  branch. Riyaadh's RealSense apt-source fix (doctor + self-test) and the dataset-gate expectation of
+  camera firmware 5.17.3.10 restored as local edits (now on the branch). The camera runs **5.17.3.10**, like
+  8 of 9 reachable cameras on 2026-11-09 (only agv110 is on 5.17.0.10). Untracked `scripts/scenarios/.run06_wrapper.sh` (July) left in place.
+- Rebuilt `myagv_odometry` + `agv_bringup` sequentially (1 min 49 s). Standalone sanity, 60 s: gyro
+  199.6 Hz, accel 101.2 Hz (capture log), colour 15.05 Hz, depth 15.01 Hz, one gyro publisher, wrapper
+  IMU off, image global-time params applied, 0 restarts, clean stop in 4 s.
+- Not yet: a 10-minute `start_session.sh` recording and a MoCap-driven run; yaw offset and base
+  calibration unknown for this robot.
