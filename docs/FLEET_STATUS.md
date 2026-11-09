@@ -990,3 +990,10 @@ robot now called agv114).
   spiralled in, 170° holds.) 0.5 m radius with default radius gains spiralled in and aborted.
 - Motive rigid bodies `orkar_agv105`, `orkar_agv110`, `orkar_agv111` re-created today; the .125 router's
   NatNet source does not publish 105/110/111 — poses streamed from Omar's Mac via a Zenoh client.
+- agv110 pulled to 1f4e6ea and rebuilt (Riyaadh's new-RealSense-repository edit to `setup_robot_ros2.sh`
+  kept as a local edit — not on the branch yet; backup + stash on the robot). Stationary 10-min
+  `start_session.sh` recording 13:01, camera now on **5.17.3.10**: gate 200.4/100.4 Hz; **two mid-run
+  IMU stalls, both recovered, holes ≈19 s** (validator FAIL on gyro gaps + expected cmd_vel); outside
+  the holes 72 of 72 capture windows at full rate; video/odom/tf only minor warnings. Same pattern as
+  agv101 this morning (also 5.17.3.10: 2 stalls, 18.9/16.3 s). On 5.17.0.10 (3 Nov) agv110's 10-min
+  stationary runs had 0 and 1 stall. Firmware is now the leading suspect; same-camera A/B pending.
