@@ -973,3 +973,20 @@ robot now called agv114).
   sha256 4c347e3a…e4d2, 40 s), rebooted. After boot: firmware 5.17.3.10, depth 176 and colour 173
   frames in 12 s, gyro/accel streaming, base link present, `orkar-zenoh-gt` + `orkar-d455-power`
   active; the transient sensor session does not restart on boot. Whole fleet now on 5.17.3.10.
+
+## Base behaviour, agv110 / agv105 / agv111 (2026-11-09, MoCap, operator present)
+
+- Lifted, forward-right diagonal: agv105 (reference) and agv110 drive the wheels identically (FL, RR fast
+  forward; FR slow forward; RL slow backward) — the fleet firmware does not hold the off-pair still.
+- On the floor, 0.15 m/s / 0.5 rad/s open-loop: agv105 forward 0.69×, diagonals 0.54× / 0.48× (the
+  forward-right diagonal goes to −10° with +13° yaw), spin 0.50×; agv110 the same shape, ~10–30 % weaker.
+  So the "weird" diagonal/strafe/spin behaviour is fleet-normal; 110's extra weakness points to battery
+  or motor wear. agv111: same shape (0.68× / 0.37× / 0.69× at 0.08 m/s). agv111's ESP32 app image is
+  byte-identical to agv106's (md5 ae9f4712…). Base config scales do not affect commands (raw bytes);
+  they only scale decoded /odom.
+- agv110 MoCap circle, 0.8 m anticlockwise, 0.10 m/s, 40 s, `--forward-yaw-offset-deg 170 --radius-kp 1.5
+  --max-radius-heading-offset-deg 35 --pose-timeout 0.6`: complete, 0.94 laps, max radius error 4.7 cm,
+  final −2.5 cm, max heading 9.2°. (Rigid body re-created in Motive today; 161° from a slow forward nudge
+  spiralled in, 170° holds.) 0.5 m radius with default radius gains spiralled in and aborted.
+- Motive rigid bodies `orkar_agv105`, `orkar_agv110`, `orkar_agv111` re-created today; the .125 router's
+  NatNet source does not publish 105/110/111 — poses streamed from Omar's Mac via a Zenoh client.
