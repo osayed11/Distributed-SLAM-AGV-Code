@@ -964,3 +964,12 @@ robot now called agv114).
   **IMU stalled twice mid-recording** (at 232 s and 572 s into the bag) and the supervisor recovered it
   both times; holes 18.9 s and 16.3 s → validator FAIL on `camera_gyro_sample_gaps` (and the expected
   missing cmd_vel). Outside the holes the capture held 199.6–199.7 Hz. Teardown 15 s.
+
+## agv110 — camera flashed to 5.17.3.10 (2026-11-09)
+
+- Riyaadh's transient warm session (`orkar-sensors-agv110`, `sensor_session.py` from
+  `~/.local/share/orkar/releases/standalone-imu-20261103`, started 10:28) stopped gracefully at the
+  user's instruction. D455 336222301354 flashed 5.17.0.10 → **5.17.3.10** with `rs-fw-update` (image
+  sha256 4c347e3a…e4d2, 40 s), rebooted. After boot: firmware 5.17.3.10, depth 176 and colour 173
+  frames in 12 s, gyro/accel streaming, base link present, `orkar-zenoh-gt` + `orkar-d455-power`
+  active; the transient sensor session does not restart on boot. Whole fleet now on 5.17.3.10.
