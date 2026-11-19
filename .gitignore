@@ -19,3 +19,6 @@ swapfile
 # pixi environments
 .pixi/*
 !.pixi/config.toml
+
+# agent board local state (cursor, cached login)
+.board/
