@@ -26,10 +26,16 @@ add_executable(rs_imu_udp_publisher_node src/rs_imu_udp_publisher_node.cpp)
 target_compile_features(rs_imu_udp_publisher_node PUBLIC cxx_std_17)
 ament_target_dependencies(rs_imu_udp_publisher_node rclcpp sensor_msgs geometry_msgs tf2_ros realsense2_camera_msgs)
 
+# External IMU (ISM330DHCX on a software SPI bus, kernel driver st_lsm6dsx): IIO buffers -> /imu (imu_link).
+# Needs config/ext_imu/ism330dhcx-spi-gpio.dts as a boot overlay and config/ext_imu/99-ext-imu.rules in udev.
+add_executable(ext_imu_node src/ext_imu_node.cpp)
+target_compile_features(ext_imu_node PUBLIC cxx_std_17)
+ament_target_dependencies(ext_imu_node rclcpp sensor_msgs)
+
 install(DIRECTORY launch config calibration
   DESTINATION share/${PROJECT_NAME}
 )
 install(PROGRAMS scripts/rs_imu_capture_supervised.sh DESTINATION lib/${PROJECT_NAME})
-install(TARGETS rs_imu_capture rs_imu_iio_capture rs_imu_udp_publisher_node DESTINATION lib/${PROJECT_NAME})
+install(TARGETS rs_imu_capture rs_imu_iio_capture rs_imu_udp_publisher_node ext_imu_node DESTINATION lib/${PROJECT_NAME})
 
 ament_package()

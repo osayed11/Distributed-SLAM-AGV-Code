@@ -1,0 +1,49 @@
+// ISM330DHCX on a software (GPIO) SPI bus, for the myAGV whose GPIO9 (hardware SPI MISO) is held high by the robot.
+// Wiring on the myAGV rear block (BCM numbers): SCK=GPIO23, MOSI=GPIO24, MISO=GPIO25, CS=GPIO18 (active low),
+// INT1=GPIO17 (rising edge). Power: board VIN -> 3.3, GND -> G. SPI mode 0: mode 3 fails the driver's first (WHO_AM_I) read on spi-gpio.
+// Install: dtc -@ -I dts -O dtb -o /boot/firmware/overlays/ism330dhcx-spi-gpio.dtbo ism330dhcx-spi-gpio.dts
+//          and add "dtoverlay=ism330dhcx-spi-gpio" to /boot/firmware/config.txt, then reboot.
+/dts-v1/;
+/plugin/;
+
+/ {
+	compatible = "brcm,bcm2835";
+
+	fragment@0 {
+		target = <&gpio>;
+		__overlay__ {
+			ism330_int_pins: ism330_int_pins {
+				brcm,pins = <17>;
+				brcm,function = <0>;   /* input */
+				brcm,pull = <1>;       /* pull-down */
+			};
+		};
+	};
+
+	fragment@1 {
+		target-path = "/";
+		__overlay__ {
+			spi_imu: spi-gpio-imu {
+				compatible = "spi-gpio";
+				#address-cells = <1>;
+				#size-cells = <0>;
+				sck-gpios = <&gpio 23 0>;
+				mosi-gpios = <&gpio 24 0>;
+				miso-gpios = <&gpio 25 0>;
+				cs-gpios = <&gpio 18 1>;   /* GPIO_ACTIVE_LOW */
+				num-chipselects = <1>;
+				status = "okay";
+
+				ism330dhcx: imu@0 {
+					compatible = "st,ism330dhcx";
+					reg = <0>;
+					spi-max-frequency = <1000000>;
+					pinctrl-names = "default";
+					pinctrl-0 = <&ism330_int_pins>;
+					interrupt-parent = <&gpio>;
+					interrupts = <17 1>;   /* IRQ_TYPE_EDGE_RISING */
+				};
+			};
+		};
+	};
+};

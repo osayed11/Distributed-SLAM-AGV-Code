@@ -32,8 +32,11 @@ def generate_launch_description():
 
     imu_source_arg = DeclareLaunchArgument(
         'agv_imu_source',
-        default_value='wrapper',
-        description="'wrapper': D455 gyro/accel published by realsense2_camera (hard-stalls within minutes on every "
+        default_value='none',
+        description="D455 IMU source. Default 'none': the D455 IMU is retired for dataset use (20 Nov 2026: 16-20 s "
+                    "device-side stalls under real load, stamps off by 2^32 us after a respawn); the inertial stream "
+                    "is the external IMU (agv_ext_imu, /imu). "
+                    "'wrapper': D455 gyro/accel published by realsense2_camera (hard-stalls within minutes on every "
                     "fleet camera, measured 2 Nov 2026); 'standalone': wrapper runs video only and rs_imu_publisher "
                     "streams the motion module through librealsense directly (same topics, frames and extrinsics). 'none': wrapper runs video only and nothing publishes IMU (for external tools such as rs-data-collect).",
     )
@@ -47,6 +50,18 @@ def generate_launch_description():
         'agv_cmd_vel_topic',
         default_value='/cmd_vel',
         description='Topic that commands the AGV base')
+
+    ext_imu_arg = DeclareLaunchArgument(
+        'agv_ext_imu',
+        default_value='false',
+        description="'true': publish the external ISM330DHCX IMU on /imu (frame imu_link) with ext_imu_node. Needs the "
+                    "ism330dhcx-spi-gpio boot overlay and the 99-ext-imu udev rule (config/ext_imu/). Independent of "
+                    "agv_imu_source, which only controls the D455's own IMU.")
+
+    ext_imu_rate_arg = DeclareLaunchArgument(
+        'agv_ext_imu_rate_hz',
+        default_value='208',
+        description='External IMU output data rate in Hz (ISM330DHCX: 12.5, 26, 52, 104, 208, 416, 833)')
 
     base_ros2_yaml = PathJoinSubstitution([
         FindPackageShare('agv_bringup'), 'config', 'base_ros2.yaml'])
@@ -168,7 +183,21 @@ def generate_launch_description():
         condition=IfCondition(PythonExpression(["'", LaunchConfiguration('agv_imu_source'), "' == 'standalone'"])),
     )
 
+    # External IMU: kernel IIO buffers -> /imu directly (no librealsense, so no capture/publisher split is needed).
+    ext_imu_node = Node(
+        package='agv_bringup',
+        executable='ext_imu_node',
+        name='ext_imu',
+        output='screen',
+        parameters=[{'rate_hz': PythonExpression(['float(', LaunchConfiguration('agv_ext_imu_rate_hz'), ')']),
+                     'frame_id': 'imu_link', 'topic': '/imu'}],
+        condition=IfCondition(LaunchConfiguration('agv_ext_imu')),
+    )
+
     return LaunchDescription([
+        ext_imu_arg,
+        ext_imu_rate_arg,
+        ext_imu_node,
         imu_source_arg,
         serial_port_arg,
         color_profile_arg,

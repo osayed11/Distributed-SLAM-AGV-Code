@@ -1,0 +1,4 @@
+# External IMU (ISM330DHCX, kernel driver st_lsm6dsx): let the plugdev group (ubuntu is in it) configure and read the
+# IIO devices without root, so ext_imu_node can run as the normal user. Narrower than librealsense's 0777 rule.
+# Install: sudo cp 99-ext-imu.rules /etc/udev/rules.d/ && sudo udevadm control --reload && sudo udevadm trigger -s iio
+SUBSYSTEM=="iio", KERNEL=="iio:device*", ATTR{name}=="ism330dhcx_*", GROUP="plugdev", MODE="0660", RUN+="/bin/sh -c 'chgrp -R plugdev /sys%p && chmod -R g+w /sys%p'"

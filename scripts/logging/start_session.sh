@@ -56,8 +56,17 @@ IMU_TOPICS="${IMU_TOPICS:-${CAMERA_GYRO_TOPIC} ${CAMERA_ACCEL_TOPIC} ${CAMERA_FU
 ENABLE_IMU_RECORDING_KEEPALIVE="${ENABLE_IMU_RECORDING_KEEPALIVE:-false}"
 IMU_RECORDING_KEEPALIVE_SECONDS="${IMU_RECORDING_KEEPALIVE_SECONDS:-30}"
 ENABLE_REALSENSE_SYNC="${ENABLE_REALSENSE_SYNC:-false}"
-# wrapper | standalone — see agv_bringup bringup.launch.py agv_imu_source (D455 IMU hard-stall, 2 Nov 2026)
-IMU_SOURCE="${IMU_SOURCE:-wrapper}"
+# D455 IMU source: none | standalone | wrapper — see agv_bringup bringup.launch.py agv_imu_source.
+# Default none: the D455 IMU is retired for dataset use (20 Nov 2026). It hard-stalls device-side for 16-20 s under
+# real load, and its stamps were off by 2^32 us after a capture respawn. The D455 now records video only; the inertial
+# stream is the external ISM330DHCX on /imu (EXT_IMU below). Pass IMU_SOURCE=standalone to bring the D455 IMU back.
+IMU_SOURCE="${IMU_SOURCE:-none}"
+# External IMU (ISM330DHCX, ext_imu_node -> /imu): true | false | auto. auto = on when the board's kernel device exists
+# (IIO name ism330dhcx_gyro), so robots without the board still run sessions (with no IMU).
+EXT_IMU="${EXT_IMU:-auto}"
+if [ "${EXT_IMU}" = auto ]; then
+    if grep -qx "ism330dhcx_gyro" /sys/bus/iio/devices/iio:device*/name 2>/dev/null; then EXT_IMU=true; else EXT_IMU=false; fi
+fi
 ROSBAG2_MAX_CACHE_SIZE="${ROSBAG2_MAX_CACHE_SIZE:-536870912}"
 ROSBAG2_MAX_BAG_SIZE="${ROSBAG2_MAX_BAG_SIZE:-2147483648}"
 ROSBAG2_STORAGE_ID="${ROSBAG2_STORAGE_ID:-auto}"
@@ -442,6 +451,8 @@ wait_for_clock_sync: ${WAIT_FOR_CLOCK_SYNC}
 clock_sync_timeout_sec: ${CLOCK_SYNC_TIMEOUT}
 clock_sync_required: ${REQUIRE_CLOCK_SYNC}
 imu_required: ${REQUIRE_IMU}
+imu_source: "${IMU_SOURCE}"
+ext_imu: ${EXT_IMU}
 imu_topics: "${IMU_TOPICS}"
 imu_recording_keepalive_enabled: ${ENABLE_IMU_RECORDING_KEEPALIVE}
 imu_recording_keepalive_seconds: ${IMU_RECORDING_KEEPALIVE_SECONDS}
@@ -654,17 +665,27 @@ run_camera_pre_gate() {
     timeout "${REALSENSE_CAMERA_GATE_SECONDS}" ros2 topic hz "${CAMERA_DEPTH_TOPIC}" --window 40 \
         > "${depth_log}" 2>&1 &
     local depth_pid=$!
-    timeout "${REALSENSE_CAMERA_GATE_SECONDS}" ros2 topic hz "${CAMERA_GYRO_TOPIC}" --window 80 \
-        > "${gyro_log}" 2>&1 &
-    local gyro_pid=$!
-    timeout "${REALSENSE_CAMERA_GATE_SECONDS}" ros2 topic hz "${CAMERA_ACCEL_TOPIC}" --window 40 \
-        > "${accel_log}" 2>&1 &
-    local accel_pid=$!
+    local gyro_pid="" accel_pid="" ext_imu_pid=""
+    local ext_imu_log="${BAG_DIR}/${SESSION_ID}_camera_gate_pre_ext_imu_hz.txt"
+    if [ "${IMU_SOURCE}" != none ]; then
+        timeout "${REALSENSE_CAMERA_GATE_SECONDS}" ros2 topic hz "${CAMERA_GYRO_TOPIC}" --window 80 \
+            > "${gyro_log}" 2>&1 &
+        gyro_pid=$!
+        timeout "${REALSENSE_CAMERA_GATE_SECONDS}" ros2 topic hz "${CAMERA_ACCEL_TOPIC}" --window 40 \
+            > "${accel_log}" 2>&1 &
+        accel_pid=$!
+    fi
+    if [ "${EXT_IMU}" = true ]; then
+        timeout "${REALSENSE_CAMERA_GATE_SECONDS}" ros2 topic hz /imu --window 80 \
+            > "${ext_imu_log}" 2>&1 &
+        ext_imu_pid=$!
+    fi
 
     wait "${color_pid}" 2>/dev/null || true
     wait "${depth_pid}" 2>/dev/null || true
-    wait "${gyro_pid}" 2>/dev/null || true
-    wait "${accel_pid}" 2>/dev/null || true
+    [ -n "${gyro_pid}" ] && { wait "${gyro_pid}" 2>/dev/null || true; }
+    [ -n "${accel_pid}" ] && { wait "${accel_pid}" 2>/dev/null || true; }
+    [ -n "${ext_imu_pid}" ] && { wait "${ext_imu_pid}" 2>/dev/null || true; }
 
     if printf "%s" "${gate_start_line}" | grep -Eq '^[0-9]+$'; then
         tail -n "+$((gate_start_line + 1))" "${BRINGUP_LOG}" > "${gate_bringup_log}" 2>/dev/null || \
@@ -756,8 +777,15 @@ run_camera_pre_gate() {
 
     _camera_check_rate_log "${CAMERA_COLOR_TOPIC}" "${color_log}" "${MIN_RGBD_HZ}" "color stream" "${RGBD_WARN_GATE_GAP_SEC}" "${MAX_RGBD_GATE_GAP_SEC}" 40 "${REALSENSE_ACTIVE_RGBD_GAP_ABORT}" || failures=$((failures + 1))
     _camera_check_rate_log "${CAMERA_DEPTH_TOPIC}" "${depth_log}" "${MIN_RGBD_HZ}" "depth stream" "${RGBD_WARN_GATE_GAP_SEC}" "${MAX_RGBD_GATE_GAP_SEC}" 40 "${REALSENSE_ACTIVE_RGBD_GAP_ABORT}" || failures=$((failures + 1))
-    _camera_check_rate_log "${CAMERA_GYRO_TOPIC}" "${gyro_log}" "150" "camera gyro stream" "${MAX_CAMERA_IMU_GATE_GAP_SEC}" "${MAX_CAMERA_IMU_GATE_GAP_SEC}" 80 "${REALSENSE_ACTIVE_IMU_GAP_ABORT}" || failures=$((failures + 1))
-    _camera_check_rate_log "${CAMERA_ACCEL_TOPIC}" "${accel_log}" "60" "camera accel stream" "${MAX_CAMERA_IMU_GATE_GAP_SEC}" "${MAX_CAMERA_IMU_GATE_GAP_SEC}" 40 "${REALSENSE_ACTIVE_IMU_GAP_ABORT}" || failures=$((failures + 1))
+    if [ "${IMU_SOURCE}" != none ]; then
+        _camera_check_rate_log "${CAMERA_GYRO_TOPIC}" "${gyro_log}" "150" "camera gyro stream" "${MAX_CAMERA_IMU_GATE_GAP_SEC}" "${MAX_CAMERA_IMU_GATE_GAP_SEC}" 80 "${REALSENSE_ACTIVE_IMU_GAP_ABORT}" || failures=$((failures + 1))
+        _camera_check_rate_log "${CAMERA_ACCEL_TOPIC}" "${accel_log}" "60" "camera accel stream" "${MAX_CAMERA_IMU_GATE_GAP_SEC}" "${MAX_CAMERA_IMU_GATE_GAP_SEC}" 40 "${REALSENSE_ACTIVE_IMU_GAP_ABORT}" || failures=$((failures + 1))
+    else
+        echo "SKIP camera gyro/accel streams: D455 IMU retired (IMU_SOURCE=none)" | tee -a "${CAMERA_GATE_PRE_LOG}"
+    fi
+    if [ "${EXT_IMU}" = true ]; then
+        _camera_check_rate_log /imu "${ext_imu_log}" "150" "external imu stream" "${MAX_CAMERA_IMU_GATE_GAP_SEC}" "${MAX_CAMERA_IMU_GATE_GAP_SEC}" 80 "${REALSENSE_ACTIVE_IMU_GAP_ABORT}" || failures=$((failures + 1))
+    fi
 
     if grep -Eiq "The device has been disconnected|USB disconnect|No such device|device removed" "${gate_bringup_log}" 2>/dev/null; then
         echo "FAIL RealSense runtime log: camera disconnect/device-drop errors observed" | tee -a "${CAMERA_GATE_PRE_LOG}"
@@ -1346,6 +1374,7 @@ reset_d455_before_bringup
 
 KERNEL_RUNTIME_START_LINE="$(kernel_line_count)"
 echo "Starting bringup; log: ${BRINGUP_LOG}"
+echo "IMU: D455 IMU_SOURCE=${IMU_SOURCE} (none = retired, video only); external EXT_IMU=${EXT_IMU}"
 COLOR_PROFILE="${CAMERA_COLOR_WIDTH}x${CAMERA_COLOR_HEIGHT}x${CAMERA_COLOR_FPS}"
 DEPTH_PROFILE="${CAMERA_DEPTH_WIDTH}x${CAMERA_DEPTH_HEIGHT}x${CAMERA_DEPTH_FPS}"
 setsid ros2 launch agv_bringup bringup.launch.py \
@@ -1356,6 +1385,7 @@ setsid ros2 launch agv_bringup bringup.launch.py \
     initial_reset:="false" \
     agv_imu_source:="${IMU_SOURCE}" \
     agv_cmd_vel_topic:="${CMD_TOPIC}" \
+    agv_ext_imu:="${EXT_IMU}" \
     > "${BRINGUP_LOG}" 2>&1 &
 BRINGUP_PID=$!
 sleep 1
@@ -1386,8 +1416,15 @@ check_topic_silent "${CAMERA_COLOR_TOPIC}" "${RGBD_STARTUP_TIMEOUT}" || FAILED_T
 check_topic_silent "${CAMERA_DEPTH_TOPIC}" "${RGBD_STARTUP_TIMEOUT}" || FAILED_TOPICS+=("${CAMERA_DEPTH_TOPIC}")
 
 if [ "$REQUIRE_IMU" = true ]; then
-    check_topic_silent "${CAMERA_GYRO_TOPIC}" "${IMU_STARTUP_TIMEOUT}" || FAILED_TOPICS+=("${CAMERA_GYRO_TOPIC}")
-    check_topic_silent "${CAMERA_ACCEL_TOPIC}" "${IMU_STARTUP_TIMEOUT}" || FAILED_TOPICS+=("${CAMERA_ACCEL_TOPIC}")
+    if [ "${IMU_SOURCE}" != none ]; then
+        check_topic_silent "${CAMERA_GYRO_TOPIC}" "${IMU_STARTUP_TIMEOUT}" || FAILED_TOPICS+=("${CAMERA_GYRO_TOPIC}")
+        check_topic_silent "${CAMERA_ACCEL_TOPIC}" "${IMU_STARTUP_TIMEOUT}" || FAILED_TOPICS+=("${CAMERA_ACCEL_TOPIC}")
+    fi
+    if [ "${EXT_IMU}" = true ]; then
+        check_topic_silent /imu "${IMU_STARTUP_TIMEOUT}" || FAILED_TOPICS+=("/imu")
+    elif [ "${IMU_SOURCE}" = none ]; then
+        FAILED_TOPICS+=("IMU (REQUIRE_IMU=true but IMU_SOURCE=none and no external IMU detected)")
+    fi
     OPTIONAL_IMU_TOPICS="${OPTIONAL_IMU_TOPICS:-${CAMERA_FUSED_IMU_TOPIC} /imu}"
     for topic in $OPTIONAL_IMU_TOPICS; do
         check_topic_silent "$topic" 5 >/dev/null 2>&1 || true
