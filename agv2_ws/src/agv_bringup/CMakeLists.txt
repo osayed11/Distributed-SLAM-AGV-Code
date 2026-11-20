@@ -17,6 +17,11 @@ target_compile_features(rs_imu_capture PUBLIC cxx_std_17)
 target_link_libraries(rs_imu_capture ${realsense2_LIBRARY} pthread)
 target_include_directories(rs_imu_capture PRIVATE ${realsense2_INCLUDE_DIR})
 
+add_executable(rs_imu_iio_capture src/rs_imu_iio_capture.cpp)
+target_compile_features(rs_imu_iio_capture PUBLIC cxx_std_17)
+target_link_libraries(rs_imu_iio_capture ${realsense2_LIBRARY})
+target_include_directories(rs_imu_iio_capture PRIVATE ${realsense2_INCLUDE_DIR})
+
 add_executable(rs_imu_udp_publisher_node src/rs_imu_udp_publisher_node.cpp)
 target_compile_features(rs_imu_udp_publisher_node PUBLIC cxx_std_17)
 ament_target_dependencies(rs_imu_udp_publisher_node rclcpp sensor_msgs geometry_msgs tf2_ros realsense2_camera_msgs)
@@ -25,6 +30,6 @@ install(DIRECTORY launch config calibration
   DESTINATION share/${PROJECT_NAME}
 )
 install(PROGRAMS scripts/rs_imu_capture_supervised.sh DESTINATION lib/${PROJECT_NAME})
-install(TARGETS rs_imu_capture rs_imu_udp_publisher_node DESTINATION lib/${PROJECT_NAME})
+install(TARGETS rs_imu_capture rs_imu_iio_capture rs_imu_udp_publisher_node DESTINATION lib/${PROJECT_NAME})
 
 ament_package()

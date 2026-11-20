@@ -25,7 +25,7 @@ static void on_sig(int sig) { g_stop = true; if (sig == SIGTERM) g_term = true; 
 static double now_s() { return std::chrono::duration<double>(std::chrono::system_clock::now().time_since_epoch()).count(); }
 
 int main(int argc, char **argv) {
-  int port = 27500, gyro_fps = 200, accel_fps = 100; double silence = 5.0; std::string serial;
+  int port = 27500, gyro_fps = 200, accel_fps = 100; double silence = 5.0; std::string serial; int global_time = -1;
   for (int i = 1; i < argc; ++i) {
     std::string a = argv[i];
     if (a == "--port" && i + 1 < argc) port = atoi(argv[++i]);
@@ -33,6 +33,7 @@ int main(int argc, char **argv) {
     else if (a == "--accel-fps" && i + 1 < argc) accel_fps = atoi(argv[++i]);
     else if (a == "--silence-restart-seconds" && i + 1 < argc) silence = atof(argv[++i]);
     else if (a == "--serial" && i + 1 < argc) serial = argv[++i];
+    else if (a == "--global-time" && i + 1 < argc) global_time = atoi(argv[++i]);   // -1 leave as is, 0 off, 1 on
   }
   signal(SIGINT, on_sig); signal(SIGTERM, on_sig);
   int sock = socket(AF_INET, SOCK_DGRAM, 0);
@@ -58,6 +59,12 @@ int main(int argc, char **argv) {
       catch (const rs2::error &e) { if (attempt == 29) throw; fprintf(stderr, "start failed (%s); retrying\n", e.what()); std::this_thread::sleep_for(std::chrono::seconds(2)); }
     }
     auto dev = prof.get_device();
+    // librealsense's clock-sync keeper (global time) issues a firmware command to the camera every ~1.3 s; our stamps use
+    // the frame's device timestamp, so it can be switched off to keep the camera's control channel quiet.
+    if (global_time >= 0)
+      for (auto &sn : dev.query_sensors())
+        if (sn.supports(RS2_OPTION_GLOBAL_TIME_ENABLED) && std::string(sn.get_info(RS2_CAMERA_INFO_NAME)) == "Motion Module")
+          sn.set_option(RS2_OPTION_GLOBAL_TIME_ENABLED, (float)global_time);
     if (first) {
       printf("device %s fw %s gyro %d Hz accel %d Hz -> udp 127.0.0.1:%d\n", dev.get_info(RS2_CAMERA_INFO_SERIAL_NUMBER), dev.get_info(RS2_CAMERA_INFO_FIRMWARE_VERSION), gyro_fps, accel_fps, port);
       rs2::stream_profile depth;
