@@ -1,6 +1,6 @@
 {
   "gate_id": "agv_dataset_gate_d455_640x480_15fps",
-  "gate_version": "1.1.0",
+  "gate_version": "1.2.0",
   "profile": "dataset",
   "ros": "auto",
   "require_gt": true,
@@ -27,7 +27,7 @@
   "expected_realsense_ros_driver": "4.58.4",
   "expected_realsense_ros_librealsense": "2.58.4",
   "stream_test_seconds": 60,
-  "stream_test_motion": true,
+  "stream_test_motion": false,
   "d455_motion_test_seconds": 10,
   "camera_width": "640",
   "camera_height": "480",
@@ -42,7 +42,6 @@
     "/tf",
     "/camera/color/image_raw",
     "/camera/depth/image_rect_raw",
-    "/camera/gyro/sample",
-    "/camera/accel/sample"
+    "/imu"
   ]
 }

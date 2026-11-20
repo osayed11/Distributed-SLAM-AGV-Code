@@ -1021,14 +1021,35 @@ class RobotDoctorParserTests(unittest.TestCase):
             ("1.1", "PASS", "d455_imu_hid", "D455 IIO motion sensor path is visible", ""),
         )
 
-    def test_d455_imu_hid_fails_when_required_and_absent(self) -> None:
+    def test_d455_imu_hid_absent_is_informational_after_retirement(self) -> None:
+        # D455 IMU retired (20 Nov 2026): a missing D455 HID path never fails, even with --require-imu.
         code, status, check, summary, next_action = Doctor.classify_d455_imu_hid(
             "HIDRAW_DEVICES\nIIO_DEVICES\n",
             require_imu=True,
         )
-        self.assertEqual((code, status, check), ("1.1", "FAIL", "d455_imu_hid"))
+        self.assertEqual((code, status, check), ("1.1", "INFO", "d455_imu_hid"))
         self.assertIn("HID/IIO", summary)
-        self.assertIn("standalone motion", next_action)
+        self.assertIn("retired", summary)
+
+    def test_ext_imu_device_passes_with_overlay_and_rule(self) -> None:
+        text = (
+            "IIO=iio:device0 NAME=ism330dhcx_gyro\ncrw-rw---- 1 root plugdev 239, 0 /dev/iio:device0\n"
+            "IIO=iio:device1 NAME=ism330dhcx_accel\ncrw-rw---- 1 root plugdev 239, 1 /dev/iio:device1\n"
+            "dtoverlay=ism330dhcx-spi-gpio\n/etc/udev/rules.d/99-ext-imu.rules\n"
+        )
+        code, status, check, summary, _ = Doctor.classify_ext_imu_device(text, require_imu=True)
+        self.assertEqual((code, status, check), ("1.1", "PASS", "ext_imu_device"))
+
+    def test_ext_imu_device_missing_fails_only_when_required(self) -> None:
+        text = "IIO=iio:device2 NAME=accel_3d\nIIO=iio:device3 NAME=gyro_3d\nNO_OVERLAY_LINE\nNO_UDEV_RULE\n"
+        self.assertEqual(Doctor.classify_ext_imu_device(text, require_imu=True)[1], "FAIL")
+        self.assertEqual(Doctor.classify_ext_imu_device(text, require_imu=False)[1], "INFO")
+
+    def test_ext_imu_device_warns_without_udev_rule(self) -> None:
+        text = "IIO=iio:device0 NAME=ism330dhcx_gyro\nIIO=iio:device1 NAME=ism330dhcx_accel\ndtoverlay=ism330dhcx-spi-gpio\nNO_UDEV_RULE\n"
+        code, status, check, summary, _ = Doctor.classify_ext_imu_device(text, require_imu=True)
+        self.assertEqual(status, "WARN")
+        self.assertIn("99-ext-imu.rules", summary)
 
     def test_realsense_usb_speed_parser(self) -> None:
         text = "T: Bus=02 Lev=01 Prnt=01 Port=01 Cnt=01 Dev#= 2 Spd=5000\nP: Vendor=8086 ProdID=0b5c\n"
@@ -1829,8 +1850,18 @@ class RobotDoctorConfigTests(unittest.TestCase):
                 doctor.wait_for_bringup_topics()
             sleep.assert_called_once_with(2.0)
             self.assertEqual(doctor.results[-1].status, "PASS")
-            self.assertIn("/camera/gyro/sample", doctor.results[-1].summary)
+            # D455 IMU retired: its gyro/accel topics are no longer waited for.
+            self.assertNotIn("/camera/gyro/sample", doctor.results[-1].summary)
             self.assertIn("/camera/color/image_raw", doctor.results[-1].summary)
+
+    def test_require_imu_makes_external_imu_a_required_live_topic(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            args = build_parser().parse_args(["agvtest", "--profile", "dataset", "--require-imu", "--output-root", tmp])
+            specs = Doctor(args).live_topic_specs()
+            self.assertEqual(specs["/imu"]["min_hz"], 150.0)
+            self.assertNotIn("/camera/gyro/sample", specs)
+            args = build_parser().parse_args(["agvtest", "--profile", "preflight", "--output-root", tmp])
+            self.assertNotIn("/imu", Doctor(args).live_topic_specs())
 
     def test_preflight_bringup_without_camera_only_waits_for_base_topics(self) -> None:
         from unittest.mock import patch

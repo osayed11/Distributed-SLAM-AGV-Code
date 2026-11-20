@@ -92,9 +92,14 @@ DEFAULT_TOPIC_SPECS = {
     "/camera/color/camera_info": {"min_hz": 0.0, "target_hz": 0.0},
     "/camera/depth/image_rect_raw": {"min_hz": 10.0, "target_hz": 15.0},
     "/camera/depth/camera_info": {"min_hz": 0.0, "target_hz": 0.0},
-    "/camera/gyro/sample": {"min_hz": 150.0, "target_hz": 200.0},
-    "/camera/accel/sample": {"min_hz": 60.0, "target_hz": 100.0},
 }
+# The D455 gyro/accel topics are no longer default required topics: the D455 IMU is retired for dataset use and
+# start_session.sh no longer starts it (IMU_SOURCE=none). check_imu_live still reports them when present.
+
+# External IMU (ISM330DHCX on the myAGV software SPI bus, ext_imu_node -> /imu). The D455 IMU is retired for dataset use
+# (20 Nov 2026), so --require-imu means this IMU; D455 IMU checks are informational.
+EXT_IMU_IIO_NAMES = ("ism330dhcx_gyro", "ism330dhcx_accel")
+EXT_IMU_TOPIC = "/imu"
 
 
 UVC_PATTERNS = [
@@ -929,6 +934,7 @@ class Doctor:
         self.check_usb_power_policy()
         self.check_dev_permissions()
         self.check_d455_imu_hid()
+        self.check_ext_imu_device()
         self.check_realsense()
         self.check_serial_devices()
         self.check_kernel_logs()
@@ -1394,14 +1400,50 @@ class Doctor:
         if d455_iio:
             return ("1.1", PASS, "d455_imu_hid", "D455 IIO motion sensor path is visible", "")
 
-        status = FAIL if require_imu else WARN
+        # The D455 IMU is retired for dataset use (the inertial stream is the external IMU), so a missing D455 HID path is
+        # informational whatever --require-imu says. require_imu is kept in the signature for callers and tests.
         return (
             "1.1",
-            status,
+            INFO,
             "d455_imu_hid",
-            "D455 IMU HID/IIO path is not visible",
-            "replug/reset D455, verify hidraw or IIO udev permissions, then run the standalone motion stream gate",
+            "D455 IMU HID/IIO path is not visible (D455 IMU retired; informational)",
+            "",
         )
+
+    def check_ext_imu_device(self) -> None:
+        result = self.run(
+            "ext_imu_device",
+            "for i in /sys/bus/iio/devices/iio:device*; do [ -r \"$i/name\" ] || continue; "
+            "echo IIO=$(basename \"$i\") NAME=$(cat \"$i/name\"); ls -l \"/dev/$(basename \"$i\")\" 2>/dev/null || true; done; "
+            "grep -h '^dtoverlay=ism330dhcx' /boot/firmware/config.txt 2>/dev/null || echo NO_OVERLAY_LINE; "
+            "ls /etc/udev/rules.d/99-ext-imu.rules 2>/dev/null || echo NO_UDEV_RULE",
+            timeout=10,
+        )
+        code, status, check, summary, next_action = self.classify_ext_imu_device(self.command_output(result), self.args.require_imu)
+        self.add(code, status, check, summary, [result.log], next_action)
+
+    @staticmethod
+    def classify_ext_imu_device(text: str, require_imu: bool) -> Tuple[str, str, str, str, str]:
+        names = set(re.findall(r"NAME=(\S+)", text))
+        missing = [n for n in EXT_IMU_IIO_NAMES if n not in names]
+        if missing:
+            return (
+                "1.1",
+                FAIL if require_imu else INFO,
+                "ext_imu_device",
+                "external IMU not detected (missing IIO " + ", ".join(missing) + ")",
+                "fit and wire the ISM330DHCX (SCK=23 MOSI=24 MISO=25 CS=18 INT1=17), install "
+                "agv_bringup/config/ext_imu/ism330dhcx-spi-gpio.dts as a boot overlay and 99-ext-imu.rules, then reboot",
+            )
+        problems = []
+        if "NO_OVERLAY_LINE" in text:
+            problems.append("no dtoverlay=ism330dhcx line in config.txt")
+        if "NO_UDEV_RULE" in text:
+            problems.append("99-ext-imu.rules not installed (ext_imu_node needs root without it)")
+        if problems:
+            return ("1.1", WARN, "ext_imu_device", "external IMU detected but " + "; ".join(problems),
+                    "install the missing piece from agv_bringup/config/ext_imu/")
+        return ("1.1", PASS, "ext_imu_device", "external IMU (ISM330DHCX) detected with overlay and udev rule", "")
 
     def check_realsense(self) -> None:
         if not self.args.expect_camera:
@@ -2363,8 +2405,10 @@ class Doctor:
 
     def run_d455_motion_stream_gate(self) -> None:
         seconds = int(self.args.d455_motion_test_seconds)
-        if seconds <= 0 or not (self.args.require_imu or self.args.stream_test_motion):
-            self.add("1.1", INFO, "realsense_motion_stream_gate", "standalone D455 motion gate skipped")
+        # D455 IMU retired: its motion-module stream test runs only when explicitly asked for (stream_test_motion),
+        # no longer just because --require-imu is set (that now means the external IMU).
+        if seconds <= 0 or not self.args.stream_test_motion:
+            self.add("1.1", INFO, "realsense_motion_stream_gate", "standalone D455 motion gate skipped (D455 IMU retired)")
             return
         probe = self.build_realsense_probe(
             mode="motion",
@@ -2478,7 +2522,7 @@ PY
 
     def run_realsense_isolation_tests(self, seconds: int, width: int, height: int, fps: int) -> None:
         modes = ["color", "depth"]
-        if self.args.stream_test_motion or self.args.require_imu:
+        if self.args.stream_test_motion:
             modes.append("motion")
         for mode in modes:
             probe = self.build_realsense_probe(mode=mode, seconds=seconds, width=width, height=height, fps=fps)
@@ -2938,6 +2982,8 @@ PY
         depth_topic = os.environ.get("DEPTH_TOPIC")
         if depth_topic:
             specs[depth_topic] = {"min_hz": 12.0, "target_hz": 15.0}
+        if self.args.require_imu:
+            specs[EXT_IMU_TOPIC] = {"min_hz": 150.0, "target_hz": 208.0}
         for topic in self.args.required_topic:
             specs.setdefault(topic, {"min_hz": 0.0, "target_hz": 0.0})
         return specs
@@ -3262,19 +3308,19 @@ PY
                 next_action="start the base/camera IMU driver or configure IMU_TOPICS before recording",
             )
             return
-        if self.args.require_imu:
-            required_raw = ["/camera/gyro/sample", "/camera/accel/sample"]
-            missing_raw = [topic for topic in required_raw if topic not in self.topic_types]
-            if missing_raw:
-                self.add(
-                    "2.3",
-                    FAIL,
-                    "imu_topic",
-                    "required raw D455 IMU topic(s) missing: " + ", ".join(missing_raw),
-                    next_action="run the standard RealSense ROS launch with enable_gyro/enable_accel true and unite_imu_method:=0",
-                )
+        if self.args.require_imu and EXT_IMU_TOPIC not in self.topic_types:
+            # The D455 IMU is retired for dataset use; a required IMU means the external IMU on /imu.
+            self.add(
+                "2.3",
+                FAIL,
+                "imu_topic",
+                f"required external IMU topic {EXT_IMU_TOPIC} missing",
+                next_action="launch bringup with agv_ext_imu:=true (start_session.sh does this when the board is detected)",
+            )
         for topic in present:
             rate = self.measure_topic_rate(topic, min(10, int(self.args.live_seconds))) if self.args.live_seconds > 0 else None
+            # Only the external IMU can fail the gate; D455 IMU topics are informational (retired).
+            enforce = self.args.require_imu and topic == EXT_IMU_TOPIC
             if rate is None:
                 self.add(
                     "2.3",
@@ -3284,8 +3330,8 @@ PY
                     next_action="rerun live checks with a positive --live-seconds value to prove IMU rate",
                 )
             else:
-                min_hz = 150.0 if "gyro" in topic or topic == "/camera/imu" else 60.0 if "accel" in topic else 10.0
-                status = PASS if rate >= min_hz else (FAIL if self.args.require_imu else WARN)
+                min_hz = 150.0 if "gyro" in topic or topic in ("/camera/imu", EXT_IMU_TOPIC) else 60.0 if "accel" in topic else 10.0
+                status = PASS if rate >= min_hz else (FAIL if enforce else WARN)
                 self.add(
                     "2.3",
                     status,

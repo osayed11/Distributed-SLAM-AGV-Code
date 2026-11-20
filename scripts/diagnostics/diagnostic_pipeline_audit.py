@@ -218,7 +218,8 @@ class Audit:
             "expected_librealsense": "2.58.1",
             "expected_realsense_ros_driver": "4.58.4",
             "expected_realsense_ros_librealsense": "2.58.4",
-            "stream_test_motion": True,
+            # D455 IMU retired (20 Nov 2026): no D455 motion-module test; require_imu means the external IMU on /imu.
+            "stream_test_motion": False,
             "d455_motion_test_seconds": 10,
             "max_clock_offset_ms": 1.0,
             "expect_native_ros2": True,
@@ -243,8 +244,7 @@ class Audit:
             "/tf",
             "/camera/color/image_raw",
             "/camera/depth/image_rect_raw",
-            "/camera/gyro/sample",
-            "/camera/accel/sample",
+            "/imu",
         }
         missing = sorted(expected_topics - required_topics)
         if missing:
@@ -268,14 +268,15 @@ class Audit:
         required_values = {
             "profile": "preflight",
             "require_gt": False,
-            "require_imu": True,
+            # Sensor logging needs no IMU (robots without the external IMU board can still log).
+            "require_imu": False,
             "expect_camera": True,
             "strict_versions": True,
             "expected_d455_firmware": "5.17.3.10",
             "expected_librealsense": "2.58.1",
             "expected_realsense_ros_driver": "4.58.4",
             "expected_realsense_ros_librealsense": "2.58.4",
-            "stream_test_motion": True,
+            "stream_test_motion": False,
             "d455_motion_test_seconds": 10,
             "expect_native_ros2": True,
             "require_odom_mocap_sanity": False,
@@ -297,8 +298,6 @@ class Audit:
             "/tf",
             "/camera/color/image_raw",
             "/camera/depth/image_rect_raw",
-            "/camera/gyro/sample",
-            "/camera/accel/sample",
         }
         missing = sorted(expected_topics - required_topics)
         if missing:
